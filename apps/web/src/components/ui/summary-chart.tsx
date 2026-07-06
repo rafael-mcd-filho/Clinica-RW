@@ -37,7 +37,11 @@ export function SummaryBarChart({
               <XAxis dataKey="label" tickLine={false} />
               <YAxis allowDecimals={false} tickLine={false} width={36} />
               <Tooltip cursor={{ fill: "rgba(148, 163, 184, 0.14)" }} />
-              <Bar dataKey="value" fill="var(--primary)" radius={[4, 4, 0, 0]} />
+              <Bar
+                dataKey="value"
+                fill="var(--primary)"
+                radius={[4, 4, 0, 0]}
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -44,47 +44,47 @@ export default async function PacientesPage() {
     encountersResult,
     professionalsResult,
   ] = await Promise.all([
-      supabase
-        .from("patients")
-        .select(
-          "id, full_name, social_name, birth_date, cpf, email, phone, whatsapp, status, source, deleted_at, created_at",
-        )
-        .eq("organization_id", organizationId)
-        .order("full_name")
-        .returns<PatientListRow[]>(),
-      supabase
-        .from("tags")
-        .select("id, name, color")
-        .eq("organization_id", organizationId)
-        .order("name")
-        .returns<PatientTagOption[]>(),
-      supabase
-        .from("patient_tags")
-        .select("patient_id, tag_id")
-        .eq("organization_id", organizationId)
-        .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-        .returns<PatientTagRow[]>(),
-      canViewClinicalRecords
-        ? supabase
-            .from("encounters")
-            .select(
-              "id, patient_id, professional_id, appointment_id, status, started_at",
-            )
-            .eq("organization_id", organizationId)
-            .order("started_at", { ascending: false })
-            .limit(1000)
-            .returns<EncounterRow[]>()
-        : Promise.resolve({ data: [] as EncounterRow[] }),
-      canViewClinicalRecords
-        ? supabase
-            .from("professionals")
-            .select("id, name")
-            .eq("organization_id", organizationId)
-            .eq("active", true)
-            .order("name")
-            .returns<ProfessionalRow[]>()
-        : Promise.resolve({ data: [] as ProfessionalRow[] }),
-    ]);
+    supabase
+      .from("patients")
+      .select(
+        "id, full_name, social_name, birth_date, cpf, email, phone, whatsapp, status, source, deleted_at, created_at",
+      )
+      .eq("organization_id", organizationId)
+      .order("full_name")
+      .returns<PatientListRow[]>(),
+    supabase
+      .from("tags")
+      .select("id, name, color")
+      .eq("organization_id", organizationId)
+      .order("name")
+      .returns<PatientTagOption[]>(),
+    supabase
+      .from("patient_tags")
+      .select("patient_id, tag_id")
+      .eq("organization_id", organizationId)
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+      .returns<PatientTagRow[]>(),
+    canViewClinicalRecords
+      ? supabase
+          .from("encounters")
+          .select(
+            "id, patient_id, professional_id, appointment_id, status, started_at",
+          )
+          .eq("organization_id", organizationId)
+          .order("started_at", { ascending: false })
+          .limit(1000)
+          .returns<EncounterRow[]>()
+      : Promise.resolve({ data: [] as EncounterRow[] }),
+    canViewClinicalRecords
+      ? supabase
+          .from("professionals")
+          .select("id, name")
+          .eq("organization_id", organizationId)
+          .eq("active", true)
+          .order("name")
+          .returns<ProfessionalRow[]>()
+      : Promise.resolve({ data: [] as ProfessionalRow[] }),
+  ]);
 
   const tagIdsByPatient = new Map<string, string[]>();
   (patientTags ?? []).forEach((item) => {

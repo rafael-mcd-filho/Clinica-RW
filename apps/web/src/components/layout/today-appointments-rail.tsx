@@ -176,7 +176,7 @@ function TodayAppointmentRow({
           {appointment.tags.slice(0, 2).map((tag) => (
             <span
               key={`${appointment.id}-${tag.id}`}
-              className="inline-flex h-5 max-w-full items-center rounded px-1.5 text-[10px] font-bold uppercase leading-none text-white"
+              className="inline-flex h-5 max-w-full items-center rounded px-1.5 text-caption font-semibold uppercase leading-none text-white"
               style={{ backgroundColor: tag.color }}
             >
               <span className="truncate">{tag.name}</span>

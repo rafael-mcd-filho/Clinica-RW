@@ -392,7 +392,11 @@ function DurationCard({
                 <XAxis dataKey="label" tickLine={false} />
                 <YAxis allowDecimals={false} tickLine={false} width={34} />
                 <Tooltip cursor={{ fill: "rgba(148, 163, 184, 0.14)" }} />
-                <Bar dataKey="value" fill={categoricalColors.blueSoft} radius={[4, 4, 0, 0]} />
+                <Bar
+                  dataKey="value"
+                  fill={categoricalColors.blueSoft}
+                  radius={[4, 4, 0, 0]}
+                />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -436,8 +440,16 @@ function AreaLineCard({
               <AreaChart data={data} margin={{ left: 0, right: 10, top: 8 }}>
                 <defs>
                   <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.24} />
-                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0.03} />
+                    <stop
+                      offset="5%"
+                      stopColor="var(--primary)"
+                      stopOpacity={0.24}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor="var(--primary)"
+                      stopOpacity={0.03}
+                    />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -551,7 +563,11 @@ function MiniDonut({
 }) {
   const data = [
     { label, value, color },
-    { label: "Outros", value: Math.max(0, 100 - value), color: "var(--border)" },
+    {
+      label: "Outros",
+      value: Math.max(0, 100 - value),
+      color: "var(--border)",
+    },
   ];
 
   return (

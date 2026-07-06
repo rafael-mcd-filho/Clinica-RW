@@ -1,61 +1,62 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type * as React from "react";
+import { pdfTheme } from "@/lib/pdf/pdf-theme";
 import type { ReportData } from "@/lib/reports/phase13";
 
 const styles = StyleSheet.create({
   body: {
-    color: "#172033",
-    fontFamily: "Helvetica",
-    fontSize: 9,
+    color: pdfTheme.colors.foreground,
+    fontFamily: pdfTheme.font.family,
+    fontSize: pdfTheme.text.body,
     lineHeight: 1.35,
-    padding: 36,
+    padding: pdfTheme.spacing.page,
   },
   footer: {
     bottom: 22,
-    color: "#64748b",
-    fontSize: 7,
-    left: 36,
+    color: pdfTheme.colors.muted,
+    fontSize: pdfTheme.text.caption,
+    left: pdfTheme.spacing.page,
     position: "absolute",
   },
   header: {
-    borderBottomColor: "#d9e2ec",
+    borderBottomColor: pdfTheme.colors.border,
     borderBottomWidth: 1,
     marginBottom: 18,
     paddingBottom: 12,
   },
   muted: {
-    color: "#64748b",
-    fontSize: 8,
+    color: pdfTheme.colors.muted,
+    fontSize: pdfTheme.text.label,
   },
   row: {
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: pdfTheme.colors.border,
     borderBottomWidth: 1,
     flexDirection: "row",
     paddingBottom: 5,
     paddingTop: 5,
   },
   rowHeader: {
-    backgroundColor: "#f1f5f9",
-    color: "#334155",
+    backgroundColor: pdfTheme.colors.surface,
+    color: pdfTheme.colors.secondary,
     fontWeight: 700,
   },
   section: {
-    marginBottom: 16,
+    marginBottom: pdfTheme.spacing.section,
   },
   table: {
-    borderColor: "#e2e8f0",
+    borderColor: pdfTheme.colors.border,
     borderRadius: 5,
     borderWidth: 1,
     overflow: "hidden",
   },
   title: {
-    color: "#0f172a",
-    fontSize: 17,
+    color: pdfTheme.colors.heading,
+    fontSize: pdfTheme.text.title,
     fontWeight: 700,
   },
   sectionTitle: {
-    color: "#0f172a",
-    fontSize: 12,
+    color: pdfTheme.colors.heading,
+    fontSize: pdfTheme.text.heading,
     fontWeight: 700,
     marginBottom: 7,
   },
@@ -91,10 +92,10 @@ export function ReportsDocument({
   data: ReportData;
 }) {
   return (
-    <PdfDocument title="Relatorios">
+    <PdfDocument title="Relatórios">
       <PdfPage size="A4" style={styles.body}>
         <PdfView style={styles.header}>
-          <PdfText style={styles.title}>Relatorios</PdfText>
+          <PdfText style={styles.title}>Relatórios</PdfText>
           <PdfText style={styles.muted}>
             {clinicName} | {formatDate(data.filters.from)} a{" "}
             {formatDate(data.filters.to)}
@@ -109,7 +110,7 @@ export function ReportsDocument({
               ["Atendidos", String(data.operational.attended)],
               ["No-show", `${data.operational.noShowRate}%`],
               [
-                "Ocupacao",
+                "Ocupação",
                 data.operational.occupancyRate == null
                   ? "Sem escala"
                   : `${data.operational.occupancyRate}%`,
@@ -130,7 +131,7 @@ export function ReportsDocument({
               ["Recebido", formatCurrency(data.financial.revenue)],
               ["A receber", formatCurrency(data.financial.openReceivable)],
               [
-                "Inadimplencia",
+                "Inadimplência",
                 formatCurrency(data.financial.overdueReceivable),
               ],
               ["Despesas pagas", formatCurrency(data.financial.expenses)],
@@ -145,13 +146,13 @@ export function ReportsDocument({
 
         {data.clinical ? (
           <PdfSection
-            title="Clinico"
+            title="Clínico"
             rows={[
               ["Atendimentos", String(data.clinical.totalEncounters)],
               ["Finalizados", String(data.clinical.finalizedEncounters)],
               ["Rascunhos", String(data.clinical.draftEncounters)],
               [
-                "Tempo medio ate finalizar",
+                "Tempo médio até finalizar",
                 data.clinical.averageCompletionHours == null
                   ? "0h"
                   : `${Math.round(data.clinical.averageCompletionHours * 10) / 10}h`,
@@ -167,7 +168,7 @@ export function ReportsDocument({
               <PdfText style={styles.wideCell}>Profissional</PdfText>
               <PdfText style={styles.cell}>Consultas</PdfText>
               <PdfText style={styles.cell}>Receita</PdfText>
-              <PdfText style={styles.cell}>Prontuarios</PdfText>
+              <PdfText style={styles.cell}>Prontuários</PdfText>
             </PdfView>
             {data.professionals.slice(0, 12).map((row) => (
               <PdfView key={row.professionalName} style={styles.row}>
@@ -185,7 +186,7 @@ export function ReportsDocument({
         </PdfView>
 
         <PdfText style={styles.footer}>
-          Gerado pelo modulo de relatorios da clinica.
+          Gerado pelo módulo de relatórios da clínica.
         </PdfText>
       </PdfPage>
     </PdfDocument>

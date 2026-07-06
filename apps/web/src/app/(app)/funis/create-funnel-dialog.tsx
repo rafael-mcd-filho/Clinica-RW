@@ -45,8 +45,16 @@ const templates: Template[] = [
         color: categoricalColors.indigo,
         stage_type: "intermediate",
       },
-      { name: "Compareceu", color: categoricalColors.violet, stage_type: "intermediate" },
-      { name: "Cliente ativo", color: categoricalColors.green, stage_type: "success" },
+      {
+        name: "Compareceu",
+        color: categoricalColors.violet,
+        stage_type: "intermediate",
+      },
+      {
+        name: "Cliente ativo",
+        color: categoricalColors.green,
+        stage_type: "success",
+      },
       { name: "Perdido", color: categoricalColors.red, stage_type: "failure" },
     ],
   },
@@ -54,7 +62,11 @@ const templates: Template[] = [
     key: "pre-consulta",
     label: "Pré-consulta",
     stages: [
-      { name: "Cadastrado", color: categoricalColors.slate, stage_type: "initial" },
+      {
+        name: "Cadastrado",
+        color: categoricalColors.slate,
+        stage_type: "initial",
+      },
       {
         name: "Documentação enviada",
         color: categoricalColors.blue,
@@ -76,8 +88,16 @@ const templates: Template[] = [
     key: "pos-consulta",
     label: "Pós-consulta",
     stages: [
-      { name: "Aguardando NPS", color: categoricalColors.slate, stage_type: "initial" },
-      { name: "NPS respondido", color: categoricalColors.blue, stage_type: "intermediate" },
+      {
+        name: "Aguardando NPS",
+        color: categoricalColors.slate,
+        stage_type: "initial",
+      },
+      {
+        name: "NPS respondido",
+        color: categoricalColors.blue,
+        stage_type: "intermediate",
+      },
       {
         name: "Retorno agendado",
         color: categoricalColors.indigo,
@@ -88,17 +108,37 @@ const templates: Template[] = [
         color: categoricalColors.violet,
         stage_type: "intermediate",
       },
-      { name: "Alta clínica", color: categoricalColors.green, stage_type: "success" },
+      {
+        name: "Alta clínica",
+        color: categoricalColors.green,
+        stage_type: "success",
+      },
     ],
   },
   {
     key: "tratamento",
     label: "Tratamento contínuo",
     stages: [
-      { name: "Avaliação inicial", color: categoricalColors.slate, stage_type: "initial" },
-      { name: "Plano aceito", color: categoricalColors.blue, stage_type: "intermediate" },
-      { name: "Em tratamento", color: categoricalColors.violet, stage_type: "intermediate" },
-      { name: "Manutenção", color: categoricalColors.indigo, stage_type: "intermediate" },
+      {
+        name: "Avaliação inicial",
+        color: categoricalColors.slate,
+        stage_type: "initial",
+      },
+      {
+        name: "Plano aceito",
+        color: categoricalColors.blue,
+        stage_type: "intermediate",
+      },
+      {
+        name: "Em tratamento",
+        color: categoricalColors.violet,
+        stage_type: "intermediate",
+      },
+      {
+        name: "Manutenção",
+        color: categoricalColors.indigo,
+        stage_type: "intermediate",
+      },
       { name: "Alta", color: categoricalColors.green, stage_type: "success" },
     ],
   },
@@ -106,11 +146,31 @@ const templates: Template[] = [
     key: "recuperacao",
     label: "Recuperação de inativos",
     stages: [
-      { name: "Inativo identificado", color: categoricalColors.slate, stage_type: "initial" },
-      { name: "Tentativa 1", color: categoricalColors.amber, stage_type: "intermediate" },
-      { name: "Tentativa 2", color: categoricalColors.pink, stage_type: "intermediate" },
-      { name: "Retornou", color: categoricalColors.green, stage_type: "success" },
-      { name: "Não retornou", color: categoricalColors.red, stage_type: "failure" },
+      {
+        name: "Inativo identificado",
+        color: categoricalColors.slate,
+        stage_type: "initial",
+      },
+      {
+        name: "Tentativa 1",
+        color: categoricalColors.amber,
+        stage_type: "intermediate",
+      },
+      {
+        name: "Tentativa 2",
+        color: categoricalColors.pink,
+        stage_type: "intermediate",
+      },
+      {
+        name: "Retornou",
+        color: categoricalColors.green,
+        stage_type: "success",
+      },
+      {
+        name: "Não retornou",
+        color: categoricalColors.red,
+        stage_type: "failure",
+      },
     ],
   },
 ];
@@ -198,11 +258,7 @@ export function CreateFunnelDialog() {
 
   return (
     <>
-      <Button
-        type="button"
-        className="rounded-full px-5"
-        onClick={() => setOpen(true)}
-      >
+      <Button type="button" onClick={() => setOpen(true)}>
         <Plus className="size-4" aria-hidden="true" />
         Novo painel
       </Button>

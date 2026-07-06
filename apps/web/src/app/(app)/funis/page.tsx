@@ -51,7 +51,9 @@ export default async function FunisPage() {
     <div className="grid gap-6">
       <section>
         <div>
-          <h1 className="text-heading-lg font-semibold text-foreground">Painéis</h1>
+          <h1 className="text-heading-lg font-semibold text-foreground">
+            Painéis
+          </h1>
           <p className="mt-1 text-body text-muted-foreground">
             Controle suas vendas, crie funis, tarefas e atividades utilizando os
             novos painéis

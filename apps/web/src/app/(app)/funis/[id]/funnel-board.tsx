@@ -780,7 +780,9 @@ function CardPreview({
       className={cn(
         "grid min-h-[8.25rem] gap-2 rounded-lg border border-border bg-card p-4 text-left shadow-[var(--shadow-soft)] transition-[border-color,box-shadow,transform] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-border-strong hover:shadow-[var(--shadow-hover)]",
         onClick ? "cursor-pointer" : "",
-        dragging ? "w-[22rem] scale-[1.02] opacity-95 shadow-[var(--shadow-lg)]" : "",
+        dragging
+          ? "w-[22rem] scale-[1.02] opacity-95 shadow-[var(--shadow-lg)]"
+          : "",
         card.archived_at ? "opacity-70" : "",
       )}
     >
@@ -866,7 +868,9 @@ function CardsListView({
   if (!cards.length) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-card p-10 text-center">
-        <Inbox className="mx-auto size-8 text-muted-foreground" />
+        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Inbox className="size-5" aria-hidden="true" />
+        </div>
         <p className="mt-3 text-sm font-medium">Nenhum card encontrado</p>
       </div>
     );

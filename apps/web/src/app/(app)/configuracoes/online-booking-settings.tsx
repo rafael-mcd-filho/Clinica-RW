@@ -552,7 +552,7 @@ function ReviewResponseForm({
           <div className="flex items-center gap-2">
             <p className="font-semibold">{review.patient_display_name}</p>
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary">
-              <Star className="size-3 fill-current" aria-hidden="true" />
+              <Star className="size-3.5 fill-current" aria-hidden="true" />
               {review.rating}
             </span>
             {review.highlighted ? (

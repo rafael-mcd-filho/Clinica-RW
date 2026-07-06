@@ -92,7 +92,9 @@ Escala fechada — via wrapper `<Icon>` (`components/ui/icon.tsx`) ou classes:
 | 20px    | `size-5`   | cabeçalho de página/painel, empty states    |
 
 Avatares e containers ilustrativos (ex.: círculo de empty state) não são ícones
-e podem usar outros tamanhos.
+e podem usar outros tamanhos. Exceção documentada: glifos internos de controle
+(o check de 12px dentro do `Checkbox`/`Select` de 16px) fazem parte da geometria
+do controle, não da escala de ícones.
 
 ## Motion
 

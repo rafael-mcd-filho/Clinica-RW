@@ -414,11 +414,11 @@ export default async function OnlineBookingPage({
               </div>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="neutral">
-                  <CircleCheck className="mr-1 size-3" aria-hidden="true" />
+                  <CircleCheck className="mr-1 size-3.5" aria-hidden="true" />
                   Confirmação pela clínica
                 </Badge>
                 <Badge variant="neutral">
-                  <Clock3 className="mr-1 size-3" aria-hidden="true" />
+                  <Clock3 className="mr-1 size-3.5" aria-hidden="true" />
                   Cancelamento com {settings.cancellation_notice_hours}h
                 </Badge>
               </div>
@@ -668,7 +668,7 @@ function PaymentMethodsCard({ methods }: { methods: PaymentMethodRow[] }) {
           <div className="mt-4 flex flex-wrap gap-2">
             {methods.map((method) => (
               <Badge key={method.id} variant="primary">
-                <CreditCard className="mr-1 size-3" aria-hidden="true" />
+                <CreditCard className="mr-1 size-3.5" aria-hidden="true" />
                 {method.name}
               </Badge>
             ))}

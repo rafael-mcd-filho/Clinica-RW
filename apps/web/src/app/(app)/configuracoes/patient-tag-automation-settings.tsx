@@ -64,7 +64,8 @@ const triggerDescriptions: Record<PatientTagRule["trigger_type"], string> = {
   new_patient: "Aplica quando um paciente é cadastrado.",
   appointment_scheduled: "Aplica quando o paciente ganha um agendamento.",
   first_visit: "Aplica até o primeiro atendimento ser finalizado.",
-  revenue_threshold: "Aplica enquanto o total pago atingir o valor configurado.",
+  revenue_threshold:
+    "Aplica enquanto o total pago atingir o valor configurado.",
 };
 
 export function PatientTagAutomationSettings({
@@ -152,7 +153,10 @@ function CreateTagForm() {
   useToastState(state);
 
   return (
-    <form action={action} className="grid gap-3 rounded-lg border border-border p-4">
+    <form
+      action={action}
+      className="grid gap-3 rounded-lg border border-border p-4"
+    >
       <h3 className="font-semibold">Nova tag</h3>
       <label className="grid gap-1 text-sm font-medium">
         Nome
@@ -185,7 +189,10 @@ function CreateRuleForm({ tags }: { tags: PatientTagSettingsTag[] }) {
   useToastState(state);
 
   return (
-    <form action={action} className="grid gap-4 rounded-lg border border-border p-4">
+    <form
+      action={action}
+      className="grid gap-4 rounded-lg border border-border p-4"
+    >
       <div>
         <h3 className="font-semibold">Nova automação</h3>
         <p className="mt-1 text-sm text-muted-foreground">

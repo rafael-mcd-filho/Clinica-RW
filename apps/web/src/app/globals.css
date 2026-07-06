@@ -149,10 +149,8 @@
   --text-display--line-height: 2.25rem;
 
   /* Animações nomeadas — sempre com duração/ease dos tokens de motion. */
-  --animate-content-enter: content-enter var(--motion-fast) var(--ease-out)
-    both;
-  --animate-panel-enter: content-enter var(--motion-normal) var(--ease-out)
-    both;
+  --animate-content-enter: content-enter var(--motion-fast) var(--ease-out) both;
+  --animate-panel-enter: content-enter var(--motion-normal) var(--ease-out) both;
   --animate-fade-in: fade-in var(--motion-fast) var(--ease-out) both;
   --animate-dialog-in: dialog-in var(--motion-normal) var(--ease-out) both;
 

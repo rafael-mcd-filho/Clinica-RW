@@ -155,7 +155,10 @@ export default async function AppointmentSummaryPage({
 
       <section className="grid gap-3 md:grid-cols-4">
         <SummaryMetric label="Agendamentos" value={data.totals.appointments} />
-        <SummaryMetric label="Total previsto" value={formatCurrency(data.totals.amount)} />
+        <SummaryMetric
+          label="Total previsto"
+          value={formatCurrency(data.totals.amount)}
+        />
         <SummaryMetric label="Pago" value={formatCurrency(data.totals.paid)} />
         <SummaryMetric
           label="Pendente/parcial"
@@ -180,7 +183,9 @@ export default async function AppointmentSummaryPage({
             </thead>
             <tbody>
               {data.rows.length ? (
-                data.rows.map((row) => <AppointmentRowItem key={row.id} row={row} />)
+                data.rows.map((row) => (
+                  <AppointmentRowItem key={row.id} row={row} />
+                ))
               ) : (
                 <tr>
                   <td
@@ -225,7 +230,9 @@ function FilterGroup({
               type="checkbox"
               name={name}
               value={option.value}
-              defaultChecked={!selected.length || selected.includes(option.value)}
+              defaultChecked={
+                !selected.length || selected.includes(option.value)
+              }
               className="mt-0.5 size-4 rounded border-border accent-primary"
             />
             <span>{option.label}</span>
@@ -236,7 +243,13 @@ function FilterGroup({
   );
 }
 
-function SummaryMetric({ label, value }: { label: string; value: React.ReactNode }) {
+function SummaryMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
   return (
     <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)]">
       <p className="text-sm text-muted-foreground">{label}</p>
@@ -258,14 +271,19 @@ function AppointmentRowItem({ row }: { row: AppointmentSummaryRow }) {
       </Td>
       <Td>{row.serviceName}</Td>
       <Td>{row.insuranceName}</Td>
-      <Td>{row.price == null ? "Adicionar preco" : formatCurrency(row.price)}</Td>
+      <Td>
+        {row.price == null ? "Adicionar preco" : formatCurrency(row.price)}
+      </Td>
       <Td>{row.source}</Td>
       <Td>
         <StatusBadge status={row.status} label={row.statusLabel} />
       </Td>
       <Td>
         <div className="grid gap-1">
-          <StatusBadge status={row.paymentStatus} label={row.paymentStatusLabel} />
+          <StatusBadge
+            status={row.paymentStatus}
+            label={row.paymentStatusLabel}
+          />
           <span className="text-xs text-muted-foreground">
             {row.paymentMethodName}
           </span>

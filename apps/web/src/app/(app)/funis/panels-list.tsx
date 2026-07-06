@@ -64,10 +64,10 @@ export function PanelsList({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Pesquisar por painel"
-              className="h-11 w-full pr-11"
+              className="w-full pr-9"
             />
             <Search
-              className="pointer-events-none absolute right-3 top-1/2 size-5 -translate-y-1/2 text-placeholder"
+              className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-placeholder"
               aria-hidden="true"
             />
           </label>
@@ -130,7 +130,10 @@ function PanelCard({
                 {panel.name}
               </h2>
               {!panel.active ? (
-                <Badge variant="neutral" className="h-5 px-1.5 text-caption font-semibold uppercase">
+                <Badge
+                  variant="neutral"
+                  className="h-5 px-1.5 text-caption font-semibold uppercase"
+                >
                   Excluído
                 </Badge>
               ) : null}

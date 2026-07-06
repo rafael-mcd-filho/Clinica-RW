@@ -1,5 +1,6 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type * as React from "react";
+import { pdfTheme } from "@/lib/pdf/pdf-theme";
 
 export type ReceiptPdfData = {
   clinic: {
@@ -31,38 +32,38 @@ export type ReceiptPdfData = {
 
 const styles = StyleSheet.create({
   amountBox: {
-    borderColor: "#cbd5e1",
+    borderColor: pdfTheme.colors.borderStrong,
     borderRadius: 6,
     borderWidth: 1,
     marginTop: 18,
     padding: 16,
   },
   amountLabel: {
-    color: "#64748b",
+    color: pdfTheme.colors.muted,
     fontSize: 10,
   },
   amountValue: {
-    color: "#0f172a",
+    color: pdfTheme.colors.heading,
     fontSize: 20,
     fontWeight: 700,
     marginTop: 8,
   },
   body: {
-    color: "#172033",
-    fontFamily: "Helvetica",
+    color: pdfTheme.colors.foreground,
+    fontFamily: pdfTheme.font.family,
     fontSize: 11,
     lineHeight: 1.45,
     padding: 48,
   },
   footer: {
     bottom: 28,
-    color: "#64748b",
-    fontSize: 7,
+    color: pdfTheme.colors.muted,
+    fontSize: pdfTheme.text.caption,
     left: 48,
     position: "absolute",
   },
   header: {
-    borderBottomColor: "#d9e2ec",
+    borderBottomColor: pdfTheme.colors.border,
     borderBottomWidth: 1,
     paddingBottom: 16,
   },
@@ -70,8 +71,8 @@ const styles = StyleSheet.create({
     marginTop: 7,
   },
   muted: {
-    color: "#64748b",
-    fontSize: 8,
+    color: pdfTheme.colors.muted,
+    fontSize: pdfTheme.text.label,
     marginTop: 4,
   },
   signature: {
@@ -79,7 +80,7 @@ const styles = StyleSheet.create({
     marginTop: 96,
   },
   signatureLine: {
-    borderTopColor: "#334155",
+    borderTopColor: pdfTheme.colors.secondary,
     borderTopWidth: 1,
     width: 235,
   },
@@ -88,7 +89,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   title: {
-    color: "#0f172a",
+    color: pdfTheme.colors.heading,
     fontSize: 18,
     fontWeight: 700,
     marginBottom: 32,
@@ -96,7 +97,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   tradeName: {
-    color: "#0f172a",
+    color: pdfTheme.colors.heading,
     fontSize: 15,
     fontWeight: 700,
   },

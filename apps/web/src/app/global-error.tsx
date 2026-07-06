@@ -35,7 +35,7 @@ export default function GlobalError({
           }}
         >
           <h1 style={{ margin: 0, fontSize: "1.25rem" }}>Hi Clinic</h1>
-          <p style={{ margin: 0, color: "#475569" }}>
+          <p style={{ margin: 0, color: "slategray" }}>
             Não foi possível carregar a aplicação.
           </p>
           <Button type="button" onClick={() => unstable_retry()}>

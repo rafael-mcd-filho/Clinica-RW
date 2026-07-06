@@ -337,7 +337,7 @@ function Sidebar({
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-bold text-sidebar-foreground">
+            <p className="truncate text-heading-sm font-semibold text-sidebar-foreground">
               {brandName}
             </p>
             <p className="truncate text-xs text-sidebar-muted-foreground">
@@ -400,7 +400,7 @@ function SidebarLink({
       href={item.href}
       onClick={onNavigate}
       className={cn(
-        "relative flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors duration-200 ease-[var(--ease-out)]",
+        "relative flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
         active
           ? "bg-sidebar-active text-sidebar-active-foreground before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
           : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
@@ -441,7 +441,7 @@ function SidebarAccount({
         <Link
           href="/perfil"
           onClick={onNavigate}
-          className="flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground transition-colors duration-200 ease-[var(--ease-out)] hover:bg-sidebar-hover hover:text-sidebar-foreground"
+          className="flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-sidebar-hover hover:text-sidebar-foreground"
         >
           <UserRound className="size-4" aria-hidden="true" />
           Meu perfil
@@ -449,7 +449,7 @@ function SidebarAccount({
 
         <form action={signOut}>
           <button
-            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground transition-colors duration-200 ease-[var(--ease-out)] hover:bg-sidebar-hover hover:text-sidebar-foreground"
+            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-sidebar-hover hover:text-sidebar-foreground"
             type="submit"
           >
             <LogOut className="size-4" aria-hidden="true" />

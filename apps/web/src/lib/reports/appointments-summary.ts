@@ -232,10 +232,7 @@ export async function buildAppointmentSummaryData({
           .in("appointment_id", appointmentIds)
           .returns<OnlineRequestRow[]>(),
       ])
-    : [
-        { data: [] as ReceivableRow[] },
-        { data: [] as OnlineRequestRow[] },
-      ];
+    : [{ data: [] as ReceivableRow[] }, { data: [] as OnlineRequestRow[] }];
 
   const receivableByAppointment = new Map(
     (receivablesResult.data ?? [])
@@ -419,7 +416,10 @@ function normalizeDateParam(value: string | undefined, fallback: string) {
 }
 
 function normalizeIdParam(value: string | undefined) {
-  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  return value &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
     ? value
     : "";
 }

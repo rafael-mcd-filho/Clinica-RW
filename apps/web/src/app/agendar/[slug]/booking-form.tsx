@@ -104,6 +104,21 @@ export function BookingForm({
   const [selectedDayState, setSelectedDayState] = useState("");
   const [dayWindowStart, setDayWindowStart] = useState(0);
   const [slotIdState, setSlotId] = useState("");
+  const [prevSelection, setPrevSelection] = useState({
+    procedureId,
+    scheduleId,
+  });
+
+  if (
+    prevSelection.procedureId !== procedureId ||
+    prevSelection.scheduleId !== scheduleId
+  ) {
+    setPrevSelection({ procedureId, scheduleId });
+    setSelectedDayState("");
+    setSlotId("");
+    setDayWindowStart(0);
+  }
+
   const matchingSlots = useMemo(
     () =>
       slots.filter(
@@ -176,12 +191,6 @@ export function BookingForm({
   useEffect(() => {
     if (codeState.success) toast.success(codeState.success);
   }, [codeState]);
-
-  useEffect(() => {
-    setSelectedDayState("");
-    setSlotId("");
-    setDayWindowStart(0);
-  }, [procedureId, scheduleId]);
 
   return (
     <Card>
