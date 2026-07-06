@@ -1,0 +1,29 @@
+{
+  "name": "hi-clinic",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace web run dev",
+    "build": "npm --workspace web run build",
+    "lint": "npm --workspace web run lint",
+    "typecheck": "npm --workspace web run typecheck",
+    "test": "npm --workspace web run test",
+    "format:check": "npm --workspace web run format:check",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run format:check && npm run build",
+    "bootstrap:super-admin": "node scripts/create-super-admin.mjs",
+    "seed:demo-patients": "node scripts/seed-demo-patients.mjs",
+    "seed:demo-agenda": "node scripts/seed-demo-agenda.mjs",
+    "seed:demo-clinical": "node scripts/seed-demo-clinical.mjs",
+    "seed:demo-documents": "node scripts/seed-demo-documents.mjs",
+    "seed:demo-finance": "node scripts/seed-demo-finance.mjs",
+    "seed:demo-funnels": "node scripts/seed-demo-funnels.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}

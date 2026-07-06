@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+
+# build outputs
+.next/
+out/
+dist/
+coverage/
+
+# environment
+.env
+.env.*
+!.env.example
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# local tools
+.vercel/
+.turbo/
+.supabase/
+supabase/.temp/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+
+# backups e logs locais
+*.rar
+.next-dev-*.log

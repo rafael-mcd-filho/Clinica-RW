@@ -1,0 +1,294 @@
+@import "tailwindcss";
+
+/*
+ * hi-clinic — design tokens (fonte da verdade: docs/design-system.md)
+ *
+ * Regras de ouro:
+ * - Nenhum hex fora deste arquivo. Componentes usam tokens semânticos.
+ * - A família do primary (hover/muted/ring/sidebar-active) é DERIVADA de
+ *   --primary via color-mix() porque o primary é configurável por white-label
+ *   (platform_settings.primary_color é injetado no <body> pelo layout).
+ * - Durações de animação saem apenas de --motion-*.
+ */
+:root {
+  --background: #f1f5f9;
+  --foreground: #1e293b;
+
+  --card: #ffffff;
+  --card-foreground: #1e293b;
+  --popover: #ffffff;
+  --popover-foreground: #1e293b;
+
+  /* Azul clínico profundo — sobrescrito por white-label quando configurado. */
+  --primary: #1e4fa3;
+  --primary-hover: color-mix(in srgb, var(--primary) 85%, black);
+  --primary-foreground: #ffffff;
+  --primary-muted: color-mix(in srgb, var(--primary) 8%, white);
+  --primary-muted-hover: color-mix(in srgb, var(--primary) 14%, white);
+  --primary-strong: color-mix(in srgb, var(--primary) 78%, black);
+
+  --secondary: #f8fafc;
+  --secondary-foreground: #475569;
+
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+
+  --accent: #f8fafc;
+  --accent-foreground: #1e293b;
+
+  --success: #16a34a;
+  --success-muted: #dcfce7;
+  --success-foreground: #166534;
+  --warning: #d97706;
+  --warning-muted: #fef3c7;
+  --warning-foreground: #92400e;
+  --destructive: #dc2626;
+  --destructive-hover: #b91c1c;
+  --destructive-muted: #fef2f2;
+  --destructive-foreground: #991b1b;
+
+  /* Superfície rebaixada: fundo de coluna de kanban, "wells". */
+  --surface-sunken: #e8edf4;
+
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --input: #e2e8f0;
+  --ring: var(--primary);
+  --placeholder: #94a3b8;
+
+  /* Radius: controles (botão/input/badge) = md; superfícies (card/modal) = lg. */
+  --radius: 0.75rem;
+
+  /* Elevação neutra e discreta — nunca colorida, nunca decorativa. */
+  --shadow-soft:
+    0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.06);
+  --shadow-hover:
+    0 2px 4px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-md:
+    0 4px 12px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.16);
+
+  --motion-fast: 150ms;
+  --motion-normal: 240ms;
+  --motion-drawer: 280ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Subsistema deliberado: shell escura sobre canvas claro (padrão Vercel/Linear).
+     Estados ativos derivam do primary para acompanhar o white-label. */
+  --sidebar-bg: #0f172a;
+  --sidebar-bg-elevated: #182338;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-foreground: #e2e8f0;
+  --sidebar-muted-foreground: #8b9bb4;
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+  --sidebar-active-bg: color-mix(in srgb, var(--primary) 26%, transparent);
+  --sidebar-active-foreground: color-mix(in srgb, var(--primary) 40%, white);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-muted: var(--primary-muted);
+  --color-primary-muted-hover: var(--primary-muted-hover);
+  --color-primary-strong: var(--primary-strong);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-muted: var(--success-muted);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-muted: var(--warning-muted);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-muted: var(--destructive-muted);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-placeholder: var(--placeholder);
+  --font-sans: var(--font-plex);
+
+  --radius-md: 0.5rem;
+  --radius-lg: var(--radius);
+
+  /*
+   * Escala tipográfica fechada — todo tamanho de fonte da UI sai daqui.
+   * caption 11 · label 12 · body-sm 13 · body 14 · heading-sm 16 ·
+   * heading 18 · heading-lg 24 · display 30
+   */
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 1rem;
+  --text-label: 0.75rem;
+  --text-label--line-height: 1rem;
+  --text-body-sm: 0.8125rem;
+  --text-body-sm--line-height: 1.25rem;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.25rem;
+  --text-heading-sm: 1rem;
+  --text-heading-sm--line-height: 1.5rem;
+  --text-heading: 1.125rem;
+  --text-heading--line-height: 1.75rem;
+  --text-heading-lg: 1.5rem;
+  --text-heading-lg--line-height: 2rem;
+  --text-display: 1.875rem;
+  --text-display--line-height: 2.25rem;
+
+  /* Animações nomeadas — sempre com duração/ease dos tokens de motion. */
+  --animate-content-enter: content-enter var(--motion-fast) var(--ease-out)
+    both;
+  --animate-panel-enter: content-enter var(--motion-normal) var(--ease-out)
+    both;
+  --animate-fade-in: fade-in var(--motion-fast) var(--ease-out) both;
+  --animate-dialog-in: dialog-in var(--motion-normal) var(--ease-out) both;
+
+  --color-sidebar: var(--sidebar-bg);
+  --color-sidebar-elevated: var(--sidebar-bg-elevated);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --color-sidebar-hover: var(--sidebar-hover-bg);
+  --color-sidebar-active: var(--sidebar-active-bg);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-plex), "Segoe UI", Arial, Helvetica, sans-serif;
+}
+
+::placeholder {
+  color: var(--placeholder);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  outline-color: var(--ring);
+}
+
+/* Traço refinado e uniforme para toda a iconografia lucide. */
+svg.lucide {
+  stroke-width: 1.75;
+}
+
+/*
+ * Prévia de formulário gerado por JSON Schema (@rjsf) no construtor de
+ * templates do prontuário: alinha o markup cru do rjsf aos tokens.
+ */
+.rjsf-preview fieldset {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.rjsf-preview legend {
+  padding: 0;
+  font-size: var(--text-label);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.rjsf-preview label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.rjsf-preview input,
+.rjsf-preview select,
+.rjsf-preview textarea {
+  width: 100%;
+  height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--input);
+  border-radius: 0.5rem;
+  background: var(--card);
+  font-size: var(--text-body-sm);
+  color: var(--foreground);
+}
+
+.rjsf-preview textarea {
+  height: auto;
+  min-height: 4.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.rjsf-preview input:disabled,
+.rjsf-preview select:disabled,
+.rjsf-preview textarea:disabled {
+  opacity: 0.6;
+  background: var(--secondary);
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}

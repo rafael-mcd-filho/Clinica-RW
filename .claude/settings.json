@@ -1,0 +1,47 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx prettier *)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(type \"supabase\\\\.temp\\\\project-ref\")",
+      "Bash(echo.)",
+      "Bash(type \"supabase\\\\.temp\\\\linked-project.json\")",
+      "mcp__claude_ai_Supabase__get_project",
+      "Read(//c/Users/adami/.claude/plugins/marketplaces/ui-ux-pro-max-skill/.claude/skills/ui-ux-pro-max/**)",
+      "Bash(python scripts/search.py \"healthcare clinic management SaaS dashboard admin panel\" --design-system -p \"Hi Clinic\" -f markdown)",
+      "PowerShell($p=\"C:\\\\Users\\\\adami\\\\.claude\\\\plugins\\\\marketplaces\\\\ui-ux-pro-max-skill\\\\.claude\\\\skills\\\\ui-ux-pro-max\"; foreach\\($f in \"scripts\",\"data\",\"SKILL.md\"\\){ $fp=Join-Path $p $f; \"=== $f \\($\\(\\(Get-Item $fp\\).Length\\) bytes\\) ===\"; Get-Content $fp -TotalCount 5 })",
+      "Bash(cd \"C:\\\\Users\\\\adami\\\\.claude\\\\plugins\\\\marketplaces\\\\ui-ux-pro-max-skill\\\\src\\\\ui-ux-pro-max\" && python scripts/search.py \"healthcare clinic management SaaS dashboard admin panel\" --design-system -p \"Hi Clinic\" -f markdown 2>&1)",
+      "Read(//c/Users/adami/.claude/plugins/marketplaces/ui-ux-pro-max-skill/src/ui-ux-pro-max/**)",
+      "Bash(python scripts/search.py \"professional healthcare clean modern neutral\" --domain typography -n 4)",
+      "Bash(python scripts/search.py \"healthcare saas medical clinic\" --domain color -n 4)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(python scripts/search.py \"contrast shadow elevation border surface hierarchy\" --domain ux -n 10)",
+      "Bash(python scripts/search.py \"modal dialog primary action button placement destructive\" --domain ux -n 10)",
+      "Bash(python scripts/search.py \"form radio checkbox loading empty state helper disabled\" --domain ux -n 10)",
+      "Bash(python scripts/search.py \"data-dense dashboard minimalism\" --domain style -n 2)",
+      "Bash(echo \"TSEXIT:$?\")",
+      "Bash(node apps/web/node_modules/prettier/bin/prettier.cjs --write \"apps/web/src/app/\\(app\\)/empresas/actions.ts\" \"apps/web/src/app/\\(app\\)/usuarios/actions.ts\" \"apps/web/src/components/ui/logo-upload-field.tsx\" \"apps/web/src/lib/validation/br.ts\")",
+      "Bash(node -e \"const p=require\\('./apps/web/node_modules/prettier/package.json'\\); console.log\\(JSON.stringify\\(p.bin\\)\\)\")",
+      "PowerShell(& \"node_modules\\\\.bin\\\\prettier.cmd\" --write \"apps/web/src/app/\\(app\\)/empresas/actions.ts\" \"apps/web/src/app/\\(app\\)/usuarios/actions.ts\" \"apps/web/src/components/ui/logo-upload-field.tsx\" \"apps/web/src/lib/validation/br.ts\")",
+      "Bash(npx eslint *)",
+      "Bash(xargs grep -l \"radius\")",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(curl -s http://localhost:3000/login -o /tmp/login_page.html -w \"HTTP %{http_code}\\\\n\")",
+      "Read(//tmp/**)",
+      "Bash(rm -f /tmp/login_page.html)",
+      "Bash(curl -s http://localhost:3000/login -o /dev/null -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(command -v psql)",
+      "Bash(psql --version)",
+      "Bash(mkdir -p \"d:/Biblioteca/Documentos/Projetos/Clinica-RW/apps/web/src/app/\\(app\\)/funis/[id]\")"
+    ],
+    "additionalDirectories": [
+      "d:\\Biblioteca\\Documentos\\Projetos\\Clinica-RW\\apps\\web\\src\\app\\(app)\\empresas\\[id]",
+      "\\tmp",
+      "d:\\Biblioteca\\Documentos\\Projetos\\Clinica-RW\\apps\\web\\src\\app\\(app)\\funis"
+    ]
+  }
+}
