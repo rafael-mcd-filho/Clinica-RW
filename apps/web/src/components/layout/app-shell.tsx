@@ -295,7 +295,10 @@ export function AppShell({
 
         <main
           className={cn(
-            "mx-auto min-h-[calc(100svh-3.5rem)] min-w-0 w-full px-4 py-6 md:px-6",
+            "mx-auto min-h-[calc(100svh-3.5rem)] min-w-0 w-full",
+            pathname.startsWith("/atendimento")
+              ? "p-0"
+              : "px-4 py-6 md:px-6",
             contentWidthClass(pathname),
           )}
         >
@@ -316,6 +319,9 @@ export function AppShell({
 }
 
 function contentWidthClass(pathname: string) {
+  if (pathname.startsWith("/atendimento")) {
+    return "max-w-none";
+  }
   if (pathname.startsWith("/agenda") || /^\/funis\/[^/]+/.test(pathname)) {
     return "max-w-[112rem]";
   }

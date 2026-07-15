@@ -5,6 +5,8 @@ import {
   CheckCheck,
   Inbox,
   MessagesSquare,
+  PanelRightClose,
+  PanelRightOpen,
   Search,
   Send,
   Sparkles,
@@ -87,6 +89,7 @@ export function AttendanceInbox({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const selectedIdRef = useRef<string | null>(null);
   const supabaseRef = useRef(createSupabaseBrowserClient());
 
@@ -213,8 +216,40 @@ export function AttendanceInbox({
     }
   }
 
+  function addOptimisticMessage(message: ConversationMessage) {
+    setMessages((current) => [...current, message]);
+    if (selectedIdRef.current) {
+      upsertConversation({
+        id: selectedIdRef.current,
+        lastMessageAt: message.createdAt,
+        lastMessagePreview: message.body,
+        status: "open",
+      });
+    }
+  }
+
+  function confirmOptimisticMessage(tempId: string, message: ConversationMessage) {
+    setMessages((current) => {
+      const withoutServerDuplicate = current.filter(
+        (item) => item.id !== message.id,
+      );
+      return withoutServerDuplicate.map((item) =>
+        item.id === tempId ? message : item,
+      );
+    });
+  }
+
+  function removeOptimisticMessage(tempId: string) {
+    setMessages((current) => current.filter((item) => item.id !== tempId));
+  }
+
   return (
-    <div className="grid min-h-[36rem] grid-cols-1 gap-4 lg:h-[calc(100vh-12rem)] lg:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)_20rem]">
+    <div
+      className={cn(
+        "grid h-[calc(100svh-var(--app-sticky-offset))] min-h-[36rem] grid-cols-1 overflow-hidden bg-card lg:grid-cols-[21rem_minmax(0,1fr)]",
+        detailsOpen && "xl:grid-cols-[21rem_minmax(0,1fr)_19rem]",
+      )}
+    >
       <ConversationListColumn
         tab={tab}
         counts={counts}
@@ -235,6 +270,11 @@ export function AttendanceInbox({
           messages={messages}
           canAttend={canAttend}
           quickReplies={quickReplies}
+          detailsOpen={detailsOpen}
+          onToggleDetails={() => setDetailsOpen((value) => !value)}
+          onOptimisticMessage={addOptimisticMessage}
+          onMessageConfirmed={confirmOptimisticMessage}
+          onMessageFailed={removeOptimisticMessage}
           onStatusChange={(status) =>
             upsertConversation({ id: selected.id, status })
           }
@@ -251,7 +291,7 @@ export function AttendanceInbox({
         />
       )}
 
-      {selected ? (
+      {selected && detailsOpen ? (
         <ContactPanel
           conversation={selected}
           organizationId={organizationId}
@@ -267,15 +307,7 @@ export function AttendanceInbox({
             })
           }
         />
-      ) : (
-        <div className="hidden xl:block">
-          <EmptyPanel
-            icon={UserRound}
-            title="Sem contato selecionado"
-            description="Paciente, etiquetas e reservas aparecem aqui."
-          />
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -305,8 +337,8 @@ function ConversationListColumn({
 }) {
   const connected = instance?.status === "connected";
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+    <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-card">
+      <div className="flex h-12 items-center justify-between gap-2 border-b border-border px-4">
         <span className="inline-flex items-center gap-1.5 text-label text-muted-foreground">
           {connected ? (
             <Wifi className="size-3.5 text-success" aria-hidden="true" />
@@ -334,7 +366,7 @@ function ConversationListColumn({
             aria-hidden="true"
           />
         </label>
-        <div className="mt-3 inline-flex w-full rounded-md bg-muted p-0.5">
+        <div className="mt-3 grid w-full grid-cols-3 gap-1 rounded-lg bg-muted p-1">
           {tabs.map((item) => (
             <Button
               key={item}
@@ -343,7 +375,7 @@ function ConversationListColumn({
               size="sm"
               onClick={() => onTabChange(item)}
               className={cn(
-                "flex-1 gap-1 px-2 text-label",
+                "min-w-0 gap-1 px-1 text-label",
                 tab === item
                   ? "bg-card text-foreground shadow-[var(--shadow-soft)] hover:bg-card"
                   : "",
@@ -405,17 +437,20 @@ function ConversationRow({
       variant="ghost"
       onClick={onSelect}
       className={cn(
-        "grid h-auto w-full grid-cols-[1fr_auto] gap-x-2 gap-y-1 rounded-none px-3 py-3 text-left font-normal",
-        active ? "bg-primary-muted hover:bg-primary-muted" : "",
+        "grid h-auto min-h-[4.5rem] w-full grid-cols-[2.5rem_1fr_auto] gap-x-2 gap-y-0.5 rounded-none px-3 py-2.5 text-left font-normal",
+        active ? "border-l-2 border-primary bg-primary-muted pl-2.5 hover:bg-primary-muted" : "",
       )}
     >
+      <span className="row-span-3 flex size-10 items-center justify-center rounded-full bg-primary-muted text-sm font-semibold text-primary">
+        {initials(item.contactName)}
+      </span>
       <span className="truncate text-body-sm font-semibold text-foreground">
         {item.contactName}
       </span>
       <span className="text-caption tabular-nums text-muted-foreground">
         {formatTime(item.lastMessageAt)}
       </span>
-      <span className="col-span-2 flex items-center gap-2">
+      <span className="col-start-2 col-end-4 flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-label text-muted-foreground">
           {item.lastMessagePreview ?? "Sem mensagens"}
         </span>
@@ -426,7 +461,7 @@ function ConversationRow({
         ) : null}
       </span>
       {item.patientName || item.tags.length ? (
-        <span className="col-span-2 flex flex-wrap items-center gap-1">
+        <span className="col-start-2 col-end-4 flex flex-wrap items-center gap-1">
           {item.patientName ? (
             <Badge variant="neutral" className="h-5 px-1.5 text-caption">
               {item.patientName}
@@ -452,12 +487,22 @@ function ConversationThread({
   messages,
   canAttend,
   quickReplies,
+  detailsOpen,
+  onToggleDetails,
+  onOptimisticMessage,
+  onMessageConfirmed,
+  onMessageFailed,
   onStatusChange,
 }: {
   conversation: ConversationListItem;
   messages: ConversationMessage[];
   canAttend: boolean;
   quickReplies: QuickReplyTemplate[];
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
+  onOptimisticMessage: (message: ConversationMessage) => void;
+  onMessageConfirmed: (tempId: string, message: ConversationMessage) => void;
+  onMessageFailed: (tempId: string) => void;
   onStatusChange: (status: ConversationStatus) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -479,18 +524,27 @@ function ConversationThread({
   }
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="min-w-0">
+    <section className="flex min-h-0 flex-col overflow-hidden bg-card">
+      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-border px-4 py-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-sm font-semibold text-primary">
+            {initials(conversation.contactName)}
+          </div>
+          <div className="min-w-0">
           <p className="truncate text-body-sm font-semibold">
             {conversation.contactName}
           </p>
           <p className="truncate text-label tabular-nums text-muted-foreground">
             {formatPhone(conversation.contactPhone)}
           </p>
+          </div>
         </div>
-        {canAttend ? (
-          <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Badge variant="neutral" className="hidden sm:inline-flex">
+            {conversationStatusLabels[conversation.status]}
+          </Badge>
+          {canAttend ? (
+            <>
             {conversation.status !== "resolved" ? (
               <Button
                 type="button"
@@ -513,13 +567,24 @@ function ConversationThread({
                 Reabrir
               </Button>
             )}
-          </div>
-        ) : null}
+            </>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onToggleDetails}
+            aria-label={detailsOpen ? "Ocultar detalhes" : "Mostrar detalhes"}
+            title={detailsOpen ? "Ocultar detalhes" : "Mostrar detalhes"}
+          >
+            {detailsOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
+          </Button>
+        </div>
       </header>
 
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-surface-sunken px-4 py-4"
+        className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-surface-sunken px-4 py-5 sm:px-6"
       >
         {messages.length ? (
           messages.map((message) => (
@@ -536,6 +601,9 @@ function ConversationThread({
         <MessageComposer
           conversationId={conversation.id}
           quickReplies={quickReplies}
+          onOptimisticMessage={onOptimisticMessage}
+          onMessageConfirmed={onMessageConfirmed}
+          onMessageFailed={onMessageFailed}
         />
       ) : (
         <div className="border-t border-border px-4 py-3 text-label text-muted-foreground">
@@ -552,10 +620,10 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
     <div className={cn("flex", outbound ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[80%] rounded-lg px-3 py-2 text-body-sm shadow-[var(--shadow-soft)]",
+          "max-w-[82%] rounded-xl px-3 py-2 text-body-sm shadow-[var(--shadow-soft)] sm:max-w-[68%]",
           outbound
-            ? "bg-primary text-primary-foreground"
-            : "bg-card text-foreground",
+            ? "rounded-br-sm bg-primary-muted text-foreground"
+            : "rounded-bl-sm border border-border bg-card text-foreground",
         )}
       >
         {message.body ? (
@@ -566,11 +634,13 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
         <p
           className={cn(
             "mt-1 flex items-center justify-end gap-1 text-caption tabular-nums",
-            outbound ? "text-primary-foreground/75" : "text-muted-foreground",
+            "text-muted-foreground",
           )}
         >
           {formatTime(message.createdAt)}
-          {outbound && message.status === "read" ? (
+          {outbound && message.status === "queued" ? (
+            <span className="italic">enviando…</span>
+          ) : outbound && message.status === "read" ? (
             <CheckCheck className="size-3.5" aria-hidden="true" />
           ) : null}
         </p>
@@ -582,9 +652,15 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
 function MessageComposer({
   conversationId,
   quickReplies,
+  onOptimisticMessage,
+  onMessageConfirmed,
+  onMessageFailed,
 }: {
   conversationId: string;
   quickReplies: QuickReplyTemplate[];
+  onOptimisticMessage: (message: ConversationMessage) => void;
+  onMessageConfirmed: (tempId: string, message: ConversationMessage) => void;
+  onMessageFailed: (tempId: string) => void;
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -594,12 +670,28 @@ function MessageComposer({
   async function send() {
     const value = text.trim();
     if (!value || sending) return;
+    const tempId = `optimistic-${crypto.randomUUID()}`;
+    onOptimisticMessage({
+      id: tempId,
+      direction: "outbound",
+      type: "text",
+      body: value,
+      mediaUrl: null,
+      mediaMimeType: null,
+      status: "queued",
+      aiSuggested: false,
+      senderUserName: null,
+      createdAt: new Date().toISOString(),
+    });
+    setText("");
     setSending(true);
     const result = await sendMessageAction(conversationId, value);
     setSending(false);
-    if (result.ok) {
-      setText("");
+    if (result.ok && result.message) {
+      onMessageConfirmed(tempId, result.message);
     } else {
+      onMessageFailed(tempId);
+      setText((current) => current || value);
       toast.error(result.error ?? "Falha ao enviar.");
     }
   }
@@ -616,7 +708,7 @@ function MessageComposer({
   }
 
   return (
-    <div className="border-t border-border p-3">
+    <div className="border-t border-border bg-card px-3 py-2.5">
       {showTemplates && quickReplies.length ? (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {quickReplies.map((template) => (
@@ -635,7 +727,7 @@ function MessageComposer({
           ))}
         </div>
       ) : null}
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-2 rounded-2xl border border-border bg-background p-1.5 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
         <Textarea
           value={text}
           onChange={(event) => setText(event.target.value)}
@@ -646,14 +738,14 @@ function MessageComposer({
             }
           }}
           placeholder="Escreva uma mensagem…"
-          rows={2}
-          className="min-h-11 flex-1 resize-none"
+          rows={1}
+          className="min-h-10 flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
         />
-        <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1">
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
             disabled={suggesting}
             onClick={suggest}
             title="Sugerir resposta com IA"
@@ -663,12 +755,12 @@ function MessageComposer({
           </Button>
           <Button
             type="button"
-            size="sm"
+            size="icon"
             disabled={sending || !text.trim()}
             onClick={send}
           >
             <Send className="size-4" aria-hidden="true" />
-            Enviar
+            <span className="sr-only">Enviar mensagem</span>
           </Button>
         </div>
       </div>
@@ -759,7 +851,7 @@ function ContactPanel({
   }
 
   return (
-    <aside className="hidden min-h-0 flex-col overflow-y-auto rounded-lg border border-border bg-card shadow-[var(--shadow-soft)] xl:flex">
+    <aside className="hidden min-h-0 flex-col overflow-y-auto border-l border-border bg-card xl:flex">
       <div className="border-b border-border p-4">
         <div className="flex items-center gap-3">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-muted text-body-sm font-semibold text-primary">

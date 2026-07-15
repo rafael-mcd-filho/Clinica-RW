@@ -8,10 +8,15 @@ import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest";
 import {
   toMessagePreview,
+  type ConversationMessage,
   type ConversationStatus,
 } from "@/lib/whatsapp/types";
 
-export type AttendanceResult = { ok: boolean; error?: string };
+export type AttendanceResult = {
+  ok: boolean;
+  error?: string;
+  message?: ConversationMessage;
+};
 
 async function requireAttendant() {
   const context = await getRequestContext();
@@ -128,17 +133,28 @@ export async function sendMessageAction(
   }
 
   const nowIso = new Date().toISOString();
-  await supabase.from("whatsapp_messages").insert({
-    organization_id: auth.organizationId,
-    conversation_id: conversationId,
-    wa_message_id: waMessageId,
-    direction: "outbound",
-    sender_user_id: auth.userId,
-    message_type: "text",
-    body: trimmed,
-    status: "sent",
-    sent_at: nowIso,
-  });
+  const { data: storedMessage, error: insertError } = await supabase
+    .from("whatsapp_messages")
+    .insert({
+      organization_id: auth.organizationId,
+      conversation_id: conversationId,
+      wa_message_id: waMessageId,
+      direction: "outbound",
+      sender_user_id: auth.userId,
+      message_type: "text",
+      body: trimmed,
+      status: "sent",
+      sent_at: nowIso,
+    })
+    .select("id, created_at")
+    .single<{ id: string; created_at: string }>();
+
+  if (insertError || !storedMessage) {
+    return {
+      ok: false,
+      error: insertError?.message ?? "A mensagem foi enviada, mas não pôde ser registrada.",
+    };
+  }
 
   await supabase
     .from("whatsapp_conversations")
@@ -151,7 +167,21 @@ export async function sendMessageAction(
     .eq("organization_id", auth.organizationId)
     .eq("id", conversationId);
 
-  return { ok: true };
+  return {
+    ok: true,
+    message: {
+      id: storedMessage.id,
+      direction: "outbound",
+      type: "text",
+      body: trimmed,
+      mediaUrl: null,
+      mediaMimeType: null,
+      status: "sent",
+      aiSuggested: false,
+      senderUserName: null,
+      createdAt: storedMessage.created_at,
+    },
+  };
 }
 
 export async function assignToMeAction(

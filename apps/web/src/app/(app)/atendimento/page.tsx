@@ -1,6 +1,4 @@
-import { MessagesSquare } from "lucide-react";
 import { AttendanceInbox } from "./attendance-inbox";
-import { PageHeader } from "@/components/ui/page-header";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
@@ -182,12 +180,7 @@ export default async function AtendimentoPage() {
   }));
 
   return (
-    <div className="flex min-h-0 flex-col gap-6">
-      <PageHeader
-        title="Atendimento"
-        description="Converse com pacientes e leads pelo WhatsApp em um só lugar."
-        icon={MessagesSquare}
-      />
+    <div className="min-h-0">
       <AttendanceInbox
         organizationId={organizationId}
         currentUserId={currentUserId}
