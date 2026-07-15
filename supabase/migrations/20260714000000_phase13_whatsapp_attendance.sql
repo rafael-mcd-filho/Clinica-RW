@@ -369,7 +369,7 @@ insert into public.profile_permissions (profile_id, permission_id)
 select profiles.id, permissions.id
 from grants
 join public.profiles
-  on profiles.name = grants.profile_name and profiles.organization_id is null
+  on profiles.name = grants.profile_name
 join public.permissions on permissions.code = grants.permission_code
 on conflict (profile_id, permission_id) do nothing;
 

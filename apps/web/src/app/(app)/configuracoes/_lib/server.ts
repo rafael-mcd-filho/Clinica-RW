@@ -78,6 +78,7 @@ export type CompanyConfigurationRoute =
   | "cadastros"
   | "agenda"
   | "agendamento-online"
+  | "whatsapp"
   | "tags-automacoes"
   | "modelos-clinicos";
 
@@ -88,6 +89,7 @@ export const companyConfigurationPaths: Record<
   cadastros: "/configuracoes/cadastros",
   agenda: "/configuracoes/agenda",
   "agendamento-online": "/configuracoes/agendamento-online",
+  whatsapp: "/configuracoes/whatsapp",
   "tags-automacoes": "/configuracoes/tags-automacoes",
   "modelos-clinicos": "/configuracoes/modelos-clinicos",
 };
@@ -100,6 +102,7 @@ const configurationPermissionCodes = [
   "agenda.configurar",
   "agenda.bloquear_horario",
   "clinico.criar_template",
+  "atendimento.configurar",
 ];
 
 type RequestContext = Awaited<ReturnType<typeof getRequestContext>>;
@@ -113,6 +116,7 @@ export type CompanyConfigurationAccess = {
   canBlockAgenda: boolean;
   canManageOnlineBooking: boolean;
   canCreateClinicalTemplate: boolean;
+  canConfigureWhatsApp: boolean;
 };
 
 type PlatformConfigurationAccess = {
@@ -151,6 +155,7 @@ export async function getConfigurationAccess(): Promise<ConfigurationAccess> {
     canCreateClinicalTemplate: context.permissionCodes.has(
       "clinico.criar_template",
     ),
+    canConfigureWhatsApp: context.permissionCodes.has("atendimento.configurar"),
   };
 }
 
@@ -169,6 +174,7 @@ export function getFirstCompanyConfigurationPath(
   if (access.canCreateClinicalTemplate) {
     return companyConfigurationPaths["modelos-clinicos"];
   }
+  if (access.canConfigureWhatsApp) return companyConfigurationPaths.whatsapp;
   return null;
 }
 
@@ -186,6 +192,8 @@ export function canAccessCompanyConfigurationRoute(
       return access.canManageOnlineBooking;
     case "modelos-clinicos":
       return access.canCreateClinicalTemplate;
+    case "whatsapp":
+      return access.canConfigureWhatsApp;
   }
 }
 

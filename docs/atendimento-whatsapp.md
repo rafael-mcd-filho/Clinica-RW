@@ -24,7 +24,22 @@ Supabase (whatsapp_*)  ── Realtime ──▶  inbox (attendance-inbox.tsx)
 - **Realtime:** `whatsapp_messages`, `whatsapp_conversations` e
   `whatsapp_instances` estão na publication `supabase_realtime`.
 
-## Passo a passo para ligar (o que é seu)
+## Configuração pelo painel
+
+Administradores com `atendimento.configurar` podem acessar
+**Configurações → WhatsApp** para informar a URL da Evolution, o nome da
+instância e a API key. A tela valida as credenciais, mostra o estado da conexão,
+inicia o pareamento por QR Code/código e registra o webhook automaticamente.
+
+A API key e o segredo do webhook são criptografados com AES-256-GCM antes de
+serem gravados. O servidor precisa ter `WHATSAPP_CREDENTIALS_ENCRYPTION_KEY`;
+essa chave mestra nunca deve ser exposta no navegador ou trocada sem um processo
+de recriptografia das credenciais existentes.
+
+Se a instância já tiver outro webhook, o painel exibe a URL atual e exige uma
+confirmação explícita antes de substituí-la.
+
+## Passo a passo manual (alternativo)
 
 ### 1. Aplicar a migração
 

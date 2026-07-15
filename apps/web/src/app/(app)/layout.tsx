@@ -215,6 +215,13 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     });
   }
 
+  if (permissionCodes.has("atendimento.configurar")) {
+    configurationChildren.push({
+      href: "/configuracoes/whatsapp",
+      label: "WhatsApp",
+    });
+  }
+
   if (configurationChildren.length > 0) {
     navItems.push({
       href: "/configuracoes",

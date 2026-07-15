@@ -5,6 +5,7 @@ import {
   Globe2,
   Settings,
   Tags,
+  MessageCircle,
   type LucideIcon,
 } from "lucide-react";
 import type {
@@ -37,6 +38,11 @@ const pageMetadata: Record<
     icon: Globe2,
     description: (name) =>
       `Regras, perfil público e disponibilidade online de ${name}.`,
+  },
+  whatsapp: {
+    title: "WhatsApp",
+    icon: MessageCircle,
+    description: (name) => `Conexão da Evolution API e canal de atendimento de ${name}.`,
   },
   "tags-automacoes": {
     title: "Tags e automações",

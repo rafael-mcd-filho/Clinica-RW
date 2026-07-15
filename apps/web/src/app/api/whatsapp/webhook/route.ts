@@ -6,6 +6,7 @@ import {
   updateMessageStatus,
 } from "@/lib/whatsapp/ingest";
 import { type MessageStatus, type MessageType } from "@/lib/whatsapp/types";
+import { getInstanceWebhookSecret } from "@/lib/whatsapp/credentials";
 
 /**
  * Webhook da Evolution API. Recebe eventos de mensagem/conexão da instância e
@@ -16,22 +17,19 @@ import { type MessageStatus, type MessageType } from "@/lib/whatsapp/types";
  * no header `x-webhook-secret` (ou `apikey`).
  */
 export async function POST(request: NextRequest) {
-  const secret = getWebhookSecret();
-  if (secret) {
-    const provided =
-      request.headers.get("x-webhook-secret") ??
-      request.headers.get("apikey") ??
-      "";
-    if (provided !== secret) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
-
   let payload: EvolutionEvent;
   try {
     payload = (await request.json()) as EvolutionEvent;
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  }
+
+  const secret = payload.instance
+    ? (await getInstanceWebhookSecret(payload.instance)) ?? getWebhookSecret()
+    : getWebhookSecret();
+  if (secret) {
+    const provided = request.headers.get("x-webhook-secret") ?? request.headers.get("apikey") ?? "";
+    if (provided !== secret) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   try {

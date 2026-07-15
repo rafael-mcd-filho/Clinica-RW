@@ -1,4 +1,4 @@
-import { getEvolutionConfig } from "@/lib/whatsapp/config";
+import { getEvolutionConfig, type EvolutionConfig } from "@/lib/whatsapp/config";
 
 /**
  * Cliente HTTP fino para a Evolution API (v2). Todas as chamadas usam a API key
@@ -24,8 +24,9 @@ export type ConnectionState =
 async function evolutionFetch(
   path: string,
   init?: RequestInit,
+  providedConfig?: EvolutionConfig,
 ): Promise<unknown> {
-  const config = getEvolutionConfig();
+  const config = providedConfig ?? getEvolutionConfig();
   const response = await fetch(`${config.baseUrl}${path}`, {
     ...init,
     headers: {
@@ -71,12 +72,13 @@ export function toWhatsAppNumber(phone: string): string {
 export async function sendTextMessage(
   phone: string,
   text: string,
+  providedConfig?: EvolutionConfig,
 ): Promise<SendResult> {
-  const config = getEvolutionConfig();
+  const config = providedConfig ?? getEvolutionConfig();
   const payload = await evolutionFetch(`/message/sendText/${config.instance}`, {
     method: "POST",
     body: JSON.stringify({ number: toWhatsAppNumber(phone), text }),
-  });
+  }, config);
   return { waMessageId: extractMessageId(payload), raw: payload };
 }
 
@@ -105,10 +107,10 @@ export async function sendMediaMessage(input: {
 }
 
 /** Estado atual da conexão da instância. */
-export async function getConnectionState(): Promise<ConnectionState> {
-  const config = getEvolutionConfig();
+export async function getConnectionState(providedConfig?: EvolutionConfig): Promise<ConnectionState> {
+  const config = providedConfig ?? getEvolutionConfig();
   const payload = await evolutionFetch(
-    `/instance/connectionState/${config.instance}`,
+    `/instance/connectionState/${config.instance}`, undefined, config,
   );
   const state =
     payload && typeof payload === "object" && "instance" in payload
@@ -118,12 +120,12 @@ export async function getConnectionState(): Promise<ConnectionState> {
 }
 
 /** Inicia a conexão e retorna o QR code (base64) para parear o número. */
-export async function connectInstance(): Promise<{
+export async function connectInstance(providedConfig?: EvolutionConfig): Promise<{
   qrBase64: string | null;
   pairingCode: string | null;
 }> {
-  const config = getEvolutionConfig();
-  const payload = await evolutionFetch(`/instance/connect/${config.instance}`);
+  const config = providedConfig ?? getEvolutionConfig();
+  const payload = await evolutionFetch(`/instance/connect/${config.instance}`, undefined, config);
   if (payload && typeof payload === "object") {
     const record = payload as Record<string, unknown>;
     return {
@@ -136,8 +138,15 @@ export async function connectInstance(): Promise<{
 }
 
 /** Registra a URL de webhook da instância para receber eventos de mensagem. */
-export async function setInstanceWebhook(url: string): Promise<void> {
-  const config = getEvolutionConfig();
+export async function getInstanceWebhook(providedConfig?: EvolutionConfig): Promise<{ enabled: boolean; url: string | null }> {
+  const config = providedConfig ?? getEvolutionConfig();
+  const payload = await evolutionFetch(`/webhook/find/${config.instance}`, undefined, config);
+  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : null;
+  return { enabled: record?.enabled === true, url: typeof record?.url === "string" ? record.url : null };
+}
+
+export async function setInstanceWebhook(url: string, secret?: string, providedConfig?: EvolutionConfig): Promise<void> {
+  const config = providedConfig ?? getEvolutionConfig();
   await evolutionFetch(`/webhook/set/${config.instance}`, {
     method: "POST",
     body: JSON.stringify({
@@ -145,9 +154,10 @@ export async function setInstanceWebhook(url: string): Promise<void> {
         enabled: true,
         url,
         events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
+        ...(secret ? { headers: { "x-webhook-secret": secret } } : {}),
       },
     }),
-  });
+  }, config);
 }
 
 function extractMessageId(payload: unknown): string | null {

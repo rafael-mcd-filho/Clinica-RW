@@ -3,8 +3,8 @@
 import { getRequestContext } from "@/lib/auth/context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { draftReply } from "@/lib/whatsapp/ai-draft";
-import { isEvolutionConfigured } from "@/lib/whatsapp/config";
 import { sendTextMessage } from "@/lib/whatsapp/evolution-client";
+import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest";
 import {
   toMessagePreview,
@@ -93,7 +93,8 @@ export async function sendMessageAction(
 
   const trimmed = text.trim();
   if (!trimmed) return { ok: false, error: "Mensagem vazia." };
-  if (!isEvolutionConfigured()) {
+  const evolutionConfig = await getOrganizationEvolutionConfig(auth.organizationId);
+  if (!evolutionConfig) {
     return {
       ok: false,
       error: "Integração do WhatsApp não configurada. Verifique o .env.local.",
@@ -117,7 +118,7 @@ export async function sendMessageAction(
 
   let waMessageId: string | null = null;
   try {
-    const result = await sendTextMessage(context.phone, trimmed);
+    const result = await sendTextMessage(context.phone, trimmed, evolutionConfig);
     waMessageId = result.waMessageId;
   } catch (error) {
     return {

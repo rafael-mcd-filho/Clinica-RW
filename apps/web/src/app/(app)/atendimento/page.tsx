@@ -3,7 +3,7 @@ import { AttendanceInbox } from "./attendance-inbox";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isEvolutionConfigured } from "@/lib/whatsapp/config";
+import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
 import type {
   ConversationListItem,
   ConversationStatus,
@@ -28,6 +28,7 @@ export default async function AtendimentoPage() {
   const canAttend = context.permissionCodes.has("atendimento.atender");
   const canConfigure = context.permissionCodes.has("atendimento.configurar");
   const organizationId = context.organization.id;
+  const evolutionReady = Boolean(await getOrganizationEvolutionConfig(organizationId));
   const currentUserId = context.effectiveUser?.id ?? null;
 
   const supabase = await createSupabaseServerClient();
@@ -192,7 +193,7 @@ export default async function AtendimentoPage() {
         currentUserId={currentUserId}
         canAttend={canAttend}
         canConfigure={canConfigure}
-        evolutionReady={isEvolutionConfigured()}
+        evolutionReady={evolutionReady}
         initialConversations={items}
         availableTags={tagRows ?? []}
         quickReplies={quickReplies}
