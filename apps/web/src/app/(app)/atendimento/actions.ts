@@ -246,12 +246,17 @@ export async function assignToMeAction(
   if (!auth) return { ok: false, error: "Acesso negado." };
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
-    .from("whatsapp_conversations")
-    .update({ assigned_user_id: auth.userId, status: "open" })
-    .eq("organization_id", auth.organizationId)
-    .eq("id", conversationId);
-  return error ? { ok: false, error: error.message } : { ok: true };
+  const { data, error } = await supabase.rpc("claim_whatsapp_conversation", {
+    p_conversation_id: conversationId,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (!data) {
+    return {
+      ok: false,
+      error: "Este atendimento acabou de ser assumido por outro usuário.",
+    };
+  }
+  return { ok: true };
 }
 
 export async function setConversationStatusAction(

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   CheckCheck,
   Archive,
@@ -109,6 +110,12 @@ export function AttendanceInbox({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const selectedIdRef = useRef<string | null>(null);
   const supabaseRef = useRef(createSupabaseBrowserClient());
+  const router = useRouter();
+
+  useEffect(() => {
+    const task = window.setTimeout(() => setConversations(initialConversations), 0);
+    return () => window.clearTimeout(task);
+  }, [initialConversations]);
 
   const selected = useMemo(
     () => conversations.find((item) => item.id === selectedId) ?? null,
@@ -184,6 +191,14 @@ export function AttendanceInbox({
       )
       .on(
         "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "whatsapp_messages", filter: `organization_id=eq.${organizationId}` },
+        (payload) => {
+          const row = payload.new as MessageRow;
+          setMessages((current) => current.map((message) => message.id === row.id ? toMessage(row) : message));
+        },
+      )
+      .on(
+        "postgres_changes",
         {
           event: "*",
           schema: "public",
@@ -208,30 +223,62 @@ export function AttendanceInbox({
             lastMessagePreview: row.last_message_preview,
             assignedUserId: row.assigned_user_id,
           });
+          router.refresh();
         },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversation_tags", filter: `organization_id=eq.${organizationId}` },
+        () => router.refresh(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "whatsapp_contacts", filter: `organization_id=eq.${organizationId}` },
+        () => router.refresh(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "whatsapp_instances", filter: `organization_id=eq.${organizationId}` },
+        () => router.refresh(),
       )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [organizationId, upsertConversation]);
+  }, [organizationId, router, upsertConversation]);
 
-  async function openConversation(id: string) {
-    selectedIdRef.current = id;
-    setSelectedId(id);
-    setMessages([]);
+  const reloadMessages = useCallback(async (id: string) => {
     const { data } = await supabaseRef.current
       .from("whatsapp_messages")
-      .select(
-        "id, conversation_id, wa_message_id, direction, message_type, body, media_url, media_mime_type, status, ai_suggested, sender_user_id, created_at, sent_at",
-      )
+      .select("id, conversation_id, wa_message_id, direction, message_type, body, media_url, media_mime_type, status, ai_suggested, sender_user_id, created_at, sent_at")
       .eq("organization_id", organizationId)
       .eq("conversation_id", id)
       .order("created_at", { ascending: true })
       .limit(300)
       .returns<MessageRow[]>();
-    setMessages((data ?? []).map(toMessage));
+    if (selectedIdRef.current === id) {
+      setMessages((current) => [
+        ...(data ?? []).map(toMessage),
+        ...current.filter((message) => message.id.startsWith("optimistic-")),
+      ]);
+    }
+  }, [organizationId]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const timer = window.setInterval(() => {
+      void reloadMessages(selectedId);
+      router.refresh();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [reloadMessages, router, selectedId]);
+
+  async function openConversation(id: string) {
+    selectedIdRef.current = id;
+    setSelectedId(id);
+    setMessages([]);
+    await reloadMessages(id);
 
     if (canAttend) {
       void markConversationReadAction(id);
@@ -651,13 +698,22 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
             : "rounded-bl-sm border border-border bg-card text-foreground",
         )}
       >
-        <div className="flex items-start gap-2">
+        <div className="relative grid gap-2 pr-4">
+        {message.mediaUrl && message.type === "image" ? (
+          <a href={`/api/whatsapp/media/${message.id}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg">
+            <Image unoptimized src={`/api/whatsapp/media/${message.id}`} alt={message.body ?? "Imagem recebida"} width={420} height={320} className="max-h-80 w-auto max-w-full object-contain" />
+          </a>
+        ) : message.mediaUrl && message.type === "audio" ? (
+          <audio controls preload="metadata" src={`/api/whatsapp/media/${message.id}`} className="max-w-full" />
+        ) : message.mediaUrl ? (
+          <a href={`/api/whatsapp/media/${message.id}`} target="_blank" rel="noreferrer" className="font-medium text-primary underline">Abrir arquivo</a>
+        ) : null}
         {message.body ? (
           <p className="whitespace-pre-wrap break-words">{message.body}</p>
         ) : (
           <p className="italic opacity-80">{labelForType(message.type)}</p>
         )}
-        <button type="button" onClick={() => setDetailsOpen(true)} className="-mr-1 -mt-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-black/5" aria-label="Detalhes da mensagem">
+        <button type="button" onClick={() => setDetailsOpen(true)} className="absolute -right-1 -top-1 rounded p-1 text-muted-foreground hover:bg-black/5" aria-label="Detalhes da mensagem">
           <MoreVertical className="size-3.5" />
         </button>
         </div>
@@ -894,6 +950,7 @@ function ContactPanel({
     { id: string; status: string; requested_start_at: string }[]
   >([]);
   const supabaseRef = useRef(createSupabaseBrowserClient());
+  const router = useRouter();
 
   useEffect(() => {
     let active = true;
@@ -943,6 +1000,7 @@ function ContactPanel({
       } else {
         toast.error(result.error ?? "Falha ao assumir.");
       }
+      router.refresh();
     });
   }
 

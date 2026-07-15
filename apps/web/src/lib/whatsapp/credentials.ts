@@ -67,3 +67,18 @@ export async function getInstanceWebhookSecret(instanceName: string): Promise<st
     .eq("evolution_instance_name", instanceName).maybeSingle<{ webhook_secret_encrypted: string | null }>();
   return data?.webhook_secret_encrypted ? decryptCredential(data.webhook_secret_encrypted) : null;
 }
+
+export async function getEvolutionConfigByInstance(instanceName: string): Promise<(EvolutionConfig & { organizationId: string }) | null> {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin.from("whatsapp_instances")
+    .select("organization_id, evolution_instance_name, evolution_api_url, api_key_encrypted")
+    .eq("evolution_instance_name", instanceName)
+    .maybeSingle<{ organization_id: string; evolution_instance_name: string; evolution_api_url: string | null; api_key_encrypted: string | null }>();
+  if (!data?.evolution_api_url || !data.api_key_encrypted) return null;
+  return {
+    organizationId: data.organization_id,
+    baseUrl: data.evolution_api_url.replace(/\/+$/, ""),
+    apiKey: decryptCredential(data.api_key_encrypted),
+    instance: data.evolution_instance_name,
+  };
+}

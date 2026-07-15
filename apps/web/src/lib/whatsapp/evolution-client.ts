@@ -145,6 +145,29 @@ export async function getInstanceWebhook(providedConfig?: EvolutionConfig): Prom
   return { enabled: record?.enabled === true, url: typeof record?.url === "string" ? record.url : null };
 }
 
+export async function getMediaMessageBase64(
+  message: unknown,
+  providedConfig: EvolutionConfig,
+): Promise<{ base64: string; mimeType: string | null } | null> {
+  const payload = await evolutionFetch(
+    `/chat/getBase64FromMediaMessage/${providedConfig.instance}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        message,
+        convertToMp4: false,
+      }),
+    },
+    providedConfig,
+  );
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const base64 = typeof record.base64 === "string" ? record.base64 : typeof record.data === "string" ? record.data : null;
+  if (!base64) return null;
+  const mimeType = typeof record.mimetype === "string" ? record.mimetype : typeof record.mimeType === "string" ? record.mimeType : null;
+  return { base64, mimeType };
+}
+
 export async function setInstanceWebhook(url: string, secret?: string, providedConfig?: EvolutionConfig): Promise<void> {
   const config = providedConfig ?? getEvolutionConfig();
   await evolutionFetch(`/webhook/set/${config.instance}`, {
