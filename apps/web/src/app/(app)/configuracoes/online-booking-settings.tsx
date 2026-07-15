@@ -10,7 +10,9 @@ import {
   Globe2,
   Link2,
   MessageSquare,
+  Settings2,
   Star,
+  UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -27,6 +29,7 @@ import { DatePickerInput } from "@/components/ui/date-picker-input";
 import { Input, Textarea } from "@/components/ui/field";
 import { FormError } from "@/components/ui/form-error";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
+import { Tabs } from "@/components/ui/tabs";
 
 export type OnlineBookingSettingsData = {
   id: string;
@@ -83,6 +86,7 @@ export type OnlineBookingScheduleSummary = {
 };
 
 const initialState: AgendaActionState = {};
+type BookingSettingsSection = "publication" | "rules" | "profile" | "reviews";
 
 export function OnlineBookingSettings({
   settings,
@@ -101,6 +105,8 @@ export function OnlineBookingSettings({
     updateOnlineBookingSettings,
     initialState,
   );
+  const [activeSection, setActiveSection] =
+    useState<BookingSettingsSection>("publication");
 
   useEffect(() => {
     if (state.success) toast.success(state.success);
@@ -121,251 +127,296 @@ export function OnlineBookingSettings({
 
   return (
     <div className="grid gap-5">
-      <PublicBookingAccessCard
-        publicPath={publicPath}
-        enabled={settings.enabled}
+      <Tabs
+        ariaLabel="Seções do agendamento online"
+        value={activeSection}
+        onValueChange={(value) =>
+          setActiveSection(value as BookingSettingsSection)
+        }
+        items={[
+          {
+            id: "publication",
+            label: "Publicação e agendas",
+            icon: <CalendarDays />,
+          },
+          { id: "rules", label: "Regras do portal", icon: <Settings2 /> },
+          { id: "profile", label: "Perfil público", icon: <UserRound /> },
+          {
+            id: "reviews",
+            label: `Avaliações (${reviews.length})`,
+            icon: <MessageSquare />,
+          },
+        ]}
       />
 
-      <SchedulePublicationSummary schedules={schedules} />
+      <section
+        hidden={activeSection !== "publication"}
+        className="grid gap-5"
+        aria-label="Publicação e agendas"
+      >
+        <PublicBookingAccessCard
+          publicPath={publicPath}
+          enabled={settings.enabled}
+        />
+        <SchedulePublicationSummary schedules={schedules} />
+      </section>
 
-      <Card>
+      <Card hidden={activeSection !== "rules" && activeSection !== "profile"}>
         <CardHeader>
           <div>
             <div className="flex items-center gap-2">
               <Globe2 className="size-4 text-primary" aria-hidden="true" />
-              <h2 className="font-semibold">Configurações comuns do portal</h2>
+              <h2 className="font-semibold">
+                {activeSection === "rules"
+                  ? "Regras do portal"
+                  : "Perfil público"}
+              </h2>
               <HelpTooltip label="Como funciona o agendamento online">
                 As solicitações entram para revisão da equipe e só ocupam a
                 agenda depois de confirmadas.
               </HelpTooltip>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Publicação, segurança e conteúdo exibido em todas as agendas.
+              {activeSection === "rules"
+                ? "Publicação, segurança e regras aplicadas a todas as agendas."
+                : "Informações profissionais, planos e pagamentos exibidos aos pacientes."}
             </p>
           </div>
         </CardHeader>
         <CardContent>
-          <form action={action} className="grid gap-4 md:grid-cols-3">
-            <div className="md:col-span-3">
-              <Checkbox
-                name="enabled"
-                defaultChecked={settings.enabled}
-                label="Permitir solicitações pelo link público"
-              />
-            </div>
-            <div className="md:col-span-3">
-              <Checkbox
-                name="require_contact_verification"
-                defaultChecked={settings.require_contact_verification}
-                label="Exigir código de verificação por e-mail ou telefone"
-              />
-            </div>
-            <label className="grid gap-2 text-sm font-medium">
-              <span className="inline-flex items-center gap-1">
-                Link público
-                <HelpTooltip>
-                  Endereço curto compartilhado com pacientes. Alterá-lo invalida
-                  o link anterior.
-                </HelpTooltip>
-              </span>
-              <div className="flex items-center rounded-md border border-border bg-card shadow-[var(--shadow-soft)]">
-                <span className="px-3 text-sm text-muted-foreground">
-                  /agendar/
-                </span>
-                <input
-                  name="public_slug"
-                  defaultValue={settings.public_slug}
-                  className="h-10 min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none"
-                  required
+          <form action={action} className="grid gap-4">
+            <div
+              hidden={activeSection !== "rules"}
+              className="grid gap-4 md:grid-cols-3"
+            >
+              <div className="md:col-span-3">
+                <Checkbox
+                  name="enabled"
+                  defaultChecked={settings.enabled}
+                  label="Permitir solicitações pelo link público"
                 />
               </div>
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              <span className="inline-flex items-center gap-1">
-                Solicitações por contato/dia
-                <HelpTooltip>
-                  Protege a agenda contra repetição excessiva de solicitações
-                  pelo mesmo contato.
-                </HelpTooltip>
-              </span>
-              <Input
-                name="max_requests_per_contact_day"
-                type="number"
-                min="1"
-                max="20"
-                defaultValue={settings.max_requests_per_contact_day}
-                required
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              <span className="inline-flex items-center gap-1">
-                Bloquear após faltas
-                <HelpTooltip>
-                  Quantidade de faltas nos últimos 180 dias que impede novas
-                  solicitações online. Use zero para não aplicar o bloqueio.
-                </HelpTooltip>
-              </span>
-              <Input
-                name="max_no_shows_180_days"
-                type="number"
-                min="0"
-                max="20"
-                defaultValue={settings.max_no_shows_180_days}
-                required
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              <span className="inline-flex items-center gap-1">
-                Validade do código (min)
-                <HelpTooltip>
-                  Tempo disponível para o paciente concluir a verificação do
-                  contato.
-                </HelpTooltip>
-              </span>
-              <Input
-                name="contact_verification_ttl_minutes"
-                type="number"
-                min="5"
-                max="120"
-                defaultValue={settings.contact_verification_ttl_minutes}
-                required
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium md:col-span-3">
-              Instruções públicas
-              <Textarea
-                name="public_instructions"
-                defaultValue={settings.public_instructions ?? ""}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium md:col-span-3">
-              Política de cancelamento
-              <Textarea
-                name="cancellation_policy"
-                defaultValue={settings.cancellation_policy ?? ""}
-              />
-            </label>
+              <div className="md:col-span-3">
+                <Checkbox
+                  name="require_contact_verification"
+                  defaultChecked={settings.require_contact_verification}
+                  label="Exigir código de verificação por e-mail ou telefone"
+                />
+              </div>
+              <label className="grid gap-2 text-sm font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Link público
+                  <HelpTooltip>
+                    Endereço curto compartilhado com pacientes. Alterá-lo
+                    invalida o link anterior.
+                  </HelpTooltip>
+                </span>
+                <div className="flex items-center rounded-md border border-border bg-card shadow-[var(--shadow-soft)]">
+                  <span className="px-3 text-sm text-muted-foreground">
+                    /agendar/
+                  </span>
+                  <input
+                    name="public_slug"
+                    defaultValue={settings.public_slug}
+                    className="h-10 min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none"
+                    required
+                  />
+                </div>
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Solicitações por contato/dia
+                  <HelpTooltip>
+                    Protege a agenda contra repetição excessiva de solicitações
+                    pelo mesmo contato.
+                  </HelpTooltip>
+                </span>
+                <Input
+                  name="max_requests_per_contact_day"
+                  type="number"
+                  min="1"
+                  max="20"
+                  defaultValue={settings.max_requests_per_contact_day}
+                  required
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Bloquear após faltas
+                  <HelpTooltip>
+                    Quantidade de faltas nos últimos 180 dias que impede novas
+                    solicitações online. Use zero para não aplicar o bloqueio.
+                  </HelpTooltip>
+                </span>
+                <Input
+                  name="max_no_shows_180_days"
+                  type="number"
+                  min="0"
+                  max="20"
+                  defaultValue={settings.max_no_shows_180_days}
+                  required
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                <span className="inline-flex items-center gap-1">
+                  Validade do código (min)
+                  <HelpTooltip>
+                    Tempo disponível para o paciente concluir a verificação do
+                    contato.
+                  </HelpTooltip>
+                </span>
+                <Input
+                  name="contact_verification_ttl_minutes"
+                  type="number"
+                  min="5"
+                  max="120"
+                  defaultValue={settings.contact_verification_ttl_minutes}
+                  required
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium md:col-span-3">
+                Instruções públicas
+                <Textarea
+                  name="public_instructions"
+                  defaultValue={settings.public_instructions ?? ""}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium md:col-span-3">
+                Política de cancelamento
+                <Textarea
+                  name="cancellation_policy"
+                  defaultValue={settings.cancellation_policy ?? ""}
+                />
+              </label>
+            </div>
 
-            <div className="md:col-span-3">
-              <SectionTitle
-                title="Perfil público"
-                description="Dados exibidos na página de agendamento online."
+            <div
+              hidden={activeSection !== "profile"}
+              className="grid gap-4 md:grid-cols-3"
+            >
+              <div className="md:col-span-3">
+                <SectionTitle
+                  title="Perfil público"
+                  description="Dados exibidos na página de agendamento online."
+                />
+              </div>
+              <label className="grid gap-2 text-sm font-medium">
+                Frase de destaque
+                <Input
+                  name="profile_headline"
+                  defaultValue={settings.profile_headline ?? ""}
+                  placeholder="Cirurgia toracica, pneumologia, estetica..."
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Formacoes
+                <Input
+                  name="education_count"
+                  type="number"
+                  min="0"
+                  defaultValue={settings.education_count ?? 0}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Ano do certificado
+                <Input
+                  name="excellence_badge_year"
+                  type="number"
+                  min="1900"
+                  max="3000"
+                  defaultValue={settings.excellence_badge_year ?? ""}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium md:col-span-3">
+                Resumo curto
+                <Textarea
+                  name="profile_summary"
+                  defaultValue={settings.profile_summary ?? ""}
+                  placeholder="Texto curto exibido no topo do perfil."
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium md:col-span-3">
+                Experiencia
+                <Textarea
+                  name="experience_text"
+                  defaultValue={settings.experience_text ?? ""}
+                  placeholder="Formacao, residencia, areas de atuacao e diferenciais."
+                  className="min-h-32"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Principais doencas tratadas
+                <Textarea
+                  name="treated_conditions"
+                  defaultValue={(settings.treated_conditions ?? []).join("\n")}
+                  placeholder="Uma por linha ou separadas por virgula"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Pacientes que atende
+                <Textarea
+                  name="patient_groups"
+                  defaultValue={(settings.patient_groups ?? []).join("\n")}
+                  placeholder={"Adultos\nCriancas"}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Formatos de consulta
+                <Textarea
+                  name="consultation_formats"
+                  defaultValue={(settings.consultation_formats ?? []).join(
+                    "\n",
+                  )}
+                  placeholder={"Presencial\nTeleconsulta"}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium md:col-span-3">
+                Destaques
+                <Textarea
+                  name="profile_highlights"
+                  defaultValue={(settings.profile_highlights ?? []).join("\n")}
+                  placeholder="Um destaque por linha"
+                />
+              </label>
+
+              <div className="md:col-span-3">
+                <SectionTitle
+                  title="Planos e pagamentos"
+                  description="Defina o que aparece como aceito no perfil publico."
+                />
+              </div>
+              <label className="grid gap-2 text-sm font-medium">
+                Numero publico de planos aceitos
+                <Input
+                  name="accepted_plan_count"
+                  type="number"
+                  min="0"
+                  defaultValue={settings.accepted_plan_count ?? 0}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium md:col-span-2">
+                Observacao sobre planos
+                <Input
+                  name="accepted_plan_notes"
+                  defaultValue={settings.accepted_plan_notes ?? ""}
+                  placeholder="A cobertura varia por local e servico."
+                />
+              </label>
+              <CheckboxGrid
+                title="Planos aceitos"
+                name="accepted_health_insurance_ids"
+                options={healthInsurances}
+                selected={settings.accepted_health_insurance_ids ?? []}
+              />
+              <CheckboxGrid
+                title="Modalidades de pagamento"
+                name="accepted_payment_method_ids"
+                options={paymentMethods}
+                selected={settings.accepted_payment_method_ids ?? []}
               />
             </div>
-            <label className="grid gap-2 text-sm font-medium">
-              Frase de destaque
-              <Input
-                name="profile_headline"
-                defaultValue={settings.profile_headline ?? ""}
-                placeholder="Cirurgia toracica, pneumologia, estetica..."
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Formacoes
-              <Input
-                name="education_count"
-                type="number"
-                min="0"
-                defaultValue={settings.education_count ?? 0}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Ano do certificado
-              <Input
-                name="excellence_badge_year"
-                type="number"
-                min="1900"
-                max="3000"
-                defaultValue={settings.excellence_badge_year ?? ""}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium md:col-span-3">
-              Resumo curto
-              <Textarea
-                name="profile_summary"
-                defaultValue={settings.profile_summary ?? ""}
-                placeholder="Texto curto exibido no topo do perfil."
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium md:col-span-3">
-              Experiencia
-              <Textarea
-                name="experience_text"
-                defaultValue={settings.experience_text ?? ""}
-                placeholder="Formacao, residencia, areas de atuacao e diferenciais."
-                className="min-h-32"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Principais doencas tratadas
-              <Textarea
-                name="treated_conditions"
-                defaultValue={(settings.treated_conditions ?? []).join("\n")}
-                placeholder="Uma por linha ou separadas por virgula"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Pacientes que atende
-              <Textarea
-                name="patient_groups"
-                defaultValue={(settings.patient_groups ?? []).join("\n")}
-                placeholder={"Adultos\nCriancas"}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Formatos de consulta
-              <Textarea
-                name="consultation_formats"
-                defaultValue={(settings.consultation_formats ?? []).join("\n")}
-                placeholder={"Presencial\nTeleconsulta"}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium md:col-span-3">
-              Destaques
-              <Textarea
-                name="profile_highlights"
-                defaultValue={(settings.profile_highlights ?? []).join("\n")}
-                placeholder="Um destaque por linha"
-              />
-            </label>
-
-            <div className="md:col-span-3">
-              <SectionTitle
-                title="Planos e pagamentos"
-                description="Defina o que aparece como aceito no perfil publico."
-              />
-            </div>
-            <label className="grid gap-2 text-sm font-medium">
-              Numero publico de planos aceitos
-              <Input
-                name="accepted_plan_count"
-                type="number"
-                min="0"
-                defaultValue={settings.accepted_plan_count ?? 0}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium md:col-span-2">
-              Observacao sobre planos
-              <Input
-                name="accepted_plan_notes"
-                defaultValue={settings.accepted_plan_notes ?? ""}
-                placeholder="A cobertura varia por local e servico."
-              />
-            </label>
-            <CheckboxGrid
-              title="Planos aceitos"
-              name="accepted_health_insurance_ids"
-              options={healthInsurances}
-              selected={settings.accepted_health_insurance_ids ?? []}
-            />
-            <CheckboxGrid
-              title="Modalidades de pagamento"
-              name="accepted_payment_method_ids"
-              options={paymentMethods}
-              selected={settings.accepted_payment_method_ids ?? []}
-            />
-            <FormError message={state.error} className="md:col-span-3" />
-            <div className="flex justify-end md:col-span-3">
+            <FormError message={state.error} />
+            <div className="flex justify-end">
               <Button type="submit" disabled={pending}>
                 {pending ? "Salvando..." : "Salvar agendamento online"}
               </Button>
@@ -374,7 +425,9 @@ export function OnlineBookingSettings({
         </CardContent>
       </Card>
 
-      <ReviewsSettings reviews={reviews} />
+      <section hidden={activeSection !== "reviews"} aria-label="Avaliações">
+        <ReviewsSettings reviews={reviews} />
+      </section>
     </div>
   );
 }

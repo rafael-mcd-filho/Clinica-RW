@@ -5,11 +5,11 @@ import {
   Ban,
   CalendarClock,
   CalendarDays,
-  ChevronRight,
   CirclePlus,
   Clock3,
   Globe2,
   MapPin,
+  MoreVertical,
   Pencil,
   Plus,
   Save,
@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input, Select } from "@/components/ui/field";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
 import { Modal } from "@/components/ui/modal";
@@ -166,7 +167,8 @@ export function AgendaSettings({
                 key={schedule.id}
                 schedule={schedule}
                 data={data}
-                canEdit={canConfigure || canBlock}
+                canConfigure={canConfigure}
+                canBlock={canBlock}
                 onEdit={() => setEditor(schedule.id)}
               />
             ))}
@@ -209,12 +211,14 @@ function Metric({ label, value }: { label: string; value: number }) {
 function ScheduleCard({
   schedule,
   data,
-  canEdit,
+  canConfigure,
+  canBlock,
   onEdit,
 }: {
   schedule: ScheduleItem;
   data: AgendaSettingsData;
-  canEdit: boolean;
+  canConfigure: boolean;
+  canBlock: boolean;
   onEdit: () => void;
 }) {
   const professional = data.professionals.find(
@@ -236,16 +240,16 @@ function ScheduleCard({
   const nextBlock = blocks[0];
 
   return (
-    <article className="rounded-lg border border-border bg-background p-4">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <article className="rounded-lg border border-border bg-background px-3 py-3 transition-colors hover:bg-muted/15">
+      <div className="flex items-start gap-3">
+        <span
+          className="mt-1.5 size-2.5 shrink-0 rounded-full ring-2 ring-border"
+          style={{ backgroundColor: schedule.color }}
+          aria-hidden="true"
+        />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-start gap-3">
-            <span
-              className="mt-1 size-3 shrink-0 rounded-full ring-2 ring-border"
-              style={{ backgroundColor: schedule.color }}
-              aria-hidden="true"
-            />
-            <div className="min-w-0">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-semibold">{schedule.name}</h3>
                 <Badge variant={schedule.active ? "success" : "neutral"}>
@@ -263,7 +267,7 @@ function ScheduleCard({
                     : "Fora do portal"}
                 </Badge>
               </div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 <span className="inline-flex min-w-0 items-center gap-1.5">
                   <UserRound className="size-3.5 shrink-0" aria-hidden="true" />
                   {professional?.name ?? "Profissional indisponível"}
@@ -274,9 +278,42 @@ function ScheduleCard({
                 </span>
               </div>
             </div>
+            {canConfigure || canBlock ? (
+              <DropdownMenu
+                trigger={<MoreVertical className="size-4" aria-hidden="true" />}
+                triggerLabel={`Ações de ${schedule.name}`}
+              >
+                {(close) => (
+                  <>
+                    {canConfigure ? (
+                      <DropdownMenuItem
+                        icon={Pencil}
+                        onSelect={() => {
+                          close();
+                          onEdit();
+                        }}
+                      >
+                        Editar agenda
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canBlock && !canConfigure ? (
+                      <DropdownMenuItem
+                        icon={Ban}
+                        onSelect={() => {
+                          close();
+                          onEdit();
+                        }}
+                      >
+                        Gerenciar bloqueios
+                      </DropdownMenuItem>
+                    ) : null}
+                  </>
+                )}
+              </DropdownMenu>
+            ) : null}
           </div>
 
-          <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+          <div className="mt-3 grid gap-x-5 gap-y-2 border-t border-border/70 pt-2.5 text-sm md:grid-cols-3">
             <CardDetail
               icon={CalendarClock}
               label="Horários semanais"
@@ -306,13 +343,6 @@ function ScheduleCard({
             />
           </div>
         </div>
-        {canEdit ? (
-          <Button type="button" variant="secondary" size="sm" onClick={onEdit}>
-            <Pencil className="size-4" aria-hidden="true" />
-            Configurar
-            <ChevronRight className="size-4" aria-hidden="true" />
-          </Button>
-        ) : null}
       </div>
     </article>
   );
@@ -328,7 +358,7 @@ function CardDetail({
   value: string;
 }) {
   return (
-    <div className="min-w-0 rounded-md bg-muted/35 px-3 py-2.5">
+    <div className="min-w-0">
       <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Icon className="size-3.5" aria-hidden="true" />
         {label}
@@ -423,26 +453,14 @@ function ScheduleConfigurationEditor({
   }
 
   return (
-    <section className="scroll-mt-4 rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
-      <header className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-            {schedule ? "Configuração da agenda" : "Nova agenda"}
-          </p>
-          <h2 className="mt-1 text-lg font-semibold">
-            {schedule?.name ?? "Defina a nova agenda profissional"}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Dados, expediente, publicação online e exceções ficam vinculados a
-            esta agenda.
-          </p>
-        </div>
-        <Button type="button" variant="secondary" size="sm" onClick={onClose}>
-          Fechar
-        </Button>
-      </header>
-
-      <form action={action} className="grid gap-5 p-5" aria-busy={pending}>
+    <Modal
+      open
+      onClose={onClose}
+      title={schedule ? schedule.name : "Nova agenda profissional"}
+      description="Dados, expediente, publicação online e exceções da agenda."
+      className="max-w-6xl"
+    >
+      <form action={action} className="grid gap-5" aria-busy={pending}>
         <input type="hidden" name="schedule_id" value={schedule?.id ?? ""} />
         <input type="hidden" name="active" value={String(active)} />
         <input
@@ -723,7 +741,7 @@ function ScheduleConfigurationEditor({
           ) : null}
         </div>
       </form>
-    </section>
+    </Modal>
   );
 }
 
