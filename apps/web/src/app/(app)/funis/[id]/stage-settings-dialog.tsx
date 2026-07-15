@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState, useEffect, useId, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Plus, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { createStage, deleteStage, updateStage } from "../actions";
@@ -64,7 +63,6 @@ export function StageSettingsDialog({
 }
 
 function StageRow({ funnelId, stage }: { funnelId: string; stage: StageRow }) {
-  const router = useRouter();
   const [state, action, pending] = useActionState(
     updateStage.bind(null, stage.id),
     {},
@@ -73,10 +71,9 @@ function StageRow({ funnelId, stage }: { funnelId: string; stage: StageRow }) {
   useEffect(() => {
     if (state.success) {
       toast.success(state.success);
-      router.refresh();
     }
     if (state.error) toast.error(state.error);
-  }, [router, state]);
+  }, [state]);
 
   async function handleDelete() {
     const result = await deleteStage(funnelId, stage.id);
@@ -85,7 +82,6 @@ function StageRow({ funnelId, stage }: { funnelId: string; stage: StageRow }) {
       return;
     }
     toast.success(result.success);
-    router.refresh();
   }
 
   return (
@@ -138,7 +134,6 @@ function StageRow({ funnelId, stage }: { funnelId: string; stage: StageRow }) {
 }
 
 function NewStageForm({ funnelId }: { funnelId: string }) {
-  const router = useRouter();
   const formId = useId();
   const [state, action, pending] = useActionState(
     createStage.bind(null, funnelId),
@@ -148,12 +143,11 @@ function NewStageForm({ funnelId }: { funnelId: string }) {
   useEffect(() => {
     if (state.success) {
       toast.success(state.success);
-      router.refresh();
       const form = document.getElementById(formId) as HTMLFormElement | null;
       form?.reset();
     }
     if (state.error) toast.error(state.error);
-  }, [formId, router, state]);
+  }, [formId, state]);
 
   return (
     <form

@@ -1,7 +1,7 @@
 import { AppShell, type AppShellNavItem } from "@/components/layout/app-shell";
+import { cookies } from "next/headers";
 import { getRequestContext, hasAnyPermission } from "@/lib/auth/context";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
-import { getTodayAppointmentsForRail } from "@/lib/clinic/today-appointments";
 import { getPlatformSettings } from "@/lib/platform/settings";
 
 const superAdminNavItems: AppShellNavItem[] = [
@@ -10,7 +10,11 @@ const superAdminNavItems: AppShellNavItem[] = [
   { href: "/usuarios", label: "Usuários", icon: "usuarios" },
   { href: "/financeiro", label: "Financeiro", icon: "financeiro" },
   { href: "/auditoria", label: "Auditoria", icon: "auditoria" },
-  { href: "/configuracoes", label: "Configurações", icon: "configuracoes" },
+  {
+    href: "/configuracoes/plataforma",
+    label: "Configurações",
+    icon: "configuracoes",
+  },
 ];
 
 export default async function AppLayout({
@@ -18,10 +22,11 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const authUser = await requireAuthenticatedUser();
-  const [context, platformSettings] = await Promise.all([
+  const [authUser, context, platformSettings, cookieStore] = await Promise.all([
+    requireAuthenticatedUser(),
     getRequestContext(),
     getPlatformSettings(),
+    cookies(),
   ]);
   const navItems = context.isSuperAdmin
     ? superAdminNavItems
@@ -34,12 +39,11 @@ export default async function AppLayout({
     ? "Super Admin"
     : (context.organization?.name ?? "Conta sem vínculo interno");
 
-  const todayAppointments =
+  const todayRailEnabled = Boolean(
     !context.isSuperAdmin &&
     context.organization &&
-    context.permissionCodes.has("agenda.ver")
-      ? await getTodayAppointmentsForRail(context.organization.id)
-      : null;
+    context.permissionCodes.has("agenda.ver"),
+  );
 
   return (
     <AppShell
@@ -49,7 +53,13 @@ export default async function AppLayout({
       sidebarSubtitle={sidebarSubtitle}
       userName={userName}
       userSubtitle={userSubtitle}
-      todayAppointments={todayAppointments}
+      todayRailEnabled={todayRailEnabled}
+      initialSidebarPinned={
+        cookieStore.get("hi-clinic-sidebar-pinned")?.value !== "false"
+      }
+      initialTodayRailPinned={
+        cookieStore.get("hi-clinic-today-rail-pinned")?.value === "true"
+      }
       impersonation={
         context.impersonation
           ? {
@@ -68,6 +78,14 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
   const navItems: AppShellNavItem[] = [
     { href: "/dashboard", label: "Painel", icon: "dashboard" },
   ];
+
+  if (hasAnyPermission(permissionCodes, ["atendimento.ver"])) {
+    navItems.push({
+      href: "/atendimento",
+      label: "Atendimento",
+      icon: "atendimento",
+    });
+  }
 
   if (hasAnyPermission(permissionCodes, ["agenda.ver"])) {
     navItems.push({ href: "/agenda", label: "Agenda", icon: "agenda" });
@@ -105,32 +123,104 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     navItems.push({ href: "/funis", label: "Painéis", icon: "funis" });
   }
 
-  if (
-    hasAnyPermission(permissionCodes, [
-      "relatorio.operacional",
-      "relatorio.financeiro",
-      "relatorio.clinico",
-    ])
-  ) {
+  const canViewOperationalReports = permissionCodes.has(
+    "relatorio.operacional",
+  );
+  const canViewFinancialReports = permissionCodes.has("relatorio.financeiro");
+  const canViewClinicalReports = permissionCodes.has("relatorio.clinico");
+  const canViewAnyReport =
+    canViewOperationalReports ||
+    canViewFinancialReports ||
+    canViewClinicalReports;
+
+  if (canViewAnyReport) {
+    const reportChildren: NonNullable<AppShellNavItem["children"]> = [
+      { href: "/relatorios/visao-geral", label: "Visão geral" },
+    ];
+
+    if (canViewOperationalReports) {
+      reportChildren.push({
+        href: "/relatorios/atendimentos",
+        label: "Atendimentos",
+      });
+    }
+
+    if (canViewFinancialReports) {
+      reportChildren.push({
+        href: "/relatorios/financeiro",
+        label: "Financeiro",
+      });
+    }
+
+    if (canViewClinicalReports) {
+      reportChildren.push({
+        href: "/relatorios/clinico",
+        label: "Clínico",
+      });
+    }
+
+    reportChildren.push({
+      href: "/relatorios/profissionais",
+      label: "Por profissional",
+    });
+
     navItems.push({
       href: "/relatorios",
-      label: "Relatorios",
+      label: "Relatórios",
       icon: "relatorios",
+      children: reportChildren,
     });
   }
 
-  if (
-    hasAnyPermission(permissionCodes, [
-      "config.geral",
-      "config.usuarios",
-      "config.integracoes",
-      "config.plano",
-    ])
-  ) {
+  const canManageCompany = permissionCodes.has("config.geral");
+  const canConfigureAgenda = permissionCodes.has("agenda.configurar");
+  const canBlockAgenda = permissionCodes.has("agenda.bloquear_horario");
+  const canCreateClinicalTemplate = permissionCodes.has(
+    "clinico.criar_template",
+  );
+  const configurationChildren: NonNullable<AppShellNavItem["children"]> = [];
+
+  if (canManageCompany) {
+    configurationChildren.push({
+      href: "/configuracoes/cadastros",
+      label: "Cadastros e operação",
+    });
+  }
+
+  if (canConfigureAgenda || canBlockAgenda) {
+    configurationChildren.push({
+      href: "/configuracoes/agenda",
+      label: "Agenda",
+    });
+  }
+
+  if (canManageCompany || canConfigureAgenda) {
+    configurationChildren.push({
+      href: "/configuracoes/agendamento-online",
+      label: "Agendamento online",
+    });
+  }
+
+  if (canManageCompany) {
+    configurationChildren.push({
+      href: "/configuracoes/tags-automacoes",
+      label: "Tags e automações",
+    });
+  }
+
+  if (canCreateClinicalTemplate) {
+    configurationChildren.push({
+      href: "/configuracoes/modelos-clinicos",
+      label: "Modelos clínicos",
+    });
+  }
+
+  if (configurationChildren.length > 0) {
     navItems.push({
       href: "/configuracoes",
       label: "Configurações",
       icon: "configuracoes",
+      children: configurationChildren,
     });
   }
 

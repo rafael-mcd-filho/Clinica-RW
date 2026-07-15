@@ -6,10 +6,12 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  ChevronDown,
   History,
   LayoutDashboard,
   LogOut,
   Menu,
+  MessagesSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -22,13 +24,12 @@ import {
   WalletCards,
   Waypoints,
 } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
 import { signOut } from "@/app/(auth)/login/actions";
 import { endImpersonation } from "@/app/(app)/suporte/actions";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { TodayAppointmentsRail } from "@/components/layout/today-appointments-rail";
-import type { TodayAppointmentItem } from "@/lib/clinic/today-appointments";
 import { cn, initialsFromName } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 
@@ -36,10 +37,17 @@ export type AppShellNavItem = {
   href: string;
   label: string;
   icon: AppShellIconName;
+  children?: AppShellNavChild[];
+};
+
+export type AppShellNavChild = {
+  href: string;
+  label: string;
 };
 
 export type AppShellIconName =
   | "agenda"
+  | "atendimento"
   | "dashboard"
   | "empresas"
   | "usuarios"
@@ -53,6 +61,7 @@ export type AppShellIconName =
 
 const iconMap: Record<AppShellIconName, LucideIcon> = {
   agenda: CalendarDays,
+  atendimento: MessagesSquare,
   dashboard: LayoutDashboard,
   empresas: Building2,
   usuarios: UserCog,
@@ -76,7 +85,9 @@ type AppShellProps = {
     organizationName: string;
     targetUserName: string;
   } | null;
-  todayAppointments?: TodayAppointmentItem[] | null;
+  todayRailEnabled?: boolean;
+  initialSidebarPinned?: boolean;
+  initialTodayRailPinned?: boolean;
   children: React.ReactNode;
 };
 
@@ -137,25 +148,29 @@ export function AppShell({
   userName,
   userSubtitle,
   impersonation,
-  todayAppointments,
+  todayRailEnabled = false,
+  initialSidebarPinned = true,
+  initialTodayRailPinned = false,
   children,
 }: AppShellProps) {
+  const pathname = usePathname();
   const sidebarPinned = useSyncExternalStore(
     subscribeToSidebarPinned,
     getSidebarPinnedSnapshot,
-    () => true,
+    () => initialSidebarPinned,
   );
   const todayRailPinned = useSyncExternalStore(
     subscribeToTodayRailPinned,
     getTodayRailPinnedSnapshot,
-    () => false,
+    () => initialTodayRailPinned,
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [todayRailOpen, setTodayRailOpen] = useState(false);
-  const hasTodayRail = Boolean(todayAppointments);
+  const hasTodayRail = todayRailEnabled;
 
   function updatePinned(nextPinned: boolean) {
     window.localStorage.setItem(storageKey, String(nextPinned));
+    document.cookie = `${storageKey}=${String(nextPinned)}; Path=/; Max-Age=31536000; SameSite=Lax`;
     window.dispatchEvent(new Event(storageEventKey));
 
     if (nextPinned) {
@@ -165,6 +180,7 @@ export function AppShell({
 
   function updateTodayRailPinned(nextPinned: boolean) {
     window.localStorage.setItem(todayRailStorageKey, String(nextPinned));
+    document.cookie = `${todayRailStorageKey}=${String(nextPinned)}; Path=/; Max-Age=31536000; SameSite=Lax`;
     window.dispatchEvent(new Event(todayRailStorageEventKey));
 
     if (nextPinned) {
@@ -173,7 +189,7 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen min-w-0 w-full bg-background text-foreground">
       {sidebarPinned ? (
         <Sidebar
           navItems={navItems}
@@ -220,7 +236,17 @@ export function AppShell({
 
       <div
         className={cn(
-          "transition-[padding] duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+          "min-w-0 w-full",
+          impersonation
+            ? "[--app-sticky-offset:6.5rem]"
+            : "[--app-sticky-offset:3.5rem]",
+          sidebarPinned
+            ? impersonation
+              ? "lg:[--app-sticky-offset:3rem]"
+              : "lg:[--app-sticky-offset:0rem]"
+            : impersonation
+              ? "lg:[--app-sticky-offset:6.5rem]"
+              : "lg:[--app-sticky-offset:3.5rem]",
           sidebarPinned ? "lg:pl-64" : "lg:pl-0",
           hasTodayRail && todayRailPinned ? "xl:pr-[21rem]" : "",
         )}
@@ -267,14 +293,18 @@ export function AppShell({
           </Tooltip>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6">
+        <main
+          className={cn(
+            "mx-auto min-h-[calc(100svh-3.5rem)] min-w-0 w-full px-4 py-6 md:px-6",
+            contentWidthClass(pathname),
+          )}
+        >
           {children}
         </main>
       </div>
 
       {hasTodayRail ? (
         <TodayAppointmentsRail
-          appointments={todayAppointments ?? []}
           open={todayRailOpen || todayRailPinned}
           pinned={todayRailPinned}
           onOpenChange={setTodayRailOpen}
@@ -283,6 +313,23 @@ export function AppShell({
       ) : null}
     </div>
   );
+}
+
+function contentWidthClass(pathname: string) {
+  if (pathname.startsWith("/agenda") || /^\/funis\/[^/]+/.test(pathname)) {
+    return "max-w-[112rem]";
+  }
+
+  if (
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/financeiro") ||
+    pathname.startsWith("/relatorios") ||
+    /^\/pacientes\/[^/]+/.test(pathname)
+  ) {
+    return "max-w-[90rem]";
+  }
+
+  return "max-w-7xl";
 }
 
 function Sidebar({
@@ -367,7 +414,7 @@ function Sidebar({
         </Tooltip>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         {navItems.map((item) => (
           <SidebarLink key={item.href} item={item} onNavigate={onNavigate} />
         ))}
@@ -391,13 +438,85 @@ function SidebarLink({
 }) {
   const Icon = iconMap[item.icon];
   const pathname = usePathname();
-  const active =
-    pathname === item.href ||
-    (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+  const childrenId = useId();
+  const hasChildren = Boolean(item.children?.length);
+  const active = isNavRouteActive(pathname, item.href);
+  const activeChild = item.children?.some((child) =>
+    isNavRouteActive(pathname, child.href),
+  );
+  const routeInGroup = active || Boolean(activeChild);
+  const [expansionOverride, setExpansionOverride] = useState<{
+    pathname: string;
+    expanded: boolean;
+  } | null>(null);
+  const expanded =
+    expansionOverride?.pathname === pathname
+      ? expansionOverride.expanded
+      : routeInGroup;
+
+  if (hasChildren) {
+    return (
+      <div className="grid gap-1">
+        <button
+          type="button"
+          aria-controls={childrenId}
+          aria-expanded={expanded}
+          onClick={() =>
+            setExpansionOverride({ pathname, expanded: !expanded })
+          }
+          className={cn(
+            "relative flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+            routeInGroup
+              ? "bg-sidebar-active text-sidebar-active-foreground before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
+              : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
+          )}
+        >
+          <Icon className="size-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          <ChevronDown
+            className={cn(
+              "size-4 shrink-0 transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+              expanded ? "rotate-180" : "",
+            )}
+            aria-hidden="true"
+          />
+        </button>
+
+        {expanded ? (
+          <div
+            id={childrenId}
+            className="ml-5 grid gap-0.5 border-l border-sidebar-border pl-3"
+          >
+            {item.children?.map((child) => {
+              const childIsActive = isNavRouteActive(pathname, child.href);
+
+              return (
+                <Link
+                  key={child.href}
+                  href={child.href}
+                  aria-current={childIsActive ? "page" : undefined}
+                  onClick={onNavigate}
+                  className={cn(
+                    "relative flex min-h-9 items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+                    childIsActive
+                      ? "bg-sidebar-active text-sidebar-active-foreground"
+                      : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                  )}
+                >
+                  {child.label}
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <Link
       href={item.href}
+      aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
         "relative flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
@@ -409,6 +528,13 @@ function SidebarLink({
       <Icon className="size-4" aria-hidden="true" />
       {item.label}
     </Link>
+  );
+}
+
+function isNavRouteActive(pathname: string, href: string) {
+  return (
+    pathname === href ||
+    (href !== "/dashboard" && pathname.startsWith(`${href}/`))
   );
 }
 

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type PlatformSettings = {
@@ -22,7 +23,7 @@ const fallbackSettings: PlatformSettings = {
   support_url: null,
 };
 
-export async function getPlatformSettings() {
+export const getPlatformSettings = cache(async function getPlatformSettings() {
   try {
     const supabase = await createSupabaseServerClient();
     const { data } = await supabase
@@ -37,4 +38,4 @@ export async function getPlatformSettings() {
   } catch {
     return fallbackSettings;
   }
-}
+});

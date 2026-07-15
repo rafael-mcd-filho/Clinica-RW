@@ -73,6 +73,35 @@ export type ProcedureRow = BaseRow & {
   base_price: number;
 };
 
+export type ProcedureCostRow = {
+  id: string;
+  procedure_id: string;
+  name: string;
+  cost_type: "commission" | "location_fee" | "other";
+  calculation_type: "fixed" | "percentage";
+  value: number;
+  active: boolean;
+};
+
+export type PaymentMethodRow = BaseRow & {
+  method_type:
+    | "cash"
+    | "pix"
+    | "credit_card"
+    | "debit_card"
+    | "bank_transfer"
+    | "other";
+};
+
+export type PaymentMethodFeeRow = {
+  id: string;
+  payment_method_id: string;
+  name: string;
+  calculation_type: "fixed" | "percentage";
+  value: number;
+  active: boolean;
+};
+
 export type HealthInsuranceRow = BaseRow & {
   document: string | null;
 };
@@ -95,6 +124,8 @@ export type BusinessHourRow = {
   weekday: number;
   start_time: string;
   end_time: string;
+  lunch_start_time: string | null;
+  lunch_end_time: string | null;
   active: boolean;
 };
 
@@ -114,6 +145,9 @@ export type CompanySettingsData = {
   specialties: SpecialtyRow[];
   professionals: ProfessionalRow[];
   procedures: ProcedureRow[];
+  procedureCosts: ProcedureCostRow[];
+  paymentMethods: PaymentMethodRow[];
+  paymentMethodFees: PaymentMethodFeeRow[];
   healthInsurances: HealthInsuranceRow[];
   priceTables: PriceTableRow[];
   priceTableItems: PriceTableItemRow[];
@@ -136,6 +170,9 @@ export async function getCompanySettingsData(
     specialtiesResult,
     professionalsResult,
     proceduresResult,
+    procedureCostsResult,
+    paymentMethodsResult,
+    paymentMethodFeesResult,
     healthInsurancesResult,
     priceTablesResult,
     priceTableItemsResult,
@@ -197,6 +234,26 @@ export async function getCompanySettingsData(
       .order("name")
       .returns<ProcedureRow[]>(),
     supabase
+      .from("procedure_costs")
+      .select(
+        "id, procedure_id, name, cost_type, calculation_type, value, active",
+      )
+      .eq("organization_id", organizationId)
+      .order("created_at")
+      .returns<ProcedureCostRow[]>(),
+    supabase
+      .from("payment_methods")
+      .select("id, name, method_type, active")
+      .eq("organization_id", organizationId)
+      .order("name")
+      .returns<PaymentMethodRow[]>(),
+    supabase
+      .from("payment_method_fees")
+      .select("id, payment_method_id, name, calculation_type, value, active")
+      .eq("organization_id", organizationId)
+      .order("created_at")
+      .returns<PaymentMethodFeeRow[]>(),
+    supabase
       .from("health_insurances")
       .select("id, name, document, active")
       .eq("organization_id", organizationId)
@@ -217,7 +274,7 @@ export async function getCompanySettingsData(
     supabase
       .from("business_hours")
       .select(
-        "id, unit_id, professional_id, weekday, start_time, end_time, active",
+        "id, unit_id, professional_id, weekday, start_time, end_time, lunch_start_time, lunch_end_time, active",
       )
       .eq("organization_id", organizationId)
       .order("weekday")
@@ -240,6 +297,9 @@ export async function getCompanySettingsData(
     specialtiesResult,
     professionalsResult,
     proceduresResult,
+    procedureCostsResult,
+    paymentMethodsResult,
+    paymentMethodFeesResult,
     healthInsurancesResult,
     priceTablesResult,
     priceTableItemsResult,
@@ -263,6 +323,9 @@ export async function getCompanySettingsData(
     specialties: specialtiesResult.data ?? [],
     professionals: professionalsResult.data ?? [],
     procedures: proceduresResult.data ?? [],
+    procedureCosts: procedureCostsResult.data ?? [],
+    paymentMethods: paymentMethodsResult.data ?? [],
+    paymentMethodFees: paymentMethodFeesResult.data ?? [],
     healthInsurances: healthInsurancesResult.data ?? [],
     priceTables: priceTablesResult.data ?? [],
     priceTableItems: priceTableItemsResult.data ?? [],

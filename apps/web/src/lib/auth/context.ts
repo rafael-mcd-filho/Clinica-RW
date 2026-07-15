@@ -1,9 +1,10 @@
+import { cache } from "react";
 import { getActiveImpersonation } from "@/lib/auth/impersonation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export async function getRequestContext() {
+export const getRequestContext = cache(async function getRequestContext() {
   const appUser = await getCurrentAppUser();
   const impersonation = await getActiveImpersonation(appUser);
 
@@ -54,7 +55,7 @@ export async function getRequestContext() {
       (permissionCodes as string[] | null) ?? [],
     ),
   };
-}
+});
 
 export function hasAnyPermission(
   permissionCodes: Set<string>,

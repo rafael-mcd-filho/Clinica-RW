@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
 
 type SwitchProps = {
@@ -20,42 +20,58 @@ export function Switch({
   name,
   onCheckedChange,
 }: SwitchProps) {
+  const labelId = useId();
   const [internalChecked, setInternalChecked] = useState(defaultChecked);
   const isChecked = checked ?? internalChecked;
 
-  function toggle() {
-    if (disabled) {
-      return;
+  function handleCheckedChange(nextChecked: boolean) {
+    if (checked === undefined) {
+      setInternalChecked(nextChecked);
     }
-
-    const nextChecked = !isChecked;
-    setInternalChecked(nextChecked);
     onCheckedChange?.(nextChecked);
   }
 
   return (
-    <label className="inline-flex items-center gap-2 text-sm text-secondary-foreground">
-      <input type="hidden" name={name} value={isChecked ? "true" : "false"} />
-      <button
-        type="button"
+    <label
+      className={cn(
+        "inline-flex min-w-0 cursor-pointer items-center gap-2 text-sm leading-5 text-secondary-foreground",
+        disabled && "cursor-not-allowed opacity-50",
+      )}
+    >
+      {name ? (
+        <input
+          type="hidden"
+          name={name}
+          value={isChecked ? "true" : "false"}
+          disabled={disabled}
+        />
+      ) : null}
+      <input
+        type="checkbox"
         role="switch"
-        aria-checked={isChecked}
-        aria-label={label}
+        checked={isChecked}
+        aria-labelledby={labelId}
         disabled={disabled}
-        onClick={toggle}
+        onChange={(event) => handleCheckedChange(event.target.checked)}
+        className="peer sr-only"
+      />
+      <span
+        aria-hidden="true"
         className={cn(
-          "relative h-5 w-9 rounded-full transition-colors duration-[var(--motion-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50",
+          "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-[var(--motion-fast)] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary",
           isChecked ? "bg-primary" : "bg-border-strong",
         )}
       >
         <span
           className={cn(
-            "absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out)]",
-            isChecked ? "translate-x-[18px]" : "translate-x-0.5",
+            "absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+            isChecked ? "translate-x-4" : "translate-x-0",
           )}
         />
-      </button>
-      <span>{label}</span>
+      </span>
+      <span id={labelId} className="min-w-0">
+        {label}
+      </span>
     </label>
   );
 }

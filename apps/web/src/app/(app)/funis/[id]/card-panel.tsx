@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   Archive,
   CalendarPlus,
@@ -14,7 +14,8 @@ import { toast } from "sonner";
 import {
   addCardNote,
   archiveCard,
-  getCardTimeline,
+  getCardMovements,
+  getCardNotes,
   type CardNoteEntry,
   type CardTimelineEntry,
 } from "../actions";
@@ -38,10 +39,9 @@ export function CardPanel({
 }) {
   const [tab, setTab] = useState<"notes" | "history">("notes");
   const [noteText, setNoteText] = useState("");
-  const [timeline, setTimeline] = useState<{
-    movements: CardTimelineEntry[];
-    notes: CardNoteEntry[];
-  } | null>(null);
+  const [notes, setNotes] = useState<CardNoteEntry[] | null>(null);
+  const [movements, setMovements] = useState<CardTimelineEntry[] | null>(null);
+  const movementsLoadingRef = useRef(false);
   const [noteState, noteAction, notePending] = useActionState(
     addCardNote.bind(null, card.id),
     {},
@@ -49,8 +49,8 @@ export function CardPanel({
 
   useEffect(() => {
     let active = true;
-    void getCardTimeline(card.id).then((result) => {
-      if (active) setTimeline(result);
+    void getCardNotes(card.id).then((result) => {
+      if (active) setNotes(result);
     });
     return () => {
       active = false;
@@ -60,7 +60,7 @@ export function CardPanel({
   useEffect(() => {
     if (noteState.success) {
       toast.success(noteState.success);
-      void getCardTimeline(card.id).then(setTimeline);
+      void getCardNotes(card.id).then(setNotes);
     }
     if (noteState.error) toast.error(noteState.error);
   }, [card.id, noteState]);
@@ -78,6 +78,18 @@ export function CardPanel({
   function submitNote(formData: FormData) {
     setNoteText("");
     noteAction(formData);
+  }
+
+  function openHistory() {
+    setTab("history");
+    if (movements !== null || movementsLoadingRef.current) return;
+
+    movementsLoadingRef.current = true;
+    void getCardMovements(card.id)
+      .then(setMovements)
+      .finally(() => {
+        movementsLoadingRef.current = false;
+      });
   }
 
   return (
@@ -144,10 +156,7 @@ export function CardPanel({
           <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>
             Anotações/Anexos
           </TabButton>
-          <TabButton
-            active={tab === "history"}
-            onClick={() => setTab("history")}
-          >
+          <TabButton active={tab === "history"} onClick={openHistory}>
             Histórico
           </TabButton>
         </div>
@@ -213,11 +222,11 @@ export function CardPanel({
 
               <section className="grid gap-2">
                 <h3 className="text-sm font-semibold">Notas internas</h3>
-                {timeline === null ? (
+                {notes === null ? (
                   <p className="text-sm text-muted-foreground">Carregando...</p>
-                ) : timeline.notes.length ? (
+                ) : notes.length ? (
                   <div className="grid gap-2">
-                    {timeline.notes.map((entry) => (
+                    {notes.map((entry) => (
                       <TimelineNote key={entry.id} entry={entry} />
                     ))}
                   </div>
@@ -230,10 +239,10 @@ export function CardPanel({
             </section>
           ) : (
             <section className="grid gap-3">
-              {timeline === null ? (
+              {movements === null ? (
                 <p className="text-sm text-muted-foreground">Carregando...</p>
-              ) : timeline.movements.length ? (
-                timeline.movements.map((entry) => (
+              ) : movements.length ? (
+                movements.map((entry) => (
                   <MovementEntry key={entry.id} entry={entry} />
                 ))
               ) : (

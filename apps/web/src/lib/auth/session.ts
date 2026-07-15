@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -18,19 +19,21 @@ export type CurrentAppUser = {
   } | null;
 };
 
-export async function getAuthenticatedUser() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+export const getAuthenticatedUser = cache(
+  async function getAuthenticatedUser() {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
 
-  if (error || !user) {
-    return null;
-  }
+    if (error || !user) {
+      return null;
+    }
 
-  return user;
-}
+    return user;
+  },
+);
 
 export async function requireAuthenticatedUser() {
   const user = await getAuthenticatedUser();
@@ -42,7 +45,7 @@ export async function requireAuthenticatedUser() {
   return user;
 }
 
-export async function getCurrentAppUser() {
+export const getCurrentAppUser = cache(async function getCurrentAppUser() {
   const user = await getAuthenticatedUser();
 
   if (!user) {
@@ -63,4 +66,4 @@ export async function getCurrentAppUser() {
   }
 
   return data;
-}
+});

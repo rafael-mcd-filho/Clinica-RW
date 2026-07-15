@@ -22,7 +22,6 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
@@ -43,9 +42,11 @@ import { moveCard } from "../actions";
 import { CardPanel } from "./card-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Select } from "@/components/ui/field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
+import { useCoalescedRouterRefresh } from "@/hooks/use-coalesced-router-refresh";
 
 export type FunnelBoardStage = {
   id: string;
@@ -113,12 +114,11 @@ export function FunnelBoard({
   stageMetrics: Record<string, FunnelBoardStage["metrics"]>;
   canManage: boolean;
 }) {
-  const router = useRouter();
+  const refreshFromRealtime = useCoalescedRouterRefresh();
   const [cardsByStage, setCardsByStage] = useState(() =>
     groupByStage(stages, cards),
   );
-  const [syncedCards, setSyncedCards] = useState(cards);
-  const [syncedStages, setSyncedStages] = useState(stages);
+  const receivedDataRef = useRef({ cards, stages });
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [view, setView] = useState<"kanban" | "list">("kanban");
@@ -136,11 +136,20 @@ export function FunnelBoard({
     }),
   );
 
-  if (cards !== syncedCards || stages !== syncedStages) {
-    setSyncedCards(cards);
-    setSyncedStages(stages);
-    setCardsByStage(groupByStage(stages, cards));
-  }
+  useEffect(() => {
+    if (
+      cards === receivedDataRef.current.cards &&
+      stages === receivedDataRef.current.stages
+    ) {
+      return;
+    }
+
+    receivedDataRef.current = { cards, stages };
+    const frame = requestAnimationFrame(() => {
+      setCardsByStage(groupByStage(stages, cards));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [cards, stages]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -154,13 +163,13 @@ export function FunnelBoard({
           table: "funnel_cards",
           filter: `organization_id=eq.${organizationId}`,
         },
-        () => router.refresh(),
+        refreshFromRealtime,
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [funnelId, organizationId, router]);
+  }, [funnelId, organizationId, refreshFromRealtime]);
 
   const allCards = useMemo(
     () => Object.values(cardsByStage).flat(),
@@ -280,7 +289,6 @@ export function FunnelBoard({
     }
 
     resetDragState();
-    router.refresh();
   }
 
   function resetDragState() {
@@ -337,6 +345,7 @@ export function FunnelBoard({
           cards={visibleCards}
           stages={stages}
           onCardClick={setSelectedCardId}
+          onShowKanban={() => setView("kanban")}
         />
       ) : (
         <DndContext
@@ -373,6 +382,7 @@ export function FunnelBoard({
 
       {selectedCard ? (
         <CardPanel
+          key={selectedCard.id}
           funnelId={funnelId}
           card={selectedCard}
           canManage={canManage}
@@ -860,18 +870,27 @@ function CardsListView({
   cards,
   stages,
   onCardClick,
+  onShowKanban,
 }: {
   cards: FunnelBoardCard[];
   stages: FunnelBoardStage[];
   onCardClick: (cardId: string) => void;
+  onShowKanban: () => void;
 }) {
   if (!cards.length) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card p-10 text-center">
-        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Inbox className="size-5" aria-hidden="true" />
-        </div>
-        <p className="mt-3 text-sm font-medium">Nenhum card encontrado</p>
+      <div className="rounded-lg border border-dashed border-border bg-card">
+        <EmptyState
+          icon={Inbox}
+          title="Nenhum card encontrado"
+          description="Ajuste os filtros ou volte ao Kanban para visualizar as etapas."
+          actions={
+            <Button type="button" variant="secondary" onClick={onShowKanban}>
+              <Columns3 className="size-4" aria-hidden="true" />
+              Ver Kanban
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -879,8 +898,8 @@ function CardsListView({
   const stageName = new Map(stages.map((stage) => [stage.id, stage.name]));
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
-      <div className="grid grid-cols-[minmax(12rem,1.3fr)_12rem_10rem_8rem] border-b border-border bg-muted px-4 py-3 text-label font-medium tracking-wide uppercase text-muted-foreground">
+    <div className="max-w-full overflow-x-auto overscroll-x-contain rounded-lg border border-border bg-card">
+      <div className="grid min-w-[44rem] grid-cols-[minmax(12rem,1.3fr)_12rem_10rem_8rem] border-b border-border bg-muted px-4 py-3 text-label font-medium tracking-wide uppercase text-muted-foreground">
         <span>Contato</span>
         <span>Etapa</span>
         <span>Responsável</span>
@@ -892,13 +911,13 @@ function CardsListView({
           type="button"
           variant="ghost"
           onClick={() => onCardClick(card.id)}
-          className="grid h-auto w-full grid-cols-[minmax(12rem,1.3fr)_12rem_10rem_8rem] items-center gap-3 rounded-none border-b border-border px-4 py-3 text-left text-body font-normal text-foreground last:border-b-0 hover:bg-muted/40"
+          className="grid h-auto min-w-[44rem] w-full grid-cols-[minmax(12rem,1.3fr)_12rem_10rem_8rem] items-center gap-3 rounded-none border-b border-border px-4 py-3 text-left text-body font-normal text-foreground last:border-b-0 hover:bg-muted/40"
         >
           <span className="min-w-0">
             <span className="block truncate font-semibold">
               {card.patient_name}
             </span>
-            <span className="text-label text-muted-foreground">
+            <span className="block truncate text-label text-muted-foreground">
               {card.next_action ?? formatCardCode(card.id)}
             </span>
           </span>

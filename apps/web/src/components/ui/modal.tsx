@@ -74,7 +74,7 @@ export function Modal({
                 </Button>
               </Dialog.Close>
             </header>
-            <div className="overflow-y-auto p-5">{children}</div>
+            <div className="min-w-0 overflow-y-auto p-5">{children}</div>
             {footer ? (
               <footer className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-4">
                 {footer}

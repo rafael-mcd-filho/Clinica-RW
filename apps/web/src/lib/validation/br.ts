@@ -42,3 +42,38 @@ export function formatPhoneBR(value: string): string {
 export function isValidPhoneBR(value: string): boolean {
   return isPhone(value);
 }
+
+/** Validates a Brazilian postal code by its 8-digit shape. */
+export function isValidCEP(value: string): boolean {
+  return onlyDigits(value).length === 8;
+}
+
+export const brazilianStateCodes = [
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+] as const;

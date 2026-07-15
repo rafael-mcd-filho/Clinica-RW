@@ -1,13 +1,18 @@
 "use client";
 
-import { createPortal } from "react-dom";
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, User, X } from "lucide-react";
+import {
+  useActionState,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Plus, User } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
+import { Modal } from "@/components/ui/modal";
 import type { QuickPatientActionState } from "@/lib/patients/quick-create";
 
 export type PatientSearchOption = {
@@ -30,24 +35,77 @@ export function PatientSearchField({
   canCreatePatient,
   createPatientAction,
   className,
+  remoteSearch = false,
 }: {
   patients: PatientSearchOption[];
   canCreatePatient: boolean;
   createPatientAction: QuickCreateAction;
   className?: string;
+  remoteSearch?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [focused, setFocused] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
-  const router = useRouter();
+  const [remoteOptions, setRemoteOptions] = useState<PatientSearchOption[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [activeOptionIndex, setActiveOptionIndex] = useState(-1);
+  const latestQueryRef = useRef("");
+  const fieldId = useId();
+  const listboxId = `${fieldId}-listbox`;
   const normalizedQuery = query.trim().toLowerCase();
   const queryDigits = normalizedQuery.replace(/\D/g, "");
-  const selectedPatient = patients.find(
+  const availablePatients = remoteSearch ? remoteOptions : patients;
+  const selectedPatient = availablePatients.find(
     (item) => item.id === selectedPatientId,
   );
+
+  useEffect(() => {
+    if (!remoteSearch || normalizedQuery.length < 3 || selectedPatientId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const requestedQuery = query.trim();
+    const timeout = window.setTimeout(async () => {
+      setSearching(true);
+      setSearchError(null);
+      try {
+        const response = await fetch(
+          `/api/patients/search?q=${encodeURIComponent(requestedQuery)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!response.ok) throw new Error("search_failed");
+        const payload = (await response.json()) as {
+          patients?: PatientSearchOption[];
+        };
+        if (latestQueryRef.current.trim() !== requestedQuery) return;
+        setRemoteOptions(payload.patients ?? []);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setRemoteOptions([]);
+          setSearchError("Não foi possível buscar pacientes agora.");
+        }
+      } finally {
+        if (
+          !controller.signal.aborted &&
+          latestQueryRef.current.trim() === requestedQuery
+        ) {
+          setSearching(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [normalizedQuery, query, remoteSearch, selectedPatientId]);
+
   const options = useMemo(() => {
     if (normalizedQuery.length < 3) return [];
+    if (remoteSearch) return remoteOptions;
 
     return patients
       .filter((patient) => {
@@ -75,52 +133,140 @@ export function PatientSearchField({
         return textMatch || digitMatch;
       })
       .slice(0, 8);
-  }, [normalizedQuery, patients, queryDigits]);
+  }, [normalizedQuery, patients, queryDigits, remoteOptions, remoteSearch]);
   const showQuickCreate =
     canCreatePatient &&
     normalizedQuery.length >= 3 &&
     !selectedPatientId &&
+    !searching &&
+    !searchError &&
     !options.length;
+  const listboxOpen =
+    focused && normalizedQuery.length >= 3 && options.length > 0;
+
+  function selectPatient(patient: PatientSearchOption) {
+    setSelectedPatientId(patient.id);
+    const patientName = patient.social_name || patient.full_name;
+    latestQueryRef.current = patientName;
+    setQuery(patientName);
+    setFocused(false);
+    setSearching(false);
+    setActiveOptionIndex(-1);
+  }
 
   return (
-    <label
+    <div
       className={`relative grid gap-2 text-sm font-medium ${className ?? ""}`}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setFocused(false);
+          setActiveOptionIndex(-1);
+        }
+      }}
     >
-      Paciente
-      <input type="hidden" name="patient_id" value={selectedPatientId} />
+      <label htmlFor={fieldId}>Paciente</label>
+      <input
+        type="hidden"
+        name="patient_id"
+        value={selectedPatientId}
+        readOnly
+      />
       <div className="relative">
         <User
           className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden="true"
         />
         <Input
+          id={fieldId}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={listboxOpen}
+          aria-controls={listboxId}
+          aria-activedescendant={
+            listboxOpen && activeOptionIndex >= 0
+              ? `${listboxId}-option-${activeOptionIndex}`
+              : undefined
+          }
           value={query}
           onChange={(event) => {
-            setQuery(event.target.value);
+            const nextQuery = event.target.value;
+            const nextNormalizedQuery = nextQuery.trim();
+            latestQueryRef.current = nextQuery;
+            setQuery(nextQuery);
             setSelectedPatientId("");
+            setActiveOptionIndex(-1);
+            if (remoteSearch) {
+              setRemoteOptions([]);
+              setSearchError(null);
+              setSearching(nextNormalizedQuery.length >= 3);
+            }
+            if (nextNormalizedQuery.length < 3) {
+              setSearching(false);
+            }
           }}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" && options.length) {
+              event.preventDefault();
+              setActiveOptionIndex((current) =>
+                current < options.length - 1 ? current + 1 : 0,
+              );
+            } else if (event.key === "ArrowUp" && options.length) {
+              event.preventDefault();
+              setActiveOptionIndex((current) =>
+                current > 0 ? current - 1 : options.length - 1,
+              );
+            } else if (
+              event.key === "Enter" &&
+              activeOptionIndex >= 0 &&
+              options[activeOptionIndex]
+            ) {
+              event.preventDefault();
+              selectPatient(options[activeOptionIndex]);
+            } else if (event.key === "Escape") {
+              setFocused(false);
+              setActiveOptionIndex(-1);
+            }
+          }}
           placeholder="Digite 3 letras para buscar..."
           className="w-full pl-9"
           autoComplete="off"
         />
       </div>
-      {focused && normalizedQuery.length >= 3 && options.length ? (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-card py-1 shadow-[var(--shadow-lg)]">
-          {options.map((patient) => {
+      {searching ? (
+        <span className="text-xs text-muted-foreground" aria-live="polite">
+          Buscando pacientes...
+        </span>
+      ) : null}
+      {searchError ? (
+        <span className="text-xs text-destructive" role="alert">
+          {searchError}
+        </span>
+      ) : null}
+      {listboxOpen ? (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label="Pacientes encontrados"
+          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-card py-1 shadow-[var(--shadow-lg)]"
+        >
+          {options.map((patient, index) => {
             const name = patient.social_name || patient.full_name;
             return (
               <button
                 key={patient.id}
+                id={`${listboxId}-option-${index}`}
                 type="button"
-                className="grid w-full gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted"
+                role="option"
+                aria-selected={index === activeOptionIndex}
+                className="grid w-full gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted aria-selected:bg-muted"
+                onMouseEnter={() => setActiveOptionIndex(index)}
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  setSelectedPatientId(patient.id);
-                  setQuery(name);
-                  setFocused(false);
+                  selectPatient(patient);
                 }}
+                onClick={() => selectPatient(patient)}
               >
                 <span className="font-medium">{name}</span>
                 <span className="truncate text-xs text-muted-foreground">
@@ -164,13 +310,19 @@ export function PatientSearchField({
         createPatientAction={createPatientAction}
         onClose={() => setQuickCreateOpen(false)}
         onCreated={(patient) => {
+          setRemoteOptions((current) => [
+            patient,
+            ...current.filter((item) => item.id !== patient.id),
+          ]);
           setSelectedPatientId(patient.id);
-          setQuery(patient.social_name || patient.full_name);
+          const patientName = patient.social_name || patient.full_name;
+          latestQueryRef.current = patientName;
+          setQuery(patientName);
           setQuickCreateOpen(false);
-          router.refresh();
+          setActiveOptionIndex(-1);
         }}
       />
-    </label>
+    </div>
   );
 }
 
@@ -189,7 +341,6 @@ function QuickPatientCreateModal({
 }) {
   const handledPatientIdRef = useRef<string | null>(null);
   const [state, action, pending] = useActionState(createPatientAction, {});
-  const portalTarget = typeof document === "undefined" ? null : document.body;
 
   useEffect(() => {
     if (
@@ -203,66 +354,46 @@ function QuickPatientCreateModal({
     }
   }, [onCreated, state]);
 
-  if (!open || !portalTarget) return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[80] grid place-items-center bg-foreground/20 p-4"
-      data-select-portal-root
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Cadastrar paciente"
+      description="Cadastro rápido para continuar o agendamento."
+      className="max-w-md"
     >
-      <Card className="w-full max-w-md shadow-[var(--shadow-lg)]">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <h2 className="font-semibold">Cadastrar paciente</h2>
-            <p className="text-sm text-muted-foreground">
-              Cadastro rápido para continuar o fluxo.
-            </p>
-          </div>
-          <Button type="button" variant="ghost" size="icon" onClick={onClose}>
-            <X className="size-4" />
+      <form action={action} className="grid gap-4">
+        <label className="grid gap-2 text-sm font-medium">
+          Nome
+          <Input
+            name="full_name"
+            defaultValue={initialName.trim()}
+            required
+            autoFocus
+          />
+        </label>
+        <label className="grid gap-2 text-sm font-medium">
+          Telefone
+          <Input name="phone" inputMode="tel" placeholder="(11) 90000-0000" />
+        </label>
+        <label className="grid gap-2 text-sm font-medium">
+          E-mail
+          <Input name="email" type="email" placeholder="nome@email.com" />
+        </label>
+        {state.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {state.error}
+          </p>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancelar
           </Button>
-        </CardHeader>
-        <CardContent>
-          <form action={action} className="grid gap-4">
-            <label className="grid gap-2 text-sm font-medium">
-              Nome
-              <Input
-                name="full_name"
-                defaultValue={initialName.trim()}
-                required
-                autoFocus
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Telefone
-              <Input
-                name="phone"
-                inputMode="tel"
-                placeholder="(11) 90000-0000"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              E-mail
-              <Input name="email" type="email" placeholder="nome@email.com" />
-            </label>
-            {state.error ? (
-              <p className="text-sm text-destructive">{state.error}</p>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={onClose}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={pending}>
-                {pending ? "Salvando..." : "Cadastrar e selecionar"}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>,
-    portalTarget,
+          <Button type="submit" disabled={pending}>
+            {pending ? "Salvando..." : "Cadastrar e selecionar"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

@@ -38,6 +38,8 @@ create table if not exists public.online_booking_reviews (
     references public.professionals(organization_id, id) on delete set null (professional_id)
 );
 
+drop trigger if exists set_online_booking_reviews_updated_at
+  on public.online_booking_reviews;
 create trigger set_online_booking_reviews_updated_at
 before update on public.online_booking_reviews
 for each row execute function app_private.set_updated_at();
@@ -100,8 +102,6 @@ with check (
 
 grant select, insert, update, delete on public.online_booking_reviews
 to authenticated, service_role;
-
-grant select on public.online_booking_reviews to service_role;
 
 comment on table public.online_booking_reviews is
   'Curated public reviews and professional responses shown on the online booking page.';

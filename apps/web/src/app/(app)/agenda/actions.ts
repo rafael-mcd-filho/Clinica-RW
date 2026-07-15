@@ -5,6 +5,12 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getRequestContext } from "@/lib/auth/context";
 import {
+  buildAgendaEncounterHref,
+  normalizeAgendaTimeZone,
+  parseAgendaLocalDateTime,
+} from "@/lib/agenda/range";
+import { buildWeeklyAvailabilityIntervals } from "@/lib/agenda/weekly-availability";
+import {
   createQuickPatient,
   type QuickPatientActionState,
 } from "@/lib/patients/quick-create";
@@ -16,6 +22,28 @@ export type AgendaActionState = {
   success?: string;
   ok?: boolean;
 };
+
+const scheduleConfigurationPeriodSchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  start_time: z.string().regex(/^\d{2}:\d{2}$/),
+  end_time: z.string().regex(/^\d{2}:\d{2}$/),
+});
+
+const scheduleConfigurationSchema = z.object({
+  schedule_id: z.string().uuid().nullable(),
+  professional_id: z.string().uuid(),
+  unit_id: z.string().uuid(),
+  name: z.string().trim().min(2).max(120),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  active: z.boolean(),
+  online_enabled: z.boolean(),
+  min_notice_hours: z.number().int().min(0).max(720),
+  max_days_ahead: z.number().int().min(1).max(365),
+  cancellation_notice_hours: z.number().int().min(0).max(720),
+  slot_minutes: z.number().int().min(5).max(480),
+  availability: z.array(scheduleConfigurationPeriodSchema).max(70),
+  procedure_ids: z.array(z.string().uuid()).max(200),
+});
 
 async function requireAgendaPermission(code: string) {
   const context = await getRequestContext();
@@ -91,9 +119,28 @@ function normalizeSlug(value: string) {
     .slice(0, 64);
 }
 
-function parseLocalDateTime(value: string) {
-  const parsed = new Date(`${value}:00-03:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+async function getAgendaTimeZone(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  organizationId: string,
+) {
+  const { data } = await supabase
+    .from("organization_settings")
+    .select("timezone")
+    .eq("organization_id", organizationId)
+    .maybeSingle<{ timezone: string | null }>();
+  return normalizeAgendaTimeZone(data?.timezone);
+}
+
+async function revalidateOnlineBookingPortal(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  organizationId: string,
+) {
+  const { data } = await supabase
+    .from("online_booking_settings")
+    .select("public_slug")
+    .eq("organization_id", organizationId)
+    .maybeSingle<{ public_slug: string | null }>();
+  if (data?.public_slug) revalidatePath(`/agendar/${data.public_slug}`);
 }
 
 function listFromText(value: string | undefined, limit = 24) {
@@ -137,8 +184,202 @@ export async function createSchedule(
   });
   if (error) return { error: friendlyError(error.message, error.code) };
   revalidatePath("/agenda");
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   return { success: "Agenda criada." };
+}
+
+export async function updateSchedule(
+  scheduleId: string,
+  _state: AgendaActionState,
+  formData: FormData,
+): Promise<AgendaActionState> {
+  const context = await requireAgendaPermission("agenda.configurar");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const parsed = z
+    .object({
+      professional_id: z.string().uuid(),
+      unit_id: z.string().uuid(),
+      name: z.string().trim().min(2),
+      color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+      active: z.boolean(),
+    })
+    .safeParse({
+      professional_id: formData.get("professional_id"),
+      unit_id: formData.get("unit_id"),
+      name: formData.get("name"),
+      color: formData.get("color"),
+      active: formData.get("active") === "on",
+    });
+  if (!parsed.success) {
+    return { error: "Revise profissional, unidade, nome, cor e status." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: currentSchedule, error: currentScheduleError } = await supabase
+    .from("schedules")
+    .select("professional_id, unit_id")
+    .eq("organization_id", context.organization.id)
+    .eq("id", scheduleId)
+    .maybeSingle<{ professional_id: string; unit_id: string }>();
+  if (currentScheduleError) {
+    return {
+      error: friendlyError(
+        currentScheduleError.message,
+        currentScheduleError.code,
+      ),
+    };
+  }
+  if (!currentSchedule) return { error: "Agenda não encontrada." };
+
+  const changesScheduleOwner =
+    currentSchedule.professional_id !== parsed.data.professional_id ||
+    currentSchedule.unit_id !== parsed.data.unit_id;
+  if (changesScheduleOwner) {
+    const admin = createSupabaseAdminClient();
+    const { count, error: appointmentsError } = await admin
+      .from("appointments")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", context.organization.id)
+      .eq("schedule_id", scheduleId);
+    if (appointmentsError) {
+      return {
+        error: friendlyError(appointmentsError.message, appointmentsError.code),
+      };
+    }
+    if ((count ?? 0) > 0) {
+      return {
+        error:
+          "Esta agenda já possui agendamentos vinculados. Para trocar o profissional ou a unidade, crie uma nova agenda. Nome, cor e status ainda podem ser editados.",
+      };
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("schedules")
+    .update(parsed.data)
+    .eq("organization_id", context.organization.id)
+    .eq("id", scheduleId)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+  if (error) return { error: friendlyError(error.message, error.code) };
+  if (!data) return { error: "Agenda não encontrada." };
+  revalidatePath("/agenda");
+  revalidatePath("/configuracoes", "layout");
+  return { success: "Agenda atualizada." };
+}
+
+export async function saveScheduleConfiguration(
+  _state: AgendaActionState,
+  formData: FormData,
+): Promise<AgendaActionState> {
+  const context = await requireAgendaPermission("agenda.configurar");
+  if (!context?.organization) return { error: "Acesso negado." };
+
+  let availability: unknown;
+  let procedureIds: unknown;
+  try {
+    availability = JSON.parse(
+      String(formData.get("availability_payload") ?? "[]"),
+    );
+    procedureIds = JSON.parse(
+      String(formData.get("procedure_ids_payload") ?? "[]"),
+    );
+  } catch {
+    return { error: "Não foi possível interpretar os horários informados." };
+  }
+
+  const parsed = scheduleConfigurationSchema.safeParse({
+    schedule_id: formData.get("schedule_id") || null,
+    professional_id: formData.get("professional_id"),
+    unit_id: formData.get("unit_id"),
+    name: formData.get("name"),
+    color: formData.get("color"),
+    active: formData.get("active") === "true",
+    online_enabled: formData.get("online_enabled") === "true",
+    min_notice_hours: Number(formData.get("min_notice_hours")),
+    max_days_ahead: Number(formData.get("max_days_ahead")),
+    cancellation_notice_hours: Number(
+      formData.get("cancellation_notice_hours"),
+    ),
+    slot_minutes: Number(formData.get("slot_minutes")),
+    availability,
+    procedure_ids: procedureIds,
+  });
+  if (!parsed.success) {
+    return {
+      error:
+        "Revise os dados gerais, os horários e as regras de agendamento online.",
+    };
+  }
+
+  const periodsByWeekday = new Map<
+    number,
+    Array<(typeof parsed.data.availability)[number]>
+  >();
+  for (const period of parsed.data.availability) {
+    if (period.start_time >= period.end_time) {
+      return { error: "Todo período deve terminar depois do horário inicial." };
+    }
+    const periods = periodsByWeekday.get(period.weekday) ?? [];
+    periods.push(period);
+    periodsByWeekday.set(period.weekday, periods);
+  }
+  for (const periods of periodsByWeekday.values()) {
+    periods.sort((left, right) =>
+      left.start_time.localeCompare(right.start_time),
+    );
+    if (
+      periods.some(
+        (period, index) =>
+          index > 0 && period.start_time < periods[index - 1].end_time,
+      )
+    ) {
+      return { error: "Há períodos sobrepostos no mesmo dia da semana." };
+    }
+  }
+
+  if (parsed.data.online_enabled && !parsed.data.active) {
+    return {
+      error: "Ative a agenda antes de disponibilizá-la no agendamento online.",
+    };
+  }
+  if (parsed.data.online_enabled && !parsed.data.availability.length) {
+    return {
+      error: "Cadastre ao menos um horário antes de publicar esta agenda.",
+    };
+  }
+  if (parsed.data.online_enabled && !parsed.data.procedure_ids.length) {
+    return {
+      error: "Selecione ao menos um procedimento para o agendamento online.",
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("save_schedule_configuration", {
+    p_schedule_id: parsed.data.schedule_id,
+    p_professional_id: parsed.data.professional_id,
+    p_unit_id: parsed.data.unit_id,
+    p_name: parsed.data.name,
+    p_color: parsed.data.color,
+    p_active: parsed.data.active,
+    p_online_enabled: parsed.data.online_enabled,
+    p_min_notice_hours: parsed.data.min_notice_hours,
+    p_max_days_ahead: parsed.data.max_days_ahead,
+    p_cancellation_notice_hours: parsed.data.cancellation_notice_hours,
+    p_slot_minutes: parsed.data.slot_minutes,
+    p_availability: parsed.data.availability,
+    p_procedure_ids: parsed.data.procedure_ids,
+  });
+  if (error) return { error: friendlyError(error.message, error.code) };
+
+  await revalidateOnlineBookingPortal(supabase, context.organization.id);
+  revalidatePath("/agenda");
+  revalidatePath("/configuracoes", "layout");
+  return {
+    success: parsed.data.schedule_id
+      ? "Configuração da agenda atualizada."
+      : "Agenda criada e configurada.",
+  };
 }
 
 export async function updateOnlineBookingSettings(
@@ -166,9 +407,6 @@ export async function updateOnlineBookingSettings(
         .max(64)
         .transform(normalizeSlug)
         .pipe(z.string().regex(/^[a-z0-9][a-z0-9-]{2,62}[a-z0-9]$/)),
-      min_notice_hours: z.coerce.number().int().min(0).max(720),
-      max_days_ahead: z.coerce.number().int().min(1).max(365),
-      cancellation_notice_hours: z.coerce.number().int().min(0).max(720),
       max_requests_per_contact_day: z.coerce.number().int().min(1).max(20),
       max_no_shows_180_days: z.coerce.number().int().min(0).max(20),
       require_contact_verification: z.boolean(),
@@ -189,9 +427,6 @@ export async function updateOnlineBookingSettings(
     .safeParse({
       enabled: formData.get("enabled") === "on",
       public_slug: formData.get("public_slug"),
-      min_notice_hours: formData.get("min_notice_hours"),
-      max_days_ahead: formData.get("max_days_ahead"),
-      cancellation_notice_hours: formData.get("cancellation_notice_hours"),
       max_requests_per_contact_day: formData.get(
         "max_requests_per_contact_day",
       ),
@@ -213,7 +448,7 @@ export async function updateOnlineBookingSettings(
     });
 
   if (!parsed.success) {
-    return { error: "Revise link publico, janela e politica de agenda." };
+    return { error: "Revise o link público e as políticas do portal." };
   }
 
   const acceptedHealthInsuranceIds = formData
@@ -229,9 +464,6 @@ export async function updateOnlineBookingSettings(
     .update({
       enabled: parsed.data.enabled,
       public_slug: parsed.data.public_slug,
-      min_notice_hours: parsed.data.min_notice_hours,
-      max_days_ahead: parsed.data.max_days_ahead,
-      cancellation_notice_hours: parsed.data.cancellation_notice_hours,
       max_requests_per_contact_day: parsed.data.max_requests_per_contact_day,
       max_no_shows_180_days: parsed.data.max_no_shows_180_days,
       require_contact_verification: parsed.data.require_contact_verification,
@@ -265,7 +497,7 @@ export async function updateOnlineBookingSettings(
 
   if (error) return { error: friendlyError(error.message, error.code) };
   revalidatePath("/agenda");
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath(`/agendar/${parsed.data.public_slug}`);
   return { success: "Agendamento online atualizado." };
 }
@@ -338,7 +570,7 @@ export async function createOnlineBookingReview(
   });
 
   if (error) return { error: friendlyError(error.message, error.code) };
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   if (settings?.public_slug) revalidatePath(`/agendar/${settings.public_slug}`);
   return { success: "Avaliação cadastrada." };
 }
@@ -393,7 +625,7 @@ export async function updateOnlineBookingReview(
     .eq("id", reviewId);
 
   if (error) return { error: friendlyError(error.message, error.code) };
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   if (settings?.public_slug) revalidatePath(`/agendar/${settings.public_slug}`);
   return { success: "Avaliação atualizada." };
 }
@@ -424,8 +656,193 @@ export async function createScheduleAvailability(
   });
   if (error) return { error: friendlyError(error.message, error.code) };
   revalidatePath("/agenda");
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   return { success: "Disponibilidade adicionada." };
+}
+
+const weeklyAvailabilityDaySchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  active: z.boolean(),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  lunchEnabled: z.boolean(),
+  lunchStart: z.string().regex(/^\d{2}:\d{2}$/),
+  lunchEnd: z.string().regex(/^\d{2}:\d{2}$/),
+  preserve: z.boolean().optional().default(false),
+});
+
+export async function saveWeeklyScheduleAvailability(
+  _state: AgendaActionState,
+  formData: FormData,
+): Promise<AgendaActionState> {
+  const context = await requireAgendaPermission("agenda.configurar");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const organizationId = context.organization.id;
+
+  const base = z
+    .object({
+      schedule_id: z.string().uuid(),
+      slot_minutes: z.coerce.number().int().min(5).max(480),
+      availability_payload: z.string().min(2),
+    })
+    .safeParse({
+      schedule_id: formData.get("schedule_id"),
+      slot_minutes: formData.get("slot_minutes"),
+      availability_payload: formData.get("availability_payload"),
+    });
+  if (!base.success) {
+    return { error: "Revise a agenda, o intervalo e os horários informados." };
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(base.data.availability_payload);
+  } catch {
+    return { error: "Não foi possível interpretar os horários informados." };
+  }
+
+  const parsedDays = z
+    .array(weeklyAvailabilityDaySchema)
+    .length(7)
+    .safeParse(payload);
+  if (
+    !parsedDays.success ||
+    new Set(parsedDays.data.map((day) => day.weekday)).size !== 7
+  ) {
+    return { error: "Revise os sete dias da semana antes de salvar." };
+  }
+
+  const intervals = buildWeeklyAvailabilityIntervals(
+    parsedDays.data,
+    base.data.slot_minutes,
+  );
+  if ("error" in intervals) return { error: intervals.error };
+  const { managedWeekdays } = intervals;
+  const desiredRows = intervals.rows.map((row) => ({
+    organization_id: organizationId,
+    schedule_id: base.data.schedule_id,
+    ...row,
+  }));
+
+  const supabase = await createSupabaseServerClient();
+  const [scheduleResult, existingResult, onlineSettingsResult] =
+    await Promise.all([
+      supabase
+        .from("schedules")
+        .select("id")
+        .eq("organization_id", context.organization.id)
+        .eq("id", base.data.schedule_id)
+        .maybeSingle<{ id: string }>(),
+      supabase
+        .from("schedule_availability")
+        .select("id, weekday, start_time")
+        .eq("organization_id", context.organization.id)
+        .eq("schedule_id", base.data.schedule_id)
+        .returns<Array<{ id: string; weekday: number; start_time: string }>>(),
+      supabase
+        .from("online_booking_settings")
+        .select("public_slug")
+        .eq("organization_id", context.organization.id)
+        .maybeSingle<{ public_slug: string }>(),
+    ]);
+
+  if (scheduleResult.error || !scheduleResult.data) {
+    return { error: "Agenda não encontrada para esta empresa." };
+  }
+  if (existingResult.error) {
+    return {
+      error: friendlyError(
+        existingResult.error.message,
+        existingResult.error.code,
+      ),
+    };
+  }
+
+  const keptIds = new Set<string>();
+  if (desiredRows.length) {
+    const { data: savedRows, error: saveError } = await supabase
+      .from("schedule_availability")
+      .upsert(desiredRows, {
+        onConflict: "organization_id,schedule_id,weekday,start_time",
+      })
+      .select("id")
+      .returns<Array<{ id: string }>>();
+    if (saveError)
+      return { error: friendlyError(saveError.message, saveError.code) };
+    for (const row of savedRows ?? []) keptIds.add(row.id);
+  }
+
+  const obsoleteIds = (existingResult.data ?? [])
+    .filter((row) => managedWeekdays.has(row.weekday) && !keptIds.has(row.id))
+    .map((row) => row.id);
+  if (obsoleteIds.length) {
+    const { error: deleteError } = await supabase
+      .from("schedule_availability")
+      .delete()
+      .eq("organization_id", context.organization.id)
+      .eq("schedule_id", base.data.schedule_id)
+      .in("id", obsoleteIds);
+    if (deleteError) {
+      return {
+        error: friendlyError(deleteError.message, deleteError.code),
+      };
+    }
+  }
+
+  revalidatePath("/agenda");
+  revalidatePath("/configuracoes", "layout");
+  if (onlineSettingsResult.data?.public_slug) {
+    revalidatePath(`/agendar/${onlineSettingsResult.data.public_slug}`);
+  }
+  return { success: "Horários de atendimento atualizados." };
+}
+
+export async function updateScheduleAvailability(
+  availabilityId: string,
+  _state: AgendaActionState,
+  formData: FormData,
+): Promise<AgendaActionState> {
+  const context = await requireAgendaPermission("agenda.configurar");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const parsed = parseAvailability(formData);
+  if (!parsed.success || parsed.data.start_time >= parsed.data.end_time) {
+    return { error: "Preencha um período de disponibilidade válido." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("schedule_availability")
+    .update(parsed.data)
+    .eq("organization_id", context.organization.id)
+    .eq("id", availabilityId)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+  if (error) return { error: friendlyError(error.message, error.code) };
+  if (!data) return { error: "Disponibilidade não encontrada." };
+  revalidatePath("/agenda");
+  revalidatePath("/configuracoes", "layout");
+  return { success: "Disponibilidade atualizada." };
+}
+
+export async function deleteScheduleAvailability(
+  availabilityId: string,
+  _state: AgendaActionState,
+  _formData: FormData,
+): Promise<AgendaActionState> {
+  void _state;
+  void _formData;
+  const context = await requireAgendaPermission("agenda.configurar");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("schedule_availability")
+    .delete()
+    .eq("organization_id", context.organization.id)
+    .eq("id", availabilityId);
+  if (error) return { error: friendlyError(error.message, error.code) };
+  revalidatePath("/agenda");
+  revalidatePath("/configuracoes", "layout");
+  return { success: "Disponibilidade excluída." };
 }
 
 export async function createScheduleBlock(
@@ -443,13 +860,20 @@ export async function createScheduleBlock(
     })
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: "Preencha agenda, início e fim." };
-  const startAt = parseLocalDateTime(parsed.data.start_at);
-  const endAt = parseLocalDateTime(parsed.data.end_at);
-  if (!startAt || !endAt || startAt >= endAt) {
+  const supabase = await createSupabaseServerClient();
+  const timeZone = await getAgendaTimeZone(supabase, context.organization.id);
+  const startAt = parseAgendaLocalDateTime(parsed.data.start_at, timeZone);
+  const endAt = parseAgendaLocalDateTime(parsed.data.end_at, timeZone);
+  if (!startAt || !endAt) {
+    return {
+      error:
+        "Um dos horários não existe no fuso da empresa. Escolha outro horário.",
+    };
+  }
+  if (startAt >= endAt) {
     return { error: "O fim do bloqueio deve ser posterior ao início." };
   }
 
-  const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("schedule_blocks").insert({
     organization_id: context.organization.id,
     schedule_id: parsed.data.schedule_id,
@@ -459,9 +883,98 @@ export async function createScheduleBlock(
     created_by_user_id: context.effectiveUser?.id ?? null,
   });
   if (error) return { error: friendlyError(error.message, error.code) };
+  await revalidateOnlineBookingPortal(supabase, context.organization.id);
   revalidatePath("/agenda");
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   return { success: "Horário bloqueado." };
+}
+
+export async function updateScheduleBlock(
+  blockId: string,
+  _state: AgendaActionState,
+  formData: FormData,
+): Promise<AgendaActionState> {
+  const context = await requireAgendaPermission("agenda.bloquear_horario");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const parsed = parseBlock(formData);
+  if (!parsed.success) return { error: "Preencha agenda, início e fim." };
+  const supabase = await createSupabaseServerClient();
+  const timeZone = await getAgendaTimeZone(supabase, context.organization.id);
+  const startAt = parseAgendaLocalDateTime(parsed.data.start_at, timeZone);
+  const endAt = parseAgendaLocalDateTime(parsed.data.end_at, timeZone);
+  if (!startAt || !endAt) {
+    return {
+      error:
+        "Um dos horários não existe no fuso da empresa. Escolha outro horário.",
+    };
+  }
+  if (startAt >= endAt) {
+    return { error: "O fim do bloqueio deve ser posterior ao início." };
+  }
+
+  const { data, error } = await supabase
+    .from("schedule_blocks")
+    .update({
+      schedule_id: parsed.data.schedule_id,
+      start_at: startAt.toISOString(),
+      end_at: endAt.toISOString(),
+      reason: parsed.data.reason || null,
+    })
+    .eq("organization_id", context.organization.id)
+    .eq("id", blockId)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+  if (error) return { error: friendlyError(error.message, error.code) };
+  if (!data) return { error: "Bloqueio não encontrado." };
+  await revalidateOnlineBookingPortal(supabase, context.organization.id);
+  revalidatePath("/agenda");
+  revalidatePath("/configuracoes", "layout");
+  return { success: "Bloqueio atualizado." };
+}
+
+export async function deleteScheduleBlock(
+  blockId: string,
+  _state: AgendaActionState,
+  _formData: FormData,
+): Promise<AgendaActionState> {
+  void _state;
+  void _formData;
+  const context = await requireAgendaPermission("agenda.bloquear_horario");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("schedule_blocks")
+    .delete()
+    .eq("organization_id", context.organization.id)
+    .eq("id", blockId);
+  if (error) return { error: friendlyError(error.message, error.code) };
+  await revalidateOnlineBookingPortal(supabase, context.organization.id);
+  revalidatePath("/agenda");
+  revalidatePath("/configuracoes", "layout");
+  return { success: "Bloqueio excluído." };
+}
+
+function parseAvailability(formData: FormData) {
+  return z
+    .object({
+      schedule_id: z.string().uuid(),
+      weekday: z.coerce.number().int().min(0).max(6),
+      start_time: z.string().regex(/^\d{2}:\d{2}$/),
+      end_time: z.string().regex(/^\d{2}:\d{2}$/),
+      slot_minutes: z.coerce.number().int().min(5).max(480),
+    })
+    .safeParse(Object.fromEntries(formData));
+}
+
+function parseBlock(formData: FormData) {
+  return z
+    .object({
+      schedule_id: z.string().uuid(),
+      start_at: z.string().min(16),
+      end_at: z.string().min(16),
+      reason: z.string().trim().max(300).optional(),
+    })
+    .safeParse(Object.fromEntries(formData));
 }
 
 export async function createWaitlistEntry(
@@ -540,25 +1053,33 @@ export async function createAppointment(
   }
 
   const supabase = await createSupabaseServerClient();
-  const [{ data: schedule }, { data: procedure }] = await Promise.all([
-    supabase
-      .from("schedules")
-      .select("professional_id, unit_id")
-      .eq("id", parsed.data.schedule_id)
-      .eq("organization_id", context.organization.id)
-      .single<{ professional_id: string; unit_id: string }>(),
-    supabase
-      .from("procedures")
-      .select("duration_minutes")
-      .eq("id", parsed.data.procedure_id)
-      .eq("organization_id", context.organization.id)
-      .single<{ duration_minutes: number }>(),
-  ]);
+  const [{ data: schedule }, { data: procedure }, timeZone] = await Promise.all(
+    [
+      supabase
+        .from("schedules")
+        .select("professional_id, unit_id")
+        .eq("id", parsed.data.schedule_id)
+        .eq("organization_id", context.organization.id)
+        .single<{ professional_id: string; unit_id: string }>(),
+      supabase
+        .from("procedures")
+        .select("duration_minutes")
+        .eq("id", parsed.data.procedure_id)
+        .eq("organization_id", context.organization.id)
+        .single<{ duration_minutes: number }>(),
+      getAgendaTimeZone(supabase, context.organization.id),
+    ],
+  );
   if (!schedule || !procedure)
     return { error: "Agenda ou procedimento inválido." };
 
-  const startAt = parseLocalDateTime(parsed.data.start_at);
-  if (!startAt) return { error: "Horário inválido." };
+  const startAt = parseAgendaLocalDateTime(parsed.data.start_at, timeZone);
+  if (!startAt) {
+    return {
+      error:
+        "Este horário não existe no fuso da empresa. Escolha outro horário.",
+    };
+  }
   const endAt = new Date(
     startAt.getTime() + procedure.duration_minutes * 60_000,
   );
@@ -626,10 +1147,16 @@ export async function rescheduleAppointment(
     .object({ start_at: z.string().min(16) })
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: "Informe a nova data e hora." };
-  const startAt = parseLocalDateTime(parsed.data.start_at);
-  if (!startAt) return { error: "Data e hora inválidas." };
-
   const supabase = await createSupabaseServerClient();
+  const timeZone = await getAgendaTimeZone(supabase, context.organization.id);
+  const startAt = parseAgendaLocalDateTime(parsed.data.start_at, timeZone);
+  if (!startAt) {
+    return {
+      error:
+        "Esta data e hora não existem no fuso da empresa. Escolha outro horário.",
+    };
+  }
+
   const { data: appointment } = await supabase
     .from("appointments")
     .select("procedure_id")
@@ -681,10 +1208,10 @@ export async function changeAppointmentStatus(
 export async function startAppointmentEncounter(
   appointmentId: string,
   _state: AgendaActionState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<AgendaActionState> {
   void _state;
-  void _formData;
+  const returnTo = formData.get("return_to");
 
   const context = await getRequestContext();
   const canOpenClinicalRecord =
@@ -743,7 +1270,7 @@ export async function startAppointmentEncounter(
       appointment.status,
     );
     revalidatePath("/agenda");
-    redirect(`/prontuario/${existingEncounter.id}`);
+    redirect(buildAgendaEncounterHref(existingEncounter.id, returnTo));
   }
 
   const { data: template } = await supabase
@@ -751,6 +1278,7 @@ export async function startAppointmentEncounter(
     .select("id, name")
     .eq("organization_id", context.organization.id)
     .eq("status", "active")
+    .order("is_default", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle<{ id: string; name: string }>();
@@ -797,7 +1325,7 @@ export async function startAppointmentEncounter(
         appointment.status,
       );
       revalidatePath("/agenda");
-      redirect(`/prontuario/${duplicate.id}`);
+      redirect(buildAgendaEncounterHref(duplicate.id, returnTo));
     }
 
     return {
@@ -840,7 +1368,7 @@ export async function startAppointmentEncounter(
   await markAppointmentInProgressIfPossible(appointment.id, appointment.status);
   revalidatePath("/agenda");
   revalidatePath("/prontuario");
-  redirect(`/prontuario/${encounter.id}`);
+  redirect(buildAgendaEncounterHref(encounter.id, returnTo));
 }
 
 async function markAppointmentInProgressIfPossible(

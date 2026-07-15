@@ -11,6 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireCompanyPermission } from "@/lib/authz/guards";
+import {
+  normalizeAgendaTimeZone,
+  safeAgendaReturnTo,
+} from "@/lib/agenda/range";
+import { buildClinicalDocumentVariables } from "@/lib/clinical/document-context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type EncounterRow = {
@@ -28,33 +33,95 @@ type EntryRow = {
   template_snapshot: {
     name?: string;
     version_number?: number;
-    schema?: {
-      sections?: Array<{
-        id: string;
-        title: string;
-        fields: Array<{
-          id: string;
-          label: string;
-          type?: "text" | "textarea";
-          required?: boolean;
-        }>;
-      }>;
-    };
+    schema?: unknown;
   };
-  structured_data: Record<string, string>;
+  structured_data: Record<string, unknown>;
   free_notes: string | null;
+};
+
+type PatientRow = {
+  id: string;
+  full_name: string;
+  social_name: string | null;
+  birth_date: string | null;
+  cpf: string | null;
+  rg: string | null;
+  email: string | null;
+  phone: string | null;
+};
+
+type ProfessionalRow = {
+  id: string;
+  name: string;
+  specialty_id: string | null;
+  council_type: string | null;
+  council_number: string | null;
+  council_state: string | null;
+};
+
+type AppointmentRow = {
+  start_at: string;
+  end_at: string;
+  unit_id: string;
+  procedure_id: string;
+};
+
+type ClinicRow = {
+  trade_name: string;
+  legal_name: string | null;
+  document: string | null;
+  phone: string | null;
+  email: string | null;
+  address_line: string | null;
+  address_number: string | null;
+  address_complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
+};
+
+type UnitRow = {
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address_line: string | null;
+  address_number: string | null;
+  address_complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
+};
+
+type DocumentTemplateRow = {
+  id: string;
+  document_type: ClinicalDocumentTemplate["document_type"];
+  name: string;
+};
+
+type DocumentTemplateVersionRow = {
+  id: string;
+  template_id: string;
+  version_number: number;
+  title_template: string;
+  body_template: string;
+  layout_schema: unknown;
 };
 
 export default async function EncounterPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{
+    from?: string | string[];
+    return_to?: string | string[];
+  }>;
 }) {
   const context = await requireCompanyPermission([
     "clinico.ver_prontuario",
     "clinico.ver_prontuario_proprios",
   ]);
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   const supabase = await createSupabaseServerClient();
 
   const { data: encounter } = await supabase
@@ -74,7 +141,11 @@ export default async function EncounterPage({
     diagnosesResult,
     addendaResult,
     documentTemplatesResult,
+    documentTemplateVersionsResult,
     documentsResult,
+    clinicResult,
+    organizationSettingsResult,
+    appointmentResult,
   ] = await Promise.all([
     supabase
       .from("encounter_entries")
@@ -84,21 +155,18 @@ export default async function EncounterPage({
       .single<EntryRow>(),
     supabase
       .from("patients")
-      .select("id, full_name, social_name, birth_date")
+      .select("id, full_name, social_name, birth_date, cpf, rg, email, phone")
       .eq("organization_id", encounter.organization_id)
       .eq("id", encounter.patient_id)
-      .single<{
-        id: string;
-        full_name: string;
-        social_name: string | null;
-        birth_date: string | null;
-      }>(),
+      .single<PatientRow>(),
     supabase
       .from("professionals")
-      .select("id, name")
+      .select(
+        "id, name, specialty_id, council_type, council_number, council_state",
+      )
       .eq("organization_id", encounter.organization_id)
       .eq("id", encounter.professional_id)
-      .single<{ id: string; name: string }>(),
+      .single<ProfessionalRow>(),
     supabase
       .from("encounter_diagnoses")
       .select("cid_code, description, is_primary")
@@ -128,12 +196,20 @@ export default async function EncounterPage({
       >(),
     supabase
       .from("clinical_document_templates")
-      .select("id, document_type, name, title_template, body_template")
+      .select("id, document_type, name")
       .eq("organization_id", encounter.organization_id)
       .eq("active", true)
       .order("document_type")
       .order("name")
-      .returns<ClinicalDocumentTemplate[]>(),
+      .returns<DocumentTemplateRow[]>(),
+    supabase
+      .from("clinical_document_template_versions")
+      .select(
+        "id, template_id, version_number, title_template, body_template, layout_schema",
+      )
+      .eq("organization_id", encounter.organization_id)
+      .order("version_number", { ascending: false })
+      .returns<DocumentTemplateVersionRow[]>(),
     supabase
       .from("clinical_documents")
       .select("id, document_type, title, issued_at")
@@ -141,11 +217,147 @@ export default async function EncounterPage({
       .eq("encounter_id", encounter.id)
       .order("issued_at", { ascending: false })
       .returns<ClinicalDocument[]>(),
+    supabase
+      .from("clinics")
+      .select(
+        "trade_name, legal_name, document, phone, email, address_line, address_number, address_complement, district, city, state",
+      )
+      .eq("organization_id", encounter.organization_id)
+      .maybeSingle<ClinicRow>(),
+    supabase
+      .from("organization_settings")
+      .select("timezone")
+      .eq("organization_id", encounter.organization_id)
+      .maybeSingle<{ timezone: string | null }>(),
+    encounter.appointment_id
+      ? supabase
+          .from("appointments")
+          .select("start_at, end_at, unit_id, procedure_id")
+          .eq("organization_id", encounter.organization_id)
+          .eq("id", encounter.appointment_id)
+          .maybeSingle<AppointmentRow>()
+      : Promise.resolve({ data: null as AppointmentRow | null }),
   ]);
 
   if (!entryResult.data || !patientResult.data || !professionalResult.data) {
     notFound();
   }
+
+  const appointment = appointmentResult.data;
+  const [specialtyResult, unitResult, procedureResult] = await Promise.all([
+    professionalResult.data.specialty_id
+      ? supabase
+          .from("specialties")
+          .select("name")
+          .eq("organization_id", encounter.organization_id)
+          .eq("id", professionalResult.data.specialty_id)
+          .maybeSingle<{ name: string }>()
+      : Promise.resolve({ data: null as { name: string } | null }),
+    appointment?.unit_id
+      ? supabase
+          .from("units")
+          .select(
+            "name, phone, email, address_line, address_number, address_complement, district, city, state",
+          )
+          .eq("organization_id", encounter.organization_id)
+          .eq("id", appointment.unit_id)
+          .maybeSingle<UnitRow>()
+      : Promise.resolve({ data: null as UnitRow | null }),
+    appointment?.procedure_id
+      ? supabase
+          .from("procedures")
+          .select("name")
+          .eq("organization_id", encounter.organization_id)
+          .eq("id", appointment.procedure_id)
+          .maybeSingle<{ name: string }>()
+      : Promise.resolve({ data: null as { name: string } | null }),
+  ]);
+
+  const latestDocumentVersion = new Map<string, DocumentTemplateVersionRow>();
+  for (const version of documentTemplateVersionsResult.data ?? []) {
+    if (!latestDocumentVersion.has(version.template_id)) {
+      latestDocumentVersion.set(version.template_id, version);
+    }
+  }
+  const documentTemplates: ClinicalDocumentTemplate[] = (
+    documentTemplatesResult.data ?? []
+  ).flatMap((template) => {
+    const version = latestDocumentVersion.get(template.id);
+    return version
+      ? [
+          {
+            ...template,
+            template_version_id: version.id,
+            version_number: version.version_number,
+            title_template: version.title_template,
+            body_template: version.body_template,
+            layout_schema: version.layout_schema,
+          },
+        ]
+      : [];
+  });
+
+  const timeZone = normalizeAgendaTimeZone(
+    organizationSettingsResult.data?.timezone,
+  );
+  const documentVariables = buildClinicalDocumentVariables({
+    timeZone,
+    patient: {
+      fullName: patientResult.data.full_name,
+      socialName: patientResult.data.social_name,
+      birthDate: patientResult.data.birth_date,
+      cpf: patientResult.data.cpf,
+      rg: patientResult.data.rg,
+      email: patientResult.data.email,
+      phone: patientResult.data.phone,
+    },
+    professional: {
+      name: professionalResult.data.name,
+      specialty: specialtyResult.data?.name,
+      councilType: professionalResult.data.council_type,
+      councilNumber: professionalResult.data.council_number,
+      councilState: professionalResult.data.council_state,
+    },
+    clinic: clinicResult.data
+      ? {
+          tradeName: clinicResult.data.trade_name,
+          legalName: clinicResult.data.legal_name,
+          document: clinicResult.data.document,
+          phone: clinicResult.data.phone,
+          email: clinicResult.data.email,
+          addressLine: clinicResult.data.address_line,
+          addressNumber: clinicResult.data.address_number,
+          addressComplement: clinicResult.data.address_complement,
+          district: clinicResult.data.district,
+          city: clinicResult.data.city,
+          state: clinicResult.data.state,
+        }
+      : null,
+    unit: unitResult.data
+      ? {
+          name: unitResult.data.name,
+          phone: unitResult.data.phone,
+          email: unitResult.data.email,
+          addressLine: unitResult.data.address_line,
+          addressNumber: unitResult.data.address_number,
+          addressComplement: unitResult.data.address_complement,
+          district: unitResult.data.district,
+          city: unitResult.data.city,
+          state: unitResult.data.state,
+        }
+      : null,
+    appointment: appointment
+      ? {
+          startAt: appointment.start_at,
+          endAt: appointment.end_at,
+          procedure: procedureResult.data?.name,
+        }
+      : null,
+    encounter: {
+      startedAt: encounter.started_at,
+      finalizedAt: encounter.finalized_at,
+    },
+  });
 
   const authorIds = [
     ...new Set((addendaResult.data ?? []).map((item) => item.author_user_id)),
@@ -161,14 +373,23 @@ export default async function EncounterPage({
     (authors ?? []).map((item) => [item.id, item.name]),
   );
   const firstDiagnosis = diagnosesResult.data?.[0];
+  const source = Array.isArray(query.from) ? query.from[0] : query.from;
+  const returnTo = Array.isArray(query.return_to)
+    ? query.return_to[0]
+    : query.return_to;
+  const backDestination = encounterBackDestination(
+    source,
+    patientResult.data.id,
+    returnTo,
+  );
 
   return (
     <div className="grid gap-6">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
         <div>
           <Button asChild variant="secondary" size="sm">
-            <Link href="/prontuario">
-              <ArrowLeft className="size-4" /> Voltar
+            <Link href={backDestination.href}>
+              <ArrowLeft className="size-4" /> {backDestination.label}
             </Link>
           </Button>
           <h1 className="mt-4 text-xl font-semibold">
@@ -218,9 +439,11 @@ export default async function EncounterPage({
       <EncounterEditor
         encounterId={encounter.id}
         status={encounter.status}
-        schema={{
-          sections: entryResult.data.template_snapshot.schema?.sections ?? [],
-        }}
+        canEdit={context.permissionCodes.has("clinico.preencher_prontuario")}
+        canFinalize={context.permissionCodes.has(
+          "clinico.finalizar_prontuario",
+        )}
+        schema={entryResult.data.template_snapshot.schema ?? { sections: [] }}
         structuredData={entryResult.data.structured_data ?? {}}
         freeNotes={entryResult.data.free_notes}
         cidCode={firstDiagnosis?.cid_code ?? ""}
@@ -235,8 +458,9 @@ export default async function EncounterPage({
 
       <DocumentPanel
         encounterId={encounter.id}
-        templates={documentTemplatesResult.data ?? []}
+        templates={documentTemplates}
         documents={documentsResult.data ?? []}
+        variables={documentVariables}
         canIssue={{
           prescription: context.permissionCodes.has("clinico.prescrever"),
           examRequest: context.permissionCodes.has("clinico.solicitar_exame"),
@@ -245,6 +469,32 @@ export default async function EncounterPage({
       />
     </div>
   );
+}
+
+function encounterBackDestination(
+  source: string | undefined,
+  patientId: string,
+  returnTo?: string,
+) {
+  if (source === "agenda") {
+    return {
+      href: safeAgendaReturnTo(returnTo) ?? "/agenda",
+      label: "Voltar para agenda",
+    };
+  }
+
+  if (source === "paciente") {
+    return {
+      href: `/pacientes/${patientId}`,
+      label: "Voltar para paciente",
+    };
+  }
+
+  if (source === "pacientes") {
+    return { href: "/pacientes", label: "Voltar para pacientes" };
+  }
+
+  return { href: "/prontuario", label: "Voltar para prontuários" };
 }
 
 function InfoCard({

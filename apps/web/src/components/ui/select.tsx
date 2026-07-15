@@ -22,12 +22,62 @@ type SelectOption = {
 };
 
 type PanelLayout = {
-  top: number;
+  top?: number;
+  bottom?: number;
   left: number;
   width: number;
+  maxHeight: number;
   position: "absolute" | "fixed";
   portalTarget: HTMLElement | null;
 };
+
+const panelGap = 6;
+
+function measurePanelLayout(
+  trigger: HTMLButtonElement,
+  optionCount: number,
+  preferredMaxHeight: number,
+): PanelLayout {
+  const rect = trigger.getBoundingClientRect();
+  const modalRoot = trigger.closest<HTMLElement>("[data-select-portal-root]");
+  const modalRect = modalRoot?.getBoundingClientRect();
+  const boundaryTop = modalRect?.top ?? 0;
+  const boundaryBottom = modalRect?.bottom ?? window.innerHeight;
+  const availableAbove = Math.max(0, rect.top - boundaryTop - panelGap);
+  const availableBelow = Math.max(0, boundaryBottom - rect.bottom - panelGap);
+  const estimatedHeight = Math.min(
+    preferredMaxHeight,
+    Math.max(40, optionCount * 40 + 8),
+  );
+  const openAbove =
+    availableBelow < estimatedHeight && availableAbove > availableBelow;
+  const maxHeight = Math.max(
+    1,
+    Math.min(preferredMaxHeight, openAbove ? availableAbove : availableBelow),
+  );
+
+  if (modalRoot && modalRect) {
+    return {
+      top: openAbove ? undefined : rect.bottom - modalRect.top + panelGap,
+      bottom: openAbove ? modalRect.bottom - rect.top + panelGap : undefined,
+      left: rect.left - modalRect.left,
+      width: rect.width,
+      maxHeight,
+      position: "absolute",
+      portalTarget: modalRoot,
+    };
+  }
+
+  return {
+    top: openAbove ? undefined : rect.bottom + panelGap,
+    bottom: openAbove ? window.innerHeight - rect.top + panelGap : undefined,
+    left: rect.left,
+    width: rect.width,
+    maxHeight,
+    position: "fixed",
+    portalTarget: null,
+  };
+}
 
 type SelectProps = {
   children: ReactNode;
@@ -145,29 +195,7 @@ export function Select({
   const openMenu = useCallback(() => {
     const trigger = triggerRef.current;
     if (trigger) {
-      const rect = trigger.getBoundingClientRect();
-      const modalRoot = trigger.closest<HTMLElement>(
-        "[data-select-portal-root]",
-      );
-
-      if (modalRoot) {
-        const modalRect = modalRoot.getBoundingClientRect();
-        setPanelLayout({
-          top: rect.bottom - modalRect.top + 6,
-          left: rect.left - modalRect.left,
-          width: rect.width,
-          position: "absolute",
-          portalTarget: modalRoot,
-        });
-      } else {
-        setPanelLayout({
-          top: rect.bottom + 6,
-          left: rect.left,
-          width: rect.width,
-          position: "fixed",
-          portalTarget: null,
-        });
-      }
+      setPanelLayout(measurePanelLayout(trigger, options.length, 256));
     }
     const selectedIndex = options.findIndex(
       (option) => option.value === currentValue,
@@ -288,13 +316,14 @@ export function Select({
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
         className={cn(
-          "flex h-10 w-full items-center justify-between gap-2 rounded-md border border-border bg-card px-3 text-left text-sm shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.1)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]",
+          "flex h-10 w-full min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden rounded-md border border-border bg-card px-3 text-left text-sm shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.1)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_rgba(37,99,235,0.1)] aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/15",
           className,
         )}
       >
         <span
+          title={selected?.label ?? placeholderText}
           className={cn(
-            "truncate",
+            "w-0 min-w-0 flex-1 truncate",
             selected ? "text-foreground" : "text-placeholder",
           )}
         >
@@ -314,11 +343,13 @@ export function Select({
               role="listbox"
               style={{
                 top: panelLayout.top,
+                bottom: panelLayout.bottom,
                 left: panelLayout.left,
                 width: panelLayout.width,
+                maxHeight: panelLayout.maxHeight,
                 position: panelLayout.position,
               }}
-              className="pointer-events-auto z-[60] max-h-64 animate-content-enter overflow-auto rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]"
+              className="pointer-events-auto z-[60] animate-content-enter overflow-auto rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]"
             >
               {options.length ? (
                 options.map((option, index) => {
@@ -335,7 +366,7 @@ export function Select({
                       onClick={() => commit(option.value)}
                       onMouseEnter={() => setActiveIndex(index)}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm transition-colors duration-[var(--motion-fast)] disabled:pointer-events-none disabled:opacity-50",
+                        "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded px-2.5 py-2 text-left text-sm transition-colors duration-[var(--motion-fast)] disabled:pointer-events-none disabled:opacity-50",
                         isActive ? "bg-muted" : "",
                         isSelected
                           ? "font-medium text-foreground"
@@ -349,7 +380,9 @@ export function Select({
                         )}
                         aria-hidden="true"
                       />
-                      <span className="truncate">{option.label}</span>
+                      <span className="w-0 min-w-0 flex-1 truncate">
+                        {option.label}
+                      </span>
                     </button>
                   );
                 })
@@ -398,32 +431,10 @@ export function MultiSelect({
   const openMenu = useCallback(() => {
     const trigger = triggerRef.current;
     if (trigger) {
-      const rect = trigger.getBoundingClientRect();
-      const modalRoot = trigger.closest<HTMLElement>(
-        "[data-select-portal-root]",
-      );
-
-      if (modalRoot) {
-        const modalRect = modalRoot.getBoundingClientRect();
-        setPanelLayout({
-          top: rect.bottom - modalRect.top + 6,
-          left: rect.left - modalRect.left,
-          width: rect.width,
-          position: "absolute",
-          portalTarget: modalRoot,
-        });
-      } else {
-        setPanelLayout({
-          top: rect.bottom + 6,
-          left: rect.left,
-          width: rect.width,
-          position: "fixed",
-          portalTarget: null,
-        });
-      }
+      setPanelLayout(measurePanelLayout(trigger, options.length + 1, 288));
     }
     setOpen(true);
-  }, []);
+  }, [options.length]);
 
   function toggle(nextValue: string) {
     if (selectedValues.has(nextValue)) {
@@ -489,7 +500,7 @@ export function MultiSelect({
   const hasSelection = selectedOptions.length > 0;
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative min-w-0 max-w-full", className)}>
       <button
         ref={triggerRef}
         type="button"
@@ -501,11 +512,11 @@ export function MultiSelect({
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
-        className="peer flex h-10 w-full items-center rounded-md border border-border bg-card py-2 pl-3 pr-9 text-left text-sm shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.1)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
+        className="peer flex h-10 w-full min-w-0 max-w-full items-center overflow-hidden rounded-md border border-border bg-card py-2 pl-3 pr-9 text-left text-sm shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_rgba(37,99,235,0.1)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_rgba(37,99,235,0.1)] aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/15"
       >
         <span
           className={cn(
-            "truncate",
+            "w-0 min-w-0 flex-1 truncate",
             selectedOptions.length ? "text-foreground" : "text-placeholder",
           )}
         >
@@ -539,11 +550,13 @@ export function MultiSelect({
               aria-multiselectable="true"
               style={{
                 top: panelLayout.top,
+                bottom: panelLayout.bottom,
                 left: panelLayout.left,
                 width: panelLayout.width,
+                maxHeight: panelLayout.maxHeight,
                 position: panelLayout.position,
               }}
-              className="pointer-events-auto z-[60] max-h-72 animate-content-enter overflow-auto rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]"
+              className="pointer-events-auto z-[60] animate-content-enter overflow-auto rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]"
             >
               <button
                 type="button"

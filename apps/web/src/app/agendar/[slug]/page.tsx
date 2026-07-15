@@ -1,4 +1,3 @@
-import { addDays } from "date-fns";
 import { notFound } from "next/navigation";
 import {
   CalendarDays,
@@ -19,7 +18,6 @@ import {
 } from "./booking-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { buildOnlineBookingSlots } from "@/lib/online-booking/slots";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type SettingsRow = {
@@ -58,7 +56,6 @@ type ClinicRow = {
   city: string | null;
   state: string | null;
 };
-type TimezoneRow = { timezone: string };
 type ScheduleRow = {
   id: string;
   name: string;
@@ -78,6 +75,17 @@ type ProcedureRow = {
   duration_minutes: number;
   base_price: number;
 };
+type ScheduleOnlineSettingsRow = {
+  schedule_id: string;
+  enabled: boolean;
+  min_notice_hours: number;
+  max_days_ahead: number;
+  cancellation_notice_hours: number;
+};
+type ScheduleProcedureRow = {
+  schedule_id: string;
+  procedure_id: string;
+};
 type InsuranceRow = { id: string; name: string };
 type PaymentMethodRow = { id: string; name: string };
 type ReviewRow = {
@@ -93,24 +101,6 @@ type ReviewRow = {
   review_date: string;
   professional_response: string | null;
 };
-type AvailabilityRow = {
-  schedule_id: string;
-  weekday: number;
-  start_time: string;
-  end_time: string;
-  slot_minutes: number;
-};
-type BusyRange = {
-  schedule_id: string;
-  start_at: string;
-  end_at: string;
-};
-type PendingRequestRange = {
-  schedule_id: string;
-  requested_start_at: string;
-  requested_end_at: string;
-};
-
 export default async function OnlineBookingPage({
   params,
 }: {
@@ -131,23 +121,17 @@ export default async function OnlineBookingPage({
   if (!settings) notFound();
 
   const organizationId = settings.organization_id;
-  const now = new Date();
-  const from = new Date(now.getTime() + settings.min_notice_hours * 3_600_000);
-  const until = addDays(now, settings.max_days_ahead);
 
   const [
     organization,
     clinic,
-    timezone,
     schedules,
+    scheduleOnlineSettings,
+    scheduleProcedureMappings,
     procedures,
     insurances,
     paymentMethods,
     reviews,
-    availability,
-    appointments,
-    blocks,
-    pendingRequests,
   ] = await Promise.all([
     supabase
       .from("organizations")
@@ -162,11 +146,6 @@ export default async function OnlineBookingPage({
       .eq("organization_id", organizationId)
       .maybeSingle<ClinicRow>(),
     supabase
-      .from("organization_settings")
-      .select("timezone")
-      .eq("organization_id", organizationId)
-      .maybeSingle<TimezoneRow>(),
-    supabase
       .from("schedules")
       .select(
         "id, name, professional_id, unit_id, professionals(name, council_type, council_number, council_state), units(name)",
@@ -175,6 +154,18 @@ export default async function OnlineBookingPage({
       .eq("active", true)
       .order("name")
       .returns<ScheduleRow[]>(),
+    supabase
+      .from("schedule_online_booking_settings")
+      .select(
+        "schedule_id, enabled, min_notice_hours, max_days_ahead, cancellation_notice_hours",
+      )
+      .eq("organization_id", organizationId)
+      .returns<ScheduleOnlineSettingsRow[]>(),
+    supabase
+      .from("schedule_online_booking_procedures")
+      .select("schedule_id, procedure_id")
+      .eq("organization_id", organizationId)
+      .returns<ScheduleProcedureRow[]>(),
     supabase
       .from("procedures")
       .select("id, name, duration_minutes, base_price")
@@ -207,61 +198,67 @@ export default async function OnlineBookingPage({
       .order("review_date", { ascending: false })
       .limit(12)
       .returns<ReviewRow[]>(),
-    supabase
-      .from("schedule_availability")
-      .select("schedule_id, weekday, start_time, end_time, slot_minutes")
-      .eq("organization_id", organizationId)
-      .order("weekday")
-      .order("start_time")
-      .returns<AvailabilityRow[]>(),
-    supabase
-      .from("appointments")
-      .select("schedule_id, start_at, end_at")
-      .eq("organization_id", organizationId)
-      .in("status", ["scheduled", "confirmed", "waiting", "in_progress"])
-      .gte("start_at", from.toISOString())
-      .lte("start_at", until.toISOString())
-      .returns<BusyRange[]>(),
-    supabase
-      .from("schedule_blocks")
-      .select("schedule_id, start_at, end_at")
-      .eq("organization_id", organizationId)
-      .lte("start_at", until.toISOString())
-      .gte("end_at", from.toISOString())
-      .returns<BusyRange[]>(),
-    supabase
-      .from("online_booking_requests")
-      .select("schedule_id, requested_start_at, requested_end_at")
-      .eq("organization_id", organizationId)
-      .eq("status", "requested")
-      .gte("requested_start_at", from.toISOString())
-      .lte("requested_start_at", until.toISOString())
-      .returns<PendingRequestRange[]>(),
   ]);
+
+  if (
+    schedules.error ||
+    scheduleOnlineSettings.error ||
+    scheduleProcedureMappings.error ||
+    procedures.error
+  ) {
+    throw new Error("Unable to load the public booking catalog.");
+  }
 
   const clinicName =
     clinic.data?.trade_name ?? organization.data?.name ?? "Clínica";
-  const timezoneName = timezone.data?.timezone ?? "America/Fortaleza";
-  const publicSchedules: PublicSchedule[] = (schedules.data ?? []).map(
-    (schedule) => ({
-      id: schedule.id,
-      name: schedule.name,
-      professionalName: schedule.professionals?.name ?? "Profissional",
-      unitName: schedule.units?.name ?? "Unidade",
-    }),
+  const onlineSettingsBySchedule = new Map(
+    (scheduleOnlineSettings.data ?? [])
+      .filter((item) => item.enabled)
+      .map((item) => [item.schedule_id, item]),
   );
-  const publicProcedures: PublicProcedure[] = (procedures.data ?? []).map(
+  const activeProcedureIds = new Set(
+    (procedures.data ?? []).map((procedure) => procedure.id),
+  );
+  const procedureIdsBySchedule = new Map<string, string[]>();
+  for (const mapping of scheduleProcedureMappings.data ?? []) {
+    if (!activeProcedureIds.has(mapping.procedure_id)) continue;
+    const procedureIds = procedureIdsBySchedule.get(mapping.schedule_id) ?? [];
+    procedureIds.push(mapping.procedure_id);
+    procedureIdsBySchedule.set(mapping.schedule_id, procedureIds);
+  }
+  const publishedScheduleRows = (schedules.data ?? []).filter(
+    (schedule) =>
+      onlineSettingsBySchedule.has(schedule.id) &&
+      (procedureIdsBySchedule.get(schedule.id)?.length ?? 0) > 0,
+  );
+  const publicSchedules: PublicSchedule[] = publishedScheduleRows.map(
+    (schedule) => {
+      const scheduleSettings = onlineSettingsBySchedule.get(schedule.id)!;
+      return {
+        id: schedule.id,
+        name: schedule.name,
+        professionalId: schedule.professional_id,
+        professionalName: schedule.professionals?.name ?? "Profissional",
+        unitName: schedule.units?.name ?? "Unidade",
+        procedureIds: procedureIdsBySchedule.get(schedule.id) ?? [],
+        minNoticeHours: scheduleSettings.min_notice_hours,
+        maxDaysAhead: scheduleSettings.max_days_ahead,
+        cancellationNoticeHours: scheduleSettings.cancellation_notice_hours,
+      };
+    },
+  );
+  const publishedProcedureIds = new Set(
+    publicSchedules.flatMap((schedule) => schedule.procedureIds),
+  );
+  const publishedProcedureRows = (procedures.data ?? []).filter((procedure) =>
+    publishedProcedureIds.has(procedure.id),
+  );
+  const publicProcedures: PublicProcedure[] = publishedProcedureRows.map(
     (procedure) => ({
       id: procedure.id,
       name: procedure.name,
       durationMinutes: procedure.duration_minutes,
       basePrice: Number(procedure.base_price ?? 0),
-    }),
-  );
-  const publicInsurances: PublicInsurance[] = (insurances.data ?? []).map(
-    (insurance) => ({
-      id: insurance.id,
-      name: insurance.name,
     }),
   );
   const acceptedInsuranceIds = new Set(
@@ -274,6 +271,12 @@ export default async function OnlineBookingPage({
     (insurance) =>
       !acceptedInsuranceIds.size || acceptedInsuranceIds.has(insurance.id),
   );
+  const publicInsurances: PublicInsurance[] = acceptedInsurances.map(
+    (insurance) => ({
+      id: insurance.id,
+      name: insurance.name,
+    }),
+  );
   const acceptedPaymentMethods = (paymentMethods.data ?? []).filter(
     (method) =>
       !acceptedPaymentMethodIds.size || acceptedPaymentMethodIds.has(method.id),
@@ -283,7 +286,7 @@ export default async function OnlineBookingPage({
     ? reviewRows.reduce((sum, review) => sum + Number(review.rating), 0) /
       reviewRows.length
     : 0;
-  const representativeSchedule = (schedules.data ?? [])[0] ?? null;
+  const representativeSchedule = publishedScheduleRows[0] ?? null;
   const professionalName =
     representativeSchedule?.professionals?.name ?? clinicName;
   const councilLine = representativeSchedule?.professionals
@@ -295,23 +298,9 @@ export default async function OnlineBookingPage({
         .filter(Boolean)
         .join(" ")
     : "";
-  const slots = buildOnlineBookingSlots({
-    schedules: schedules.data ?? [],
-    procedures: procedures.data ?? [],
-    availability: availability.data ?? [],
-    busyRanges: [
-      ...(appointments.data ?? []),
-      ...(blocks.data ?? []),
-      ...(pendingRequests.data ?? []).map((request) => ({
-        schedule_id: request.schedule_id,
-        start_at: request.requested_start_at,
-        end_at: request.requested_end_at,
-      })),
-    ],
-    timezone: timezoneName,
-    from,
-    maxDaysAhead: settings.max_days_ahead,
-  });
+  const cancellationNotices = new Set(
+    publicSchedules.map((schedule) => schedule.cancellationNoticeHours),
+  );
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-primary-muted/50 via-background to-background text-foreground">
@@ -322,13 +311,14 @@ export default async function OnlineBookingPage({
           </p>
           <h1 className="text-2xl font-bold">{clinicName}</h1>
           <p className="text-sm text-primary-foreground/80">
-            Escolha o profissional, o procedimento e o melhor horário.
+            Escolha o profissional, o serviço e o horário. Depois, informe seus
+            dados.
           </p>
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 md:px-6 lg:grid-cols-[1fr_22rem]">
-        <div className="grid gap-5">
+      <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 md:px-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
+        <div className="order-2 grid min-w-0 gap-5 lg:order-1">
           <ProfileHero
             clinicName={clinicName}
             professionalName={professionalName}
@@ -341,7 +331,7 @@ export default async function OnlineBookingPage({
             address={formatAddress(clinic.data)}
           />
           <ExperienceCard settings={settings} />
-          <ServicesCard procedures={procedures.data ?? []} />
+          <ServicesCard procedures={publishedProcedureRows} />
           <AcceptedPlansCard
             insurances={acceptedInsurances}
             notes={settings.accepted_plan_notes}
@@ -352,19 +342,18 @@ export default async function OnlineBookingPage({
 
         <aside
           id="agendamento"
-          className="grid content-start gap-4 lg:sticky lg:top-4"
+          className="order-1 grid min-w-0 content-start gap-4 lg:order-2"
         >
-          <BookingForm
-            slug={settings.public_slug}
-            schedules={publicSchedules}
-            procedures={publicProcedures}
-            insurances={publicInsurances}
-            slots={slots}
-            minNoticeHours={settings.min_notice_hours}
-            maxDaysAhead={settings.max_days_ahead}
-            requireContactVerification={settings.require_contact_verification}
-            verificationTtlMinutes={settings.contact_verification_ttl_minutes}
-          />
+          <div className="min-w-0">
+            <BookingForm
+              slug={settings.public_slug}
+              schedules={publicSchedules}
+              procedures={publicProcedures}
+              insurances={publicInsurances}
+              requireContactVerification={settings.require_contact_verification}
+              verificationTtlMinutes={settings.contact_verification_ttl_minutes}
+            />
+          </div>
           <Card>
             <CardContent className="grid gap-4 p-4">
               <div className="flex items-start gap-3">
@@ -419,7 +408,9 @@ export default async function OnlineBookingPage({
                 </Badge>
                 <Badge variant="neutral">
                   <Clock3 className="mr-1 size-3.5" aria-hidden="true" />
-                  Cancelamento com {settings.cancellation_notice_hours}h
+                  {cancellationNotices.size === 1
+                    ? `Cancelamento com ${[...cancellationNotices][0]}h`
+                    : "Prazo de cancelamento por agenda"}
                 </Badge>
               </div>
               {settings.public_instructions ? (

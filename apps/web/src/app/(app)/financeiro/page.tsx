@@ -7,6 +7,7 @@ import {
 import {
   FinancePanel,
   type FinancialCategoryRow,
+  type FinanceListPagination,
   type FinanceSummary,
   type PayableRow,
   type PaymentMethodRow,
@@ -22,7 +23,24 @@ type OrganizationBillingRow = {
   status: string;
 };
 
-export default async function FinanceiroPage() {
+type FinanceSummaryRpcRow = {
+  open_receivable: number | string;
+  received_month: number | string;
+  open_payable: number | string;
+  pending_payout: number | string;
+  receivable_count: number | string;
+  payment_count: number | string;
+  payable_count: number | string;
+  payout_count: number | string;
+};
+
+const financePageSize = 10;
+
+export default async function FinanceiroPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const context = await getRequestContext();
 
   if (context.isSuperAdmin) {
@@ -49,103 +67,152 @@ export default async function FinanceiroPage() {
   const canManagePayables = context.permissionCodes.has(
     "financeiro.gerenciar_contas_pagar",
   );
-  const canManagePaymentMethods = context.permissionCodes.has(
-    "financeiro.ver_geral",
-  );
   const canViewOwnPayout = context.permissionCodes.has(
     "financeiro.ver_proprio_repasse",
   );
   const canViewCash = canViewGeneral || canReceive;
+  const canViewPayables = canViewGeneral || canManagePayables;
+  const canViewPayouts =
+    canViewGeneral || canViewOwnPayout || canManagePayables;
   const organizationId = context.organization.id;
   const supabase = await createSupabaseServerClient();
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
+  const params = (await searchParams) ?? {};
+  const pages = {
+    receivables: financePageParam(params.receivables_page),
+    payments: financePageParam(params.payments_page),
+    payables: financePageParam(params.payables_page),
+    payouts: financePageParam(params.payouts_page),
+  };
 
-  const [receivables, payments, payables, payouts, paymentMethods, categories] =
-    await Promise.all([
-      canViewCash
-        ? supabase
-            .from("accounts_receivable")
-            .select(
-              "id, description, amount, paid_amount, due_date, status, patients(full_name, social_name), professionals(name)",
-            )
-            .eq("organization_id", organizationId)
-            .order("due_date", { ascending: true })
-            .limit(30)
-            .returns<ReceivableRow[]>()
-        : Promise.resolve({ data: [] as ReceivableRow[] }),
-      canViewCash
-        ? supabase
-            .from("payments")
-            .select(
-              "id, account_receivable_id, amount, paid_at, payment_methods(name), accounts_receivable(description)",
-            )
-            .eq("organization_id", organizationId)
-            .order("paid_at", { ascending: false })
-            .limit(20)
-            .returns<PaymentRow[]>()
-        : Promise.resolve({ data: [] as PaymentRow[] }),
-      canViewGeneral || canManagePayables
-        ? supabase
-            .from("accounts_payable")
-            .select("id, vendor_name, description, amount, due_date, status")
-            .eq("organization_id", organizationId)
-            .order("due_date", { ascending: true })
-            .limit(30)
-            .returns<PayableRow[]>()
-        : Promise.resolve({ data: [] as PayableRow[] }),
-      canViewGeneral || canViewOwnPayout || canManagePayables
-        ? supabase
-            .from("professional_payouts")
-            .select("id, amount, due_date, status, professionals(name)")
-            .eq("organization_id", organizationId)
-            .order("due_date", { ascending: false })
-            .limit(30)
-            .returns<PayoutRow[]>()
-        : Promise.resolve({ data: [] as PayoutRow[] }),
-      canReceive || canManagePayables || canManagePaymentMethods
-        ? supabase
-            .from("payment_methods")
-            .select("id, name, method_type")
-            .eq("organization_id", organizationId)
-            .eq("active", true)
-            .order("name")
-            .returns<PaymentMethodRow[]>()
-        : Promise.resolve({ data: [] as PaymentMethodRow[] }),
-      canManagePayables
-        ? supabase
-            .from("financial_categories")
-            .select("id, name, category_type")
-            .eq("organization_id", organizationId)
-            .eq("active", true)
-            .order("name")
-            .returns<FinancialCategoryRow[]>()
-        : Promise.resolve({ data: [] as FinancialCategoryRow[] }),
-    ]);
+  const [
+    financeSummary,
+    receivables,
+    payments,
+    payables,
+    payouts,
+    paymentMethods,
+    categories,
+  ] = await Promise.all([
+    supabase
+      .rpc("get_operational_finance_summary", {
+        p_organization_id: organizationId,
+      })
+      .returns<FinanceSummaryRpcRow[]>(),
+    canViewCash
+      ? supabase
+          .from("accounts_receivable")
+          .select(
+            "id, description, amount, paid_amount, due_date, status, patients(full_name, social_name), professionals(name)",
+          )
+          .eq("organization_id", organizationId)
+          .order("due_date", { ascending: true })
+          .order("id", { ascending: true })
+          .range(
+            (pages.receivables - 1) * financePageSize,
+            pages.receivables * financePageSize - 1,
+          )
+          .returns<ReceivableRow[]>()
+      : Promise.resolve({ data: [] as ReceivableRow[] }),
+    canViewCash
+      ? supabase
+          .from("payments")
+          .select(
+            "id, account_receivable_id, amount, paid_at, payment_methods(name), accounts_receivable(description)",
+          )
+          .eq("organization_id", organizationId)
+          .order("paid_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(
+            (pages.payments - 1) * financePageSize,
+            pages.payments * financePageSize - 1,
+          )
+          .returns<PaymentRow[]>()
+      : Promise.resolve({ data: [] as PaymentRow[] }),
+    canViewPayables
+      ? supabase
+          .from("accounts_payable")
+          .select("id, vendor_name, description, amount, due_date, status")
+          .eq("organization_id", organizationId)
+          .order("due_date", { ascending: true })
+          .order("id", { ascending: true })
+          .range(
+            (pages.payables - 1) * financePageSize,
+            pages.payables * financePageSize - 1,
+          )
+          .returns<PayableRow[]>()
+      : Promise.resolve({ data: [] as PayableRow[] }),
+    canViewPayouts
+      ? supabase
+          .from("professional_payouts")
+          .select("id, amount, due_date, status, professionals(name)")
+          .eq("organization_id", organizationId)
+          .order("due_date", { ascending: false })
+          .order("id", { ascending: true })
+          .range(
+            (pages.payouts - 1) * financePageSize,
+            pages.payouts * financePageSize - 1,
+          )
+          .returns<PayoutRow[]>()
+      : Promise.resolve({ data: [] as PayoutRow[] }),
+    canReceive || canManagePayables
+      ? supabase
+          .from("payment_methods")
+          .select("id, name, method_type")
+          .eq("organization_id", organizationId)
+          .eq("active", true)
+          .order("name")
+          .returns<PaymentMethodRow[]>()
+      : Promise.resolve({ data: [] as PaymentMethodRow[] }),
+    canManagePayables
+      ? supabase
+          .from("financial_categories")
+          .select("id, name, category_type")
+          .eq("organization_id", organizationId)
+          .eq("active", true)
+          .order("name")
+          .returns<FinancialCategoryRow[]>()
+      : Promise.resolve({ data: [] as FinancialCategoryRow[] }),
+  ]);
+
+  if (financeSummary.error) {
+    throw new Error("Não foi possível carregar os indicadores financeiros.");
+  }
 
   const receivableRows = receivables.data ?? [];
   const paymentRows = payments.data ?? [];
   const payableRows = payables.data ?? [];
   const payoutRows = payouts.data ?? [];
+  const summaryRow = Array.isArray(financeSummary.data)
+    ? financeSummary.data[0]
+    : undefined;
   const summary: FinanceSummary = {
-    openReceivable: receivableRows
-      .filter((item) => ["open", "partial"].includes(item.status))
-      .reduce(
-        (sum, item) =>
-          sum + Math.max(0, Number(item.amount) - Number(item.paid_amount)),
-        0,
-      ),
-    receivedMonth: paymentRows
-      .filter((item) => new Date(item.paid_at) >= monthStart)
-      .reduce((sum, item) => sum + Number(item.amount), 0),
-    openPayable: payableRows
-      .filter((item) => item.status === "open")
-      .reduce((sum, item) => sum + Number(item.amount), 0),
-    pendingPayout: payoutRows
-      .filter((item) => item.status === "pending")
-      .reduce((sum, item) => sum + Number(item.amount), 0),
+    openReceivable: Number(summaryRow?.open_receivable ?? 0),
+    receivedMonth: Number(summaryRow?.received_month ?? 0),
+    openPayable: Number(summaryRow?.open_payable ?? 0),
+    pendingPayout: Number(summaryRow?.pending_payout ?? 0),
   };
+  const pagination = {
+    receivables: financePagination(
+      pages.receivables,
+      summaryRow?.receivable_count,
+      receivableRows.length,
+    ),
+    payments: financePagination(
+      pages.payments,
+      summaryRow?.payment_count,
+      paymentRows.length,
+    ),
+    payables: financePagination(
+      pages.payables,
+      summaryRow?.payable_count,
+      payableRows.length,
+    ),
+    payouts: financePagination(
+      pages.payouts,
+      summaryRow?.payout_count,
+      payoutRows.length,
+    ),
+  } satisfies Record<string, FinanceListPagination>;
 
   return (
     <FinancePanel
@@ -156,15 +223,43 @@ export default async function FinanceiroPage() {
       payouts={payoutRows}
       paymentMethods={paymentMethods.data ?? []}
       categories={categories.data ?? []}
+      pagination={pagination}
       permissions={{
         canReceive,
         canManagePayables,
-        canManagePaymentMethods,
         canViewCash,
-        canViewPayouts: canViewGeneral || canViewOwnPayout || canManagePayables,
+        canViewPayables,
+        canViewPayouts,
       }}
     />
   );
+}
+
+function firstSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function financePageParam(value: string | string[] | undefined) {
+  const parsed = Number.parseInt(firstSearchParam(value) ?? "1", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 10_000) : 1;
+}
+
+function financePagination(
+  page: number,
+  total: number | string | undefined,
+  loadedRows: number,
+): FinanceListPagination {
+  const parsedTotal = total === undefined ? null : Number(total);
+  const fallbackTotal = (page - 1) * financePageSize + loadedRows;
+
+  return {
+    page,
+    pageSize: financePageSize,
+    total:
+      parsedTotal !== null && Number.isFinite(parsedTotal)
+        ? Math.max(0, parsedTotal)
+        : fallbackTotal,
+  };
 }
 
 async function SuperAdminFinanceView() {

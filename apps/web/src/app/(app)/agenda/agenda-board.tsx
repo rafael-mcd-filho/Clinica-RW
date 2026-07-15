@@ -3,15 +3,19 @@
 import {
   useActionState,
   useCallback,
+  createContext,
   useEffect,
+  useContext,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import { createPortal } from "react-dom";
+import { fromZonedTime } from "date-fns-tz";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Ban,
   CalendarClock,
@@ -38,6 +42,7 @@ import {
   changeAppointmentStatus,
   createAppointment,
   createQuickPatientFromAgenda,
+  createScheduleBlock,
   rescheduleAppointment,
   startAppointmentEncounter,
   type AgendaActionState,
@@ -49,14 +54,28 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input, MultiSelect, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
+import { DatePickerInput } from "@/components/ui/date-picker-input";
+import { PageHeader } from "@/components/ui/page-header";
 import { PatientSearchField } from "@/components/patient-search-field";
+import {
+  addAgendaPeriod,
+  buildAgendaEncounterHref,
+  buildAgendaReturnTo,
+  defaultAgendaTimeZone,
+  type AgendaView,
+} from "@/lib/agenda/range";
 import { defaultScheduleColor } from "@/lib/colors";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { formatCPF, formatPhoneBR } from "@/lib/validation/br";
+import { useCoalescedRouterRefresh } from "@/hooks/use-coalesced-router-refresh";
 
 type Option = { id: string; name: string };
 export type AgendaData = {
   organizationId: string;
+  timeZone: string;
+  selectedDate: string;
+  visibleFrom: string;
+  visibleTo: string;
   schedules: Array<{
     id: string;
     professional_id: string;
@@ -169,6 +188,11 @@ export type AgendaData = {
 };
 
 const initialState: AgendaActionState = {};
+const AgendaTimeZoneContext = createContext(defaultAgendaTimeZone);
+
+function useAgendaTimeZone() {
+  return useContext(AgendaTimeZoneContext);
+}
 const weekTimelineStepMinutes = 30;
 const weekTimelineRowHeight = 40;
 const statusLabel: Record<string, string> = {
@@ -182,7 +206,10 @@ const statusLabel: Record<string, string> = {
 };
 export function AgendaBoard({
   data,
+  initialDate,
+  initialView,
   canCreate,
+  canBlock,
   canCreatePatient,
   canEdit,
   canExtra,
@@ -191,7 +218,10 @@ export function AgendaBoard({
   canStartEncounter,
 }: {
   data: AgendaData;
+  initialDate: string;
+  initialView: AgendaView;
   canCreate: boolean;
+  canBlock: boolean;
   canCreatePatient: boolean;
   canEdit: boolean;
   canExtra: boolean;
@@ -199,7 +229,7 @@ export function AgendaBoard({
   canViewClinical: boolean;
   canStartEncounter: boolean;
 }) {
-  const router = useRouter();
+  const refreshFromRealtime = useCoalescedRouterRefresh();
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -213,63 +243,85 @@ export function AgendaBoard({
           table: "appointments",
           filter: `organization_id=eq.${data.organizationId}`,
         },
-        () => router.refresh(),
+        refreshFromRealtime,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "schedule_blocks",
+          filter: `organization_id=eq.${data.organizationId}`,
+        },
+        refreshFromRealtime,
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [data.organizationId, router]);
+  }, [data.organizationId, refreshFromRealtime]);
 
   return (
-    <div className="grid gap-5">
-      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-xl font-semibold">Agenda</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Operação diária da recepção e dos profissionais.
-          </p>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          {canCreate ? (
-            <AppointmentForm
-              data={data}
-              canExtra={canExtra}
-              canCreatePatient={canCreatePatient}
-            />
-          ) : null}
-        </div>
-      </section>
+    <AgendaTimeZoneContext.Provider value={data.timeZone}>
+      <div className="grid gap-5">
+        <PageHeader
+          icon={CalendarDays}
+          title="Agenda"
+          description="Operação diária da recepção e dos profissionais."
+          actions={
+            canCreate || canBlock ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {canBlock ? <ScheduleBlockForm data={data} /> : null}
+                {canCreate ? (
+                  <AppointmentForm
+                    data={data}
+                    canExtra={canExtra}
+                    canCreatePatient={canCreatePatient}
+                  />
+                ) : null}
+              </div>
+            ) : null
+          }
+        />
 
-      <AgendaCalendarView
-        data={data}
-        canEdit={canEdit}
-        canViewPatient={canViewPatient}
-        canViewClinical={canViewClinical}
-        canStartEncounter={canStartEncounter}
-      />
-    </div>
+        <AgendaCalendarView
+          data={data}
+          date={initialDate}
+          view={initialView}
+          canEdit={canEdit}
+          canViewPatient={canViewPatient}
+          canViewClinical={canViewClinical}
+          canStartEncounter={canStartEncounter}
+        />
+      </div>
+    </AgendaTimeZoneContext.Provider>
   );
 }
 
 function AgendaCalendarView({
   data,
+  date,
+  view,
   canEdit,
   canViewPatient,
   canViewClinical,
   canStartEncounter,
 }: {
   data: AgendaData;
+  date: string;
+  view: AgendaView;
   canEdit: boolean;
   canViewPatient: boolean;
   canViewClinical: boolean;
   canStartEncounter: boolean;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [navigationPending, startNavigation] = useTransition();
   const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Fortaleza",
+    timeZone: data.timeZone,
   }).format(new Date());
-  const [view, setView] = useState<"day" | "week" | "month">("day");
-  const [date, setDate] = useState(today);
   const [professionalIds, setProfessionalIds] = useState<string[]>([]);
   const [statusValues, setStatusValues] = useState<string[]>([]);
   const [unitIds, setUnitIds] = useState<string[]>([]);
@@ -337,7 +389,7 @@ function AgendaCalendarView({
     const patientDigits = rawPatientQuery.replace(/\D/g, "");
 
     return data.appointments.filter((item) => {
-      const itemDate = localDateKey(item.start_at);
+      const itemDate = localDateKey(item.start_at, data.timeZone);
       if (!dateInView(itemDate, date, view)) return false;
       if (rawPatientQuery) {
         const itemPatient = patient.get(item.patient_id);
@@ -392,6 +444,7 @@ function AgendaCalendarView({
     });
   }, [
     data.appointments,
+    data.timeZone,
     date,
     insuranceIds,
     patient,
@@ -411,7 +464,7 @@ function AgendaCalendarView({
     }
 
     return data.blocks.filter((item) => {
-      const itemDate = localDateKey(item.start_at);
+      const itemDate = localDateKey(item.start_at, data.timeZone);
       const itemSchedule = schedule.get(item.schedule_id);
       if (!dateInView(itemDate, date, view)) return false;
       if (
@@ -439,6 +492,7 @@ function AgendaCalendarView({
     });
   }, [
     data.blocks,
+    data.timeZone,
     date,
     insuranceIds,
     procedureIds,
@@ -461,24 +515,34 @@ function AgendaCalendarView({
     insuranceIds,
   ].filter((list) => list.length > 0).length;
   const appointmentsByDay = useMemo(
-    () => groupByLocalDay(filteredAppointments),
-    [filteredAppointments],
+    () => groupByLocalDay(filteredAppointments, data.timeZone),
+    [data.timeZone, filteredAppointments],
   );
   const blocksByDay = useMemo(
-    () => groupBlocksByLocalDay(filteredBlocks),
-    [filteredBlocks],
+    () => groupBlocksByLocalDay(filteredBlocks, data.timeZone),
+    [data.timeZone, filteredBlocks],
   );
+  const agendaReturnTo = buildAgendaReturnTo(date, view);
+
+  function navigateAgenda(nextDate: string, nextView: AgendaView) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("date", nextDate);
+    params.set("view", nextView);
+    startNavigation(() => {
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    });
+  }
 
   function moveDate(direction: -1 | 1) {
-    const base = localDateFromKey(date);
-    if (view === "day") setDate(dateKey(addDays(base, direction)));
-    if (view === "week") setDate(dateKey(addDays(base, direction * 7)));
-    if (view === "month") setDate(dateKey(addMonths(base, direction)));
+    navigateAgenda(addAgendaPeriod(date, view, direction), view);
   }
 
   return (
     <div className="grid gap-4">
-      <Card>
+      <Card
+        aria-busy={navigationPending}
+        className="bg-card/95 shadow-[var(--shadow-hover)] backdrop-blur md:sticky md:top-[calc(var(--app-sticky-offset,0rem)+0.5rem)] md:z-10"
+      >
         <CardContent className="grid gap-3 p-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex flex-wrap items-center gap-2">
@@ -493,7 +557,9 @@ function AgendaCalendarView({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setView(value as "day" | "week" | "month")}
+                    disabled={navigationPending}
+                    aria-pressed={view === value}
+                    onClick={() => navigateAgenda(date, value as AgendaView)}
                     className={
                       view === value
                         ? "bg-card text-foreground shadow-[var(--shadow-soft)] hover:bg-card"
@@ -510,6 +576,7 @@ function AgendaCalendarView({
                   variant="ghost"
                   size="icon"
                   aria-label="Periodo anterior"
+                  disabled={navigationPending}
                   onClick={() => moveDate(-1)}
                 >
                   <ChevronLeft className="size-4" />
@@ -518,7 +585,8 @@ function AgendaCalendarView({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={() => setDate(today)}
+                  disabled={navigationPending}
+                  onClick={() => navigateAgenda(today, view)}
                 >
                   Hoje
                 </Button>
@@ -527,21 +595,34 @@ function AgendaCalendarView({
                   variant="ghost"
                   size="icon"
                   aria-label="Proximo periodo"
+                  disabled={navigationPending}
                   onClick={() => moveDate(1)}
                 >
                   <ChevronRight className="size-4" />
                 </Button>
               </div>
-              <label className="relative">
-                <span className="sr-only">Data da agenda</span>
-                <Input
-                  type="date"
-                  value={date}
-                  onChange={(event) => setDate(event.target.value)}
-                  className="w-44"
-                />
-              </label>
-              <Badge variant="neutral">{rangeLabel}</Badge>
+              <DatePickerInput
+                name="agenda_date"
+                value={date}
+                todayValue={today}
+                required
+                disabled={navigationPending}
+                onValueChange={(nextDate) => {
+                  if (nextDate && nextDate !== date) {
+                    navigateAgenda(nextDate, view);
+                  }
+                }}
+                className="w-44"
+              />
+              <Badge variant="neutral">
+                {navigationPending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <RefreshCw className="size-3 animate-spin" /> Atualizando
+                  </span>
+                ) : (
+                  rangeLabel
+                )}
+              </Badge>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <Badge variant="neutral">
@@ -695,6 +776,7 @@ function AgendaCalendarView({
           canViewPatient={canViewPatient}
           canViewClinical={canViewClinical}
           canStartEncounter={canStartEncounter}
+          returnTo={agendaReturnTo}
           onClose={() => setSelectedAppointmentId(null)}
         />
       ) : null}
@@ -827,11 +909,12 @@ function DayAgenda({
   canEdit: boolean;
   onSelectAppointment: (appointmentId: string) => void;
 }) {
+  const timeZone = useAgendaTimeZone();
   const dayAppointments = appointments.filter(
-    (item) => localDateKey(item.start_at) === date,
+    (item) => localDateKey(item.start_at, timeZone) === date,
   );
   const dayBlocks = blocks.filter(
-    (item) => localDateKey(item.start_at) === date,
+    (item) => localDateKey(item.start_at, timeZone) === date,
   );
   const periods = [
     {
@@ -866,6 +949,7 @@ function DayAgenda({
             item.end_at,
             period.startMinute,
             period.endMinute,
+            timeZone,
           ),
         );
         const periodBlocks = dayBlocks.filter((item) =>
@@ -874,6 +958,7 @@ function DayAgenda({
             item.end_at,
             period.startMinute,
             period.endMinute,
+            timeZone,
           ),
         );
         const slots = buildTimelineSlots(period.startMinute, period.endMinute);
@@ -884,6 +969,7 @@ function DayAgenda({
           appointments: periodAppointments,
           blocks: periodBlocks,
           startMinute: period.startMinute,
+          timeZone,
         });
 
         return (
@@ -992,14 +1078,16 @@ function WeekAgenda({
   schedule: Map<string, AgendaData["schedules"][number]>;
   onSelectAppointment: (appointmentId: string) => void;
 }) {
+  const timeZone = useAgendaTimeZone();
   const days = weekDays(date);
   const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Fortaleza",
+    timeZone,
   }).format(new Date());
   const timelineRange = getWeekTimelineRange(
     days,
     appointmentsByDay,
     blocksByDay,
+    timeZone,
   );
   const slots = buildTimelineSlots(
     timelineRange.startMinute,
@@ -1064,6 +1152,7 @@ function WeekAgenda({
                 appointments: dayAppointments,
                 blocks: dayBlocks,
                 startMinute: timelineRange.startMinute,
+                timeZone,
               });
 
               return (
@@ -1113,6 +1202,7 @@ function WeekAgenda({
                     <NowIndicator
                       startMinute={timelineRange.startMinute}
                       endMinute={timelineRange.endMinute}
+                      timeZone={timeZone}
                     />
                   ) : null}
                 </div>
@@ -1125,9 +1215,9 @@ function WeekAgenda({
   );
 }
 
-function currentMinuteInFortaleza() {
+function currentMinuteInTimeZone(timeZone: string) {
   const parts = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Fortaleza",
+    timeZone,
     hour: "numeric",
     minute: "numeric",
     hour12: false,
@@ -1142,18 +1232,20 @@ function currentMinuteInFortaleza() {
 function NowIndicator({
   startMinute,
   endMinute,
+  timeZone,
 }: {
   startMinute: number;
   endMinute: number;
+  timeZone: string;
 }) {
-  const [minute, setMinute] = useState(currentMinuteInFortaleza);
+  const [minute, setMinute] = useState(() => currentMinuteInTimeZone(timeZone));
 
   useEffect(() => {
     const id = setInterval(() => {
-      setMinute(currentMinuteInFortaleza());
+      setMinute(currentMinuteInTimeZone(timeZone));
     }, 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [timeZone]);
 
   if (minute < startMinute || minute > endMinute) {
     return null;
@@ -1218,6 +1310,7 @@ function TimelineAppointmentItem({
   canEdit?: boolean;
   onSelect?: () => void;
 }) {
+  const timeZone = useAgendaTimeZone();
   const patientName = patient?.social_name || patient?.full_name || "Paciente";
   const colors = timelineScheduleColor(schedule?.color ?? defaultScheduleColor);
   const width = `calc(${100 / item.laneCount}% - 6px)`;
@@ -1243,15 +1336,16 @@ function TimelineAppointmentItem({
         borderColor: colors.border,
         color: colors.text,
       }}
-      title={`${formatTime(appointment.start_at)} - ${formatTime(
+      title={`${formatTime(appointment.start_at, timeZone)} - ${formatTime(
         appointment.end_at,
+        timeZone,
       )} · ${patientName}`}
     >
       <div className="flex items-start justify-between gap-1">
         <div className="min-w-0">
           <p className="truncate font-semibold tabular-nums">
-            {formatTime(appointment.start_at)} -{" "}
-            {formatTime(appointment.end_at)}
+            {formatTime(appointment.start_at, timeZone)} -{" "}
+            {formatTime(appointment.end_at, timeZone)}
           </p>
           <p className="truncate font-semibold uppercase">{patientName}</p>
         </div>
@@ -1289,6 +1383,7 @@ function TimelineBlockItem({
   item: Extract<TimedWeekItem, { type: "block" }>;
   schedule?: AgendaData["schedules"][number];
 }) {
+  const timeZone = useAgendaTimeZone();
   const width = `calc(${100 / item.laneCount}% - 6px)`;
   const left = `calc(${(100 / item.laneCount) * item.lane}% + 3px)`;
 
@@ -1301,14 +1396,16 @@ function TimelineBlockItem({
         left,
         width,
       }}
-      title={`${formatTime(item.block.start_at)} - ${formatTime(
+      title={`${formatTime(item.block.start_at, timeZone)} - ${formatTime(
         item.block.end_at,
+        timeZone,
       )}`}
     >
       <div className="flex min-w-0 items-center gap-1">
         <Ban className="size-3.5 shrink-0" aria-hidden="true" />
         <p className="truncate font-semibold tabular-nums">
-          {formatTime(item.block.start_at)} - {formatTime(item.block.end_at)}
+          {formatTime(item.block.start_at, timeZone)} -{" "}
+          {formatTime(item.block.end_at, timeZone)}
         </p>
       </div>
       {item.height >= 42 ? (
@@ -1491,6 +1588,7 @@ function AppointmentCard({
   compact?: boolean;
   onSelect?: () => void;
 }) {
+  const timeZone = useAgendaTimeZone();
   const color = schedule?.color ?? defaultScheduleColor;
   const patientName = patient?.social_name || patient?.full_name || "Paciente";
   const statusTone =
@@ -1520,7 +1618,7 @@ function AppointmentCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-semibold tabular-nums text-muted-foreground">
-            {formatTime(appointment.start_at)}
+            {formatTime(appointment.start_at, timeZone)}
           </p>
           <p className="truncate text-sm font-semibold" title={patientName}>
             {patientName}
@@ -1591,6 +1689,7 @@ function AppointmentDetailsModal({
   canViewPatient,
   canViewClinical,
   canStartEncounter,
+  returnTo,
   onClose,
 }: {
   appointment: AgendaData["appointments"][number];
@@ -1608,8 +1707,10 @@ function AppointmentDetailsModal({
   canViewPatient: boolean;
   canViewClinical: boolean;
   canStartEncounter: boolean;
+  returnTo: string;
   onClose: () => void;
 }) {
+  const timeZone = useAgendaTimeZone();
   const patientName = patient?.social_name || patient?.full_name || "Paciente";
   const appointmentStatus =
     statusLabel[appointment.status] ?? appointment.status;
@@ -1704,6 +1805,7 @@ function AppointmentDetailsModal({
                 {formatAppointmentDateTime(
                   appointment.start_at,
                   appointment.end_at,
+                  timeZone,
                 )}
               </p>
             </div>
@@ -1766,14 +1868,17 @@ function AppointmentDetailsModal({
           ) : null}
           {canViewClinical && encounter ? (
             <Button asChild variant="secondary">
-              <Link href={`/prontuario/${encounter.id}`}>
+              <Link href={buildAgendaEncounterHref(encounter.id, returnTo)}>
                 <FileText className="size-4" aria-hidden="true" />
                 Abrir prontuario
               </Link>
             </Button>
           ) : null}
           {canStartClinicalEncounter ? (
-            <StartEncounterForm appointmentId={appointment.id} />
+            <StartEncounterForm
+              appointmentId={appointment.id}
+              returnTo={returnTo}
+            />
           ) : null}
           {canEdit ? (
             <div className="flex flex-wrap justify-end gap-2">
@@ -1835,7 +1940,13 @@ function PaymentMethodForm({
   );
 }
 
-function StartEncounterForm({ appointmentId }: { appointmentId: string }) {
+function StartEncounterForm({
+  appointmentId,
+  returnTo,
+}: {
+  appointmentId: string;
+  returnTo: string;
+}) {
   const boundAction = startAppointmentEncounter.bind(null, appointmentId);
   const [state, action, pending] = useActionState(boundAction, initialState);
 
@@ -1845,6 +1956,7 @@ function StartEncounterForm({ appointmentId }: { appointmentId: string }) {
 
   return (
     <form action={action}>
+      <input type="hidden" name="return_to" value={returnTo} readOnly />
       <Button type="submit" disabled={pending}>
         <Stethoscope className="size-4" aria-hidden="true" />
         {pending ? "Iniciando..." : "Iniciar atendimento"}
@@ -1883,10 +1995,15 @@ function handleAppointmentCardKeyDown(
   onSelect();
 }
 
-function formatAppointmentDateTime(startAt: string, endAt: string) {
-  return `${formatFullDay(localDateKey(startAt))}, ${formatTime(
+function formatAppointmentDateTime(
+  startAt: string,
+  endAt: string,
+  timeZone: string,
+) {
+  return `${formatFullDay(localDateKey(startAt, timeZone))}, ${formatTime(
     startAt,
-  )} - ${formatTime(endAt)}`;
+    timeZone,
+  )} - ${formatTime(endAt, timeZone)}`;
 }
 
 function BlockCard({
@@ -1898,6 +2015,7 @@ function BlockCard({
   schedule?: AgendaData["schedules"][number];
   compact?: boolean;
 }) {
+  const timeZone = useAgendaTimeZone();
   return (
     <div className="min-w-0 overflow-hidden rounded-lg border border-dashed border-border bg-muted/40 p-3">
       <div className="flex min-w-0 items-center gap-2">
@@ -1906,7 +2024,8 @@ function BlockCard({
           aria-hidden="true"
         />
         <p className="truncate text-xs font-semibold tabular-nums">
-          {formatTime(block.start_at)}-{formatTime(block.end_at)}
+          {formatTime(block.start_at, timeZone)}-
+          {formatTime(block.end_at, timeZone)}
         </p>
       </div>
       {!compact ? (
@@ -1926,6 +2045,226 @@ function EmptyAgendaBlock({ text }: { text: string }) {
   );
 }
 
+function ScheduleBlockForm({ data }: { data: AgendaData }) {
+  const [open, setOpen] = useState(false);
+  const initial = defaultAppointmentDateTime(data.timeZone, data.selectedDate);
+  const initialStart = parseLocalDateTimeForUi(
+    initial.date,
+    initial.time,
+    data.timeZone,
+  );
+  const initialEnd = initialStart
+    ? localDateTimeParts(
+        new Date(initialStart.getTime() + 60 * 60_000),
+        data.timeZone,
+      )
+    : { date: initial.date, time: "09:00" };
+  const [scheduleId, setScheduleId] = useState("");
+  const [startDate, setStartDate] = useState(initial.date);
+  const [startTime, setStartTime] = useState(initial.time);
+  const [endDate, setEndDate] = useState(initialEnd.date);
+  const [endTime, setEndTime] = useState(initialEnd.time);
+  const [allDay, setAllDay] = useState(false);
+  const normalizedStartTime = normalizeTimeValue(startTime);
+  const normalizedEndTime = normalizeTimeValue(endTime);
+  const nextDate = startDate
+    ? dateKey(addDays(localDateFromKey(startDate), 1))
+    : "";
+  const startValue = startDate
+    ? `${startDate}T${allDay ? "00:00" : normalizedStartTime}`
+    : "";
+  const endValue = allDay
+    ? nextDate
+      ? `${nextDate}T00:00`
+      : ""
+    : endDate
+      ? `${endDate}T${normalizedEndTime}`
+      : "";
+  const parsedStart = parseLocalDateTimeForUi(
+    startDate,
+    allDay ? "00:00" : normalizedStartTime,
+    data.timeZone,
+  );
+  const parsedEnd = parseLocalDateTimeForUi(
+    allDay ? nextDate : endDate,
+    allDay ? "00:00" : normalizedEndTime,
+    data.timeZone,
+  );
+  const validRange = Boolean(
+    scheduleId && parsedStart && parsedEnd && parsedEnd > parsedStart,
+  );
+
+  const submitBlock = useCallback(
+    async (previousState: AgendaActionState, formData: FormData) => {
+      const result = await createScheduleBlock(previousState, formData);
+      if (result.success) {
+        toast.success(result.success);
+        setOpen(false);
+      }
+      return result;
+    },
+    [],
+  );
+  const [state, action, pending] = useActionState(submitBlock, initialState);
+
+  function keepEndAfterStart(nextDateValue: string, nextTimeValue: string) {
+    const nextStart = parseLocalDateTimeForUi(
+      nextDateValue,
+      normalizeTimeValue(nextTimeValue),
+      data.timeZone,
+    );
+    const currentEnd = parseLocalDateTimeForUi(
+      endDate,
+      normalizedEndTime,
+      data.timeZone,
+    );
+    if (!nextStart || (currentEnd && currentEnd > nextStart)) return;
+    const nextEnd = localDateTimeParts(
+      new Date(nextStart.getTime() + 60 * 60_000),
+      data.timeZone,
+    );
+    setEndDate(nextEnd.date);
+    setEndTime(nextEnd.time);
+  }
+
+  return (
+    <>
+      <Button type="button" variant="secondary" onClick={() => setOpen(true)}>
+        <Ban className="size-4" aria-hidden="true" />
+        Bloquear horário
+      </Button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Bloquear horário"
+        description="O bloqueio vale para a agenda interna e para o agendamento online."
+        className="max-w-xl"
+      >
+        <form
+          action={action}
+          className="grid min-w-0 gap-4"
+          aria-busy={pending}
+        >
+          <label className="grid min-w-0 gap-2 text-sm font-medium">
+            Agenda
+            <Select
+              name="schedule_id"
+              required
+              value={scheduleId}
+              onValueChange={setScheduleId}
+            >
+              <option value="">Selecione</option>
+              {data.schedules.map((schedule) => (
+                <option key={schedule.id} value={schedule.id}>
+                  {schedule.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+
+          <Checkbox
+            checked={allDay}
+            onChange={(event) => setAllDay(event.target.checked)}
+            label="Bloquear o dia inteiro"
+          />
+
+          <input type="hidden" name="start_at" value={startValue} readOnly />
+          <input type="hidden" name="end_at" value={endValue} readOnly />
+
+          <label className="grid min-w-0 gap-2 text-sm font-medium">
+            {allDay ? "Dia do bloqueio" : "Início do bloqueio"}
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_6rem]">
+              <DatePickerInput
+                name="block_start_date"
+                value={startDate}
+                onValueChange={(value) => {
+                  setStartDate(value);
+                  keepEndAfterStart(value, normalizedStartTime);
+                }}
+                required
+                ariaLabel="Início do bloqueio: data"
+                className="min-w-0"
+                todayValue={localDateKey(
+                  new Date().toISOString(),
+                  data.timeZone,
+                )}
+              />
+              {!allDay ? (
+                <TimeTextInput
+                  value={startTime}
+                  onChange={setStartTime}
+                  onBlur={() => {
+                    setStartTime(normalizedStartTime);
+                    keepEndAfterStart(startDate, normalizedStartTime);
+                  }}
+                  ariaLabel="Início do bloqueio: horário"
+                />
+              ) : null}
+            </div>
+          </label>
+
+          {!allDay ? (
+            <label className="grid min-w-0 gap-2 text-sm font-medium">
+              Fim do bloqueio
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_6rem]">
+                <DatePickerInput
+                  name="block_end_date"
+                  value={endDate}
+                  onValueChange={setEndDate}
+                  required
+                  ariaLabel="Fim do bloqueio: data"
+                  className="min-w-0"
+                  todayValue={localDateKey(
+                    new Date().toISOString(),
+                    data.timeZone,
+                  )}
+                />
+                <TimeTextInput
+                  value={endTime}
+                  onChange={setEndTime}
+                  onBlur={() => setEndTime(normalizedEndTime)}
+                  ariaLabel="Fim do bloqueio: horário"
+                />
+              </div>
+            </label>
+          ) : null}
+
+          <label className="grid gap-2 text-sm font-medium">
+            Motivo
+            <Input
+              name="reason"
+              maxLength={300}
+              placeholder="Ex.: reunião, férias ou almoço"
+            />
+          </label>
+
+          {!validRange && scheduleId ? (
+            <p className="text-sm text-destructive">
+              O fim do bloqueio deve ser posterior ao início.
+            </p>
+          ) : null}
+          {state.error ? (
+            <p className="text-sm text-destructive">{state.error}</p>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={pending || !validRange}>
+              {pending ? "Bloqueando..." : "Bloquear horário"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </>
+  );
+}
+
 function AppointmentForm({
   data,
   canExtra,
@@ -1938,47 +2277,47 @@ function AppointmentForm({
   const [open, setOpen] = useState(false);
   const [selectedScheduleId, setSelectedScheduleId] = useState("");
   const [selectedProcedureId, setSelectedProcedureId] = useState("");
+  const submitAppointment = useCallback(
+    async (previousState: AgendaActionState, formData: FormData) => {
+      const result = await createAppointment(previousState, formData);
+      if (result.success) {
+        toast.success(result.success);
+        setSelectedScheduleId("");
+        setSelectedProcedureId("");
+        setOpen(false);
+      }
+      return result;
+    },
+    [],
+  );
   const [state, action, pending] = useActionState(
-    createAppointment,
+    submitAppointment,
     initialState,
   );
   const selectedProcedure = data.procedures.find(
     (item) => item.id === selectedProcedureId,
   );
-  useEffect(() => {
-    if (state.success) {
-      toast.success(state.success);
-    }
-  }, [state]);
-  if (!open)
-    return (
+  return (
+    <>
       <Button type="button" onClick={() => setOpen(true)}>
-        <Plus className="size-4" />
+        <Plus className="size-4" aria-hidden="true" />
         Novo agendamento
       </Button>
-    );
-  return (
-    <Card className="fixed inset-x-4 top-20 z-40 mx-auto max-h-[calc(100vh-6rem)] max-w-2xl overflow-y-auto shadow-[var(--shadow-lg)]">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <h2 className="font-semibold">Novo agendamento</h2>
-          <p className="text-sm text-muted-foreground">
-            A duração será definida pelo procedimento.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => setOpen(false)}
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Novo agendamento"
+        description="A duração será definida pelo procedimento."
+        className="max-w-2xl"
+      >
+        <form
+          action={action}
+          aria-busy={pending}
+          className="grid gap-4 md:grid-cols-2"
         >
-          <X className="size-4" />
-        </Button>
-      </CardHeader>
-      <CardContent>
-        <form action={action} className="grid gap-4 md:grid-cols-2">
           <PatientSearchField
             patients={data.patients}
+            remoteSearch
             canCreatePatient={canCreatePatient}
             createPatientAction={createQuickPatientFromAgenda}
             className="md:col-span-2"
@@ -2070,8 +2409,8 @@ function AppointmentForm({
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </Modal>
+    </>
   );
 }
 
@@ -2094,11 +2433,16 @@ function AppointmentTimeField({
   required?: boolean;
   className?: string;
 }) {
-  const initial = defaultAppointmentDateTime();
+  const initial = defaultAppointmentDateTime(data.timeZone, data.selectedDate);
   const [date, setDate] = useState(initial.date);
   const [startTime, setStartTime] = useState(initial.time);
   const normalizedStart = normalizeTimeValue(startTime);
-  const endTime = addMinutesToTime(date, normalizedStart, durationMinutes);
+  const endTime = addMinutesToTime(
+    date,
+    normalizedStart,
+    durationMinutes,
+    data.timeZone,
+  );
   const value = date ? `${date}T${normalizedStart}` : "";
 
   function fillNextFreeSlot() {
@@ -2129,19 +2473,15 @@ function AppointmentTimeField({
       {label}
       <input type="hidden" name={name} value={value} />
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <CalendarDays
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            required={required}
-            className="w-44 pl-9 [&::-webkit-calendar-picker-indicator]:opacity-0"
-          />
-        </div>
+        <DatePickerInput
+          name={`${name}_date`}
+          value={date}
+          onValueChange={setDate}
+          required={required}
+          ariaLabel={`${label}: data`}
+          className="w-44"
+          todayValue={localDateKey(new Date().toISOString(), data.timeZone)}
+        />
         <TimeTextInput
           value={startTime}
           onChange={setStartTime}
@@ -2183,7 +2523,8 @@ function DateTimeField({
   required?: boolean;
   className?: string;
 }) {
-  const parsed = splitDateTimeValue(defaultValue);
+  const timeZone = useAgendaTimeZone();
+  const parsed = splitDateTimeValue(defaultValue, timeZone);
   const [date, setDate] = useState(parsed.date);
   const [hour, setHour] = useState(parsed.hour);
   const [minute, setMinute] = useState(parsed.minute);
@@ -2196,12 +2537,14 @@ function DateTimeField({
       {label}
       <input type="hidden" name={name} value={value} />
       <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_5.5rem_5.5rem]">
-        <Input
-          type="date"
+        <DatePickerInput
+          name={`${name}_date`}
           value={date}
-          onChange={(event) => setDate(event.target.value)}
+          onValueChange={setDate}
           required={required}
+          ariaLabel={`${label}: data`}
           className="w-full"
+          todayValue={localDateKey(new Date().toISOString(), timeZone)}
         />
         <TimeInput
           value={hour}
@@ -2437,39 +2780,33 @@ function RescheduleForm({
   );
 }
 
-function localDateKey(value: string) {
+function localDateKey(value: string, timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Fortaleza",
+    timeZone,
   }).format(new Date(value));
 }
 
 function localDateFromKey(value: string) {
-  return new Date(`${value}T12:00:00-03:00`);
+  return new Date(`${value}T12:00:00Z`);
 }
 
 function dateKey(value: Date) {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Fortaleza",
+    timeZone: "UTC",
   }).format(value);
 }
 
 function addDays(value: Date, days: number) {
   const next = new Date(value);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function addMonths(value: Date, months: number) {
-  const next = new Date(value);
-  next.setMonth(next.getMonth() + months);
+  next.setUTCDate(next.getUTCDate() + days);
   return next;
 }
 
 function weekStart(value: Date) {
   const next = new Date(value);
-  const day = next.getDay();
+  const day = next.getUTCDay();
   const offset = day === 0 ? -6 : 1 - day;
-  next.setDate(next.getDate() + offset);
+  next.setUTCDate(next.getUTCDate() + offset);
   return next;
 }
 
@@ -2481,13 +2818,14 @@ function weekDays(date: string) {
 function monthDays(date: string) {
   const base = localDateFromKey(date);
   const lastDay = new Date(
-    base.getFullYear(),
-    base.getMonth() + 1,
-    0,
-  ).getDate();
+    Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0),
+  ).getUTCDate();
   return Array.from(
     { length: lastDay },
-    (_, index) => new Date(base.getFullYear(), base.getMonth(), index + 1, 12),
+    (_, index) =>
+      new Date(
+        Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), index + 1, 12),
+      ),
   );
 }
 
@@ -2502,8 +2840,8 @@ function dateInView(
   const selected = localDateFromKey(selectedDate);
   if (view === "month") {
     return (
-      item.getFullYear() === selected.getFullYear() &&
-      item.getMonth() === selected.getMonth()
+      item.getUTCFullYear() === selected.getUTCFullYear() &&
+      item.getUTCMonth() === selected.getUTCMonth()
     );
   }
 
@@ -2512,10 +2850,10 @@ function dateInView(
   return item >= start && item < end;
 }
 
-function groupByLocalDay(items: AgendaData["appointments"]) {
+function groupByLocalDay(items: AgendaData["appointments"], timeZone: string) {
   const grouped = new Map<string, AgendaData["appointments"]>();
   for (const item of items) {
-    const key = localDateKey(item.start_at);
+    const key = localDateKey(item.start_at, timeZone);
     grouped.set(key, [...(grouped.get(key) ?? []), item]);
   }
   for (const [key, values] of grouped) {
@@ -2530,10 +2868,10 @@ function groupByLocalDay(items: AgendaData["appointments"]) {
   return grouped;
 }
 
-function groupBlocksByLocalDay(items: AgendaData["blocks"]) {
+function groupBlocksByLocalDay(items: AgendaData["blocks"], timeZone: string) {
   const grouped = new Map<string, AgendaData["blocks"]>();
   for (const item of items) {
-    const key = localDateKey(item.start_at);
+    const key = localDateKey(item.start_at, timeZone);
     grouped.set(key, [...(grouped.get(key) ?? []), item]);
   }
   return grouped;
@@ -2546,14 +2884,14 @@ function formatRangeLabel(date: string, view: "day" | "week" | "month") {
       weekday: "long",
       day: "2-digit",
       month: "short",
-      timeZone: "America/Fortaleza",
+      timeZone: "UTC",
     }).format(base);
   }
   if (view === "month") {
     return new Intl.DateTimeFormat("pt-BR", {
       month: "long",
       year: "numeric",
-      timeZone: "America/Fortaleza",
+      timeZone: "UTC",
     }).format(base);
   }
   const start = weekStart(base);
@@ -2564,7 +2902,7 @@ function formatRangeLabel(date: string, view: "day" | "week" | "month") {
 function weekdayShort(value: Date) {
   return new Intl.DateTimeFormat("pt-BR", {
     weekday: "short",
-    timeZone: "America/Fortaleza",
+    timeZone: "UTC",
   })
     .format(value)
     .replace(".", "");
@@ -2573,7 +2911,7 @@ function weekdayShort(value: Date) {
 function weekdayLong(value: Date) {
   const label = new Intl.DateTimeFormat("pt-BR", {
     weekday: "long",
-    timeZone: "America/Fortaleza",
+    timeZone: "UTC",
   })
     .format(value)
     .split("-")[0];
@@ -2584,7 +2922,7 @@ function formatDayMonth(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "short",
-    timeZone: "America/Fortaleza",
+    timeZone: "UTC",
   })
     .format(localDateFromKey(value))
     .replace(".", "");
@@ -2595,15 +2933,15 @@ function formatFullDay(value: string) {
     weekday: "long",
     day: "2-digit",
     month: "long",
-    timeZone: "America/Fortaleza",
+    timeZone: "UTC",
   }).format(localDateFromKey(value));
 }
 
-function formatTime(value: string) {
+function formatTime(value: string, timeZone: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "America/Fortaleza",
+    timeZone,
   }).format(new Date(value));
 }
 
@@ -2611,6 +2949,7 @@ function getWeekTimelineRange(
   days: Date[],
   appointmentsByDay: Map<string, AgendaData["appointments"]>,
   blocksByDay: Map<string, AgendaData["blocks"]>,
+  timeZone: string,
 ) {
   let startMinute = 8 * 60;
   let endMinute = 18 * 60 + 30;
@@ -2628,7 +2967,7 @@ function getWeekTimelineRange(
     ];
 
     for (const entry of entries) {
-      const start = minutesOfLocalDay(new Date(entry.startAt));
+      const start = minutesOfLocalDay(new Date(entry.startAt), timeZone);
       const duration = Math.max(
         15,
         (new Date(entry.endAt).getTime() - new Date(entry.startAt).getTime()) /
@@ -2654,8 +2993,9 @@ function localIntervalIntersectsMinuteRange(
   endAt: string,
   rangeStartMinute: number,
   rangeEndMinute: number,
+  timeZone: string,
 ) {
-  const startMinute = minutesOfLocalDay(new Date(startAt));
+  const startMinute = minutesOfLocalDay(new Date(startAt), timeZone);
   const durationMinutes = Math.max(
     15,
     (new Date(endAt).getTime() - new Date(startAt).getTime()) / 60_000,
@@ -2687,10 +3027,12 @@ function layoutTimedWeekItems({
   appointments,
   blocks,
   startMinute,
+  timeZone,
 }: {
   appointments: AgendaData["appointments"];
   blocks: AgendaData["blocks"];
   startMinute: number;
+  timeZone: string;
 }) {
   const items: TimedWeekItem[] = [
     ...appointments.map((appointment) => {
@@ -2703,6 +3045,7 @@ function layoutTimedWeekItems({
         startAt,
         endAt,
         startMinute,
+        timeZone,
       });
     }),
     ...blocks.map((block) => {
@@ -2715,6 +3058,7 @@ function layoutTimedWeekItems({
         startAt,
         endAt,
         startMinute,
+        timeZone,
       });
     }),
   ].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
@@ -2748,6 +3092,7 @@ function buildTimedWeekItem(
         startAt: Date;
         endAt: Date;
         startMinute: number;
+        timeZone: string;
       }
     | {
         id: string;
@@ -2756,9 +3101,10 @@ function buildTimedWeekItem(
         startAt: Date;
         endAt: Date;
         startMinute: number;
+        timeZone: string;
       },
 ): TimedWeekItem {
-  const localStart = minutesOfLocalDay(input.startAt);
+  const localStart = minutesOfLocalDay(input.startAt, input.timeZone);
   const durationMinutes = Math.max(
     15,
     (input.endAt.getTime() - input.startAt.getTime()) / 60_000,
@@ -2807,9 +3153,9 @@ function timelineScheduleColor(color: string) {
   };
 }
 
-function minutesOfLocalDay(value: Date) {
+function minutesOfLocalDay(value: Date, timeZone: string) {
   const [, time = "00:00"] = value
-    .toLocaleString("sv-SE", { timeZone: "America/Fortaleza" })
+    .toLocaleString("sv-SE", { timeZone })
     .split(" ");
   const [hour = "0", minute = "0"] = time.split(":");
   return Number(hour) * 60 + Number(minute);
@@ -2829,8 +3175,14 @@ function ceilToStep(value: number, step: number) {
   return Math.ceil(value / step) * step;
 }
 
-function defaultAppointmentDateTime() {
-  return localDateTimeParts(roundDateToStep(new Date(), 15));
+function defaultAppointmentDateTime(timeZone: string, selectedDate: string) {
+  const roundedNow = localDateTimeParts(
+    roundDateToStep(new Date(), 15),
+    timeZone,
+  );
+  return roundedNow.date === selectedDate
+    ? roundedNow
+    : { date: selectedDate, time: "08:00" };
 }
 
 function formatPartialTime(value: string) {
@@ -2857,10 +3209,18 @@ function normalizeTimeValue(value: string) {
   return `${hour}:${minute}`;
 }
 
-function addMinutesToTime(date: string, time: string, minutes: number) {
-  const start = parseLocalDateTimeForUi(date, time);
+function addMinutesToTime(
+  date: string,
+  time: string,
+  minutes: number,
+  timeZone: string,
+) {
+  const start = parseLocalDateTimeForUi(date, time, timeZone);
   if (!start) return "--:--";
-  return localDateTimeParts(new Date(start.getTime() + minutes * 60_000)).time;
+  return localDateTimeParts(
+    new Date(start.getTime() + minutes * 60_000),
+    timeZone,
+  ).time;
 }
 
 function findNextFreeSlot({
@@ -2877,7 +3237,7 @@ function findNextFreeSlot({
   time: string;
 }) {
   const schedule = data.schedules.find((item) => item.id === scheduleId);
-  const initial = parseLocalDateTimeForUi(date, time);
+  const initial = parseLocalDateTimeForUi(date, time, data.timeZone);
   if (!schedule || !initial) return null;
 
   const sortedAvailability = data.availability
@@ -2888,22 +3248,28 @@ function findNextFreeSlot({
     );
 
   for (let offset = 0; offset <= 90; offset += 1) {
-    const day = addDays(localDateFromKey(dateKey(initial)), offset);
+    const initialLocalDate = localDateKey(initial.toISOString(), data.timeZone);
+    const day = addDays(localDateFromKey(initialLocalDate), offset);
     const dayKey = dateKey(day);
+    if (dayKey > data.visibleTo) break;
     const dayStartLimit =
-      offset === 0 ? initial : parseLocalDateTimeForUi(dayKey, "00:00");
+      offset === 0
+        ? initial
+        : parseLocalDateTimeForUi(dayKey, "00:00", data.timeZone);
     const dayAvailability = sortedAvailability.filter(
-      (item) => item.weekday === day.getDay(),
+      (item) => item.weekday === day.getUTCDay(),
     );
 
     for (const availability of dayAvailability) {
       const windowStart = parseLocalDateTimeForUi(
         dayKey,
         availability.start_time.slice(0, 5),
+        data.timeZone,
       );
       const windowEnd = parseLocalDateTimeForUi(
         dayKey,
         availability.end_time.slice(0, 5),
+        data.timeZone,
       );
 
       if (!windowStart || !windowEnd || !dayStartLimit) continue;
@@ -2929,7 +3295,7 @@ function findNextFreeSlot({
             endAt: candidateEnd,
           })
         ) {
-          return localDateTimeParts(candidate);
+          return localDateTimeParts(candidate, data.timeZone);
         }
 
         candidate = new Date(
@@ -2993,21 +3359,24 @@ function roundDateToStep(value: Date, stepMinutes: number) {
   return new Date(Math.ceil(value.getTime() / stepMs) * stepMs);
 }
 
-function parseLocalDateTimeForUi(date: string, time: string) {
-  const parsed = new Date(`${date}T${normalizeTimeValue(time)}:00-03:00`);
+function parseLocalDateTimeForUi(date: string, time: string, timeZone: string) {
+  const parsed = fromZonedTime(
+    `${date}T${normalizeTimeValue(time)}:00`,
+    timeZone,
+  );
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function localDateTimeParts(value: Date) {
+function localDateTimeParts(value: Date, timeZone: string) {
   const [date, time = "00:00"] = value
-    .toLocaleString("sv-SE", { timeZone: "America/Fortaleza" })
+    .toLocaleString("sv-SE", { timeZone })
     .split(" ");
   return { date, time: time.slice(0, 5) };
 }
 
-function formatDateTimeInput(value: string) {
+function formatDateTimeInput(value: string, timeZone: string) {
   return new Date(value)
-    .toLocaleString("sv-SE", { timeZone: "America/Fortaleza" })
+    .toLocaleString("sv-SE", { timeZone })
     .replace(" ", "T")
     .slice(0, 16);
 }
@@ -3021,12 +3390,14 @@ function normalizeTimePart(value: string, max: number) {
   );
 }
 
-function splitDateTimeValue(value?: string) {
+function splitDateTimeValue(value: string | undefined, timeZone: string) {
   if (!value) {
     return { date: "", hour: "08", minute: "00" };
   }
 
-  const [date = "", time = ""] = formatDateTimeInput(value).split("T");
+  const [date = "", time = ""] = formatDateTimeInput(value, timeZone).split(
+    "T",
+  );
   const [hour = "08", minute = "00"] = time.split(":");
 
   return {

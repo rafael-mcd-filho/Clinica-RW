@@ -1,17 +1,14 @@
 "use client";
 
 import { useActionState, useEffect, useId, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createCard, createQuickPatientFromFunil } from "../actions";
 import { Button } from "@/components/ui/button";
+import { DatePickerInput } from "@/components/ui/date-picker-input";
 import { Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
-import {
-  PatientSearchField,
-  type PatientSearchOption,
-} from "@/components/patient-search-field";
+import { PatientSearchField } from "@/components/patient-search-field";
 
 type StageOption = { id: string; name: string };
 
@@ -19,36 +16,28 @@ export function CreateCardDialog({
   funnelId,
   stages,
   defaultStageId,
-  patients,
   professionals,
   canCreatePatient,
 }: {
   funnelId: string;
   stages: StageOption[];
   defaultStageId: string;
-  patients: PatientSearchOption[];
   professionals: Array<{ id: string; name: string }>;
   canCreatePatient: boolean;
 }) {
-  const router = useRouter();
   const formId = useId();
   const [open, setOpen] = useState(false);
   const [stageId, setStageId] = useState(defaultStageId);
   const action = createCard.bind(null, funnelId, stageId);
   const [state, formAction, pending] = useActionState(action, {});
-  const [handledState, setHandledState] = useState(state);
-
-  if (state !== handledState) {
-    setHandledState(state);
-    if (state.success) setOpen(false);
-  }
 
   useEffect(() => {
     if (state.success) {
       toast.success(state.success);
-      router.refresh();
+      const timer = window.setTimeout(() => setOpen(false), 0);
+      return () => window.clearTimeout(timer);
     }
-  }, [router, state]);
+  }, [state]);
 
   return (
     <>
@@ -79,7 +68,8 @@ export function CreateCardDialog({
       >
         <form id={formId} action={formAction} className="grid gap-4">
           <PatientSearchField
-            patients={patients}
+            patients={[]}
+            remoteSearch
             canCreatePatient={canCreatePatient}
             createPatientAction={createQuickPatientFromFunil}
           />
@@ -124,7 +114,10 @@ export function CreateCardDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="grid gap-2 text-sm font-medium">
               Data da próxima ação
-              <Input name="next_action_date" type="date" />
+              <DatePickerInput
+                name="next_action_date"
+                ariaLabel="Data da próxima ação"
+              />
             </label>
             <label className="grid gap-2 text-sm font-medium">
               Valor (opcional)

@@ -78,6 +78,10 @@ export async function getTodayAppointmentsForRail(
     .order("start_at")
     .returns<AppointmentRow[]>();
 
+  if (appointmentsResult.error) {
+    throw new Error(appointmentsResult.error.message);
+  }
+
   const appointments = appointmentsResult.data ?? [];
   if (!appointments.length) {
     return [];
@@ -136,6 +140,19 @@ export async function getTodayAppointmentsForRail(
       .in("patient_id", patientIds)
       .returns<EncounterPatientRow[]>(),
   ]);
+
+  const relatedError = [
+    patientsResult.error,
+    professionalsResult.error,
+    proceduresResult.error,
+    patientTagsResult.error,
+    tagsResult.error,
+    encountersResult.error,
+  ].find(Boolean);
+
+  if (relatedError) {
+    throw new Error(relatedError.message);
+  }
 
   const patients = new Map(
     (patientsResult.data ?? []).map((item) => [item.id, item]),

@@ -17,17 +17,19 @@ import {
 import {
   Ban,
   CakeSlice,
+  CalendarClock,
   CalendarDays,
+  CheckCircle2,
   Clock3,
   CreditCard,
   Stethoscope,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
-import { FadeInDiv } from "@/components/ui/animated";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { categoricalColors } from "@/lib/colors";
+import type { DashboardView } from "@/lib/dashboard/periods";
 
 export type DashboardSlice = {
   label: string;
@@ -47,6 +49,8 @@ export type BirthdayPatient = {
 };
 
 export type CompanyDashboardChartsData = {
+  view: DashboardView;
+  patientDataAvailable: boolean;
   patients: {
     newCount: number;
     recurringCount: number;
@@ -62,21 +66,25 @@ export type CompanyDashboardChartsData = {
     slices: DashboardSlice[];
     breakdown: DashboardSlice[];
   };
-  duration: {
-    averageMinutes: number | null;
+  timing: {
+    averageValue: number | null;
     byType: DashboardPoint[];
   };
   cancellations: {
     noShows: number;
-    clinicCancellations: number;
-    patientCancellations: number;
-    noShowRate: number;
-    clinicCancellationRate: number;
-    patientCancellationRate: number;
+    cancellations: number;
+    noShowRate: number | null;
+    cancellationRate: number | null;
   };
   periodAttendances: DashboardPoint[];
   ageDistribution: DashboardPoint[];
   birthdays: BirthdayPatient[];
+  commercialSummary: {
+    future: number;
+    attended: number;
+    open: number;
+    losses: number;
+  };
 };
 
 export function CompanyDashboardCharts({
@@ -84,6 +92,10 @@ export function CompanyDashboardCharts({
 }: {
   data: CompanyDashboardChartsData;
 }) {
+  const isCommercial = data.view === "commercial";
+  const patientChartTitle = isCommercial
+    ? "Agendamentos por perfil do paciente"
+    : "Agendamentos por perfil do paciente";
   const patientSlices: DashboardSlice[] = [
     { label: "Novos", value: data.patients.newCount, color: "var(--primary)" },
     {
@@ -95,66 +107,91 @@ export function CompanyDashboardCharts({
 
   return (
     <div className="grid gap-5">
-      <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        <FadeInDiv delay={0 * 0.05}>
-          <PatientChartCard
-            slices={patientSlices}
-            maleCount={data.patients.maleCount}
-            femaleCount={data.patients.femaleCount}
-          />
-        </FadeInDiv>
-        <FadeInDiv delay={1 * 0.05}>
+      <section className="grid items-stretch gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="h-full min-w-0">
+          {data.patientDataAvailable ? (
+            <PatientChartCard
+              title={patientChartTitle}
+              slices={patientSlices}
+              maleCount={data.patients.maleCount}
+              femaleCount={data.patients.femaleCount}
+            />
+          ) : (
+            <UnavailableDataCard title={patientChartTitle} />
+          )}
+        </div>
+        <div className="h-full min-w-0">
           <DonutMetricCard
-            title="Agendamentos por tipo de servico"
+            title={
+              isCommercial
+                ? "Agendamentos gerados por serviço"
+                : "Agendamentos por tipo de serviço"
+            }
             total={data.procedures.total}
             totalLabel="Agendamentos"
             slices={data.procedures.slices}
             emptyLabel="Nenhum agendamento no periodo."
             emptyIcon={Stethoscope}
           />
-        </FadeInDiv>
-        <FadeInDiv delay={2 * 0.05}>
-          <InsuranceMetricCard data={data.insurances} />
-        </FadeInDiv>
-        <FadeInDiv delay={3 * 0.05}>
-          <CancellationRatesCard data={data.cancellations} />
-        </FadeInDiv>
-        <FadeInDiv delay={4 * 0.05}>
-          <DurationCard data={data.duration} />
-        </FadeInDiv>
+        </div>
+        <div className="h-full min-w-0">
+          <InsuranceMetricCard data={data.insurances} view={data.view} />
+        </div>
+        <div className="h-full min-w-0">
+          <CancellationRatesCard data={data.cancellations} view={data.view} />
+        </div>
+        <div className="h-full min-w-0">
+          <TimingCard data={data.timing} view={data.view} />
+        </div>
       </section>
 
-      <FadeInDiv delay={5 * 0.05}>
+      <div className="min-w-0">
         <AreaLineCard
-          title="Atendimentos no período"
+          title={
+            isCommercial
+              ? "Agendamentos gerados no período"
+              : "Agendamentos no período"
+          }
           data={data.periodAttendances}
-          heightClassName="h-72"
+          heightClassName="h-64"
           emptyIcon={CalendarDays}
         />
-      </FadeInDiv>
+      </div>
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_19rem]">
-        <FadeInDiv delay={6 * 0.05}>
-          <AreaLineCard
-            title="Distribuição etária"
-            data={data.ageDistribution}
-            heightClassName="h-64"
-            emptyIcon={UsersRound}
-          />
-        </FadeInDiv>
-        <FadeInDiv delay={7 * 0.05}>
-          <BirthdaysCard birthdays={data.birthdays} />
-        </FadeInDiv>
+      <section className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="h-full min-w-0">
+          {data.patientDataAvailable ? (
+            <AreaLineCard
+              title="Distribuição etária no período"
+              data={data.ageDistribution}
+              heightClassName="h-64"
+              emptyIcon={UsersRound}
+            />
+          ) : (
+            <UnavailableDataCard title="Distribuição etária no período" />
+          )}
+        </div>
+        <div className="h-full min-w-0">
+          {isCommercial ? (
+            <CommercialSummaryCard data={data.commercialSummary} />
+          ) : data.patientDataAvailable ? (
+            <BirthdaysCard birthdays={data.birthdays} />
+          ) : (
+            <UnavailableDataCard title="Aniversariantes do dia" />
+          )}
+        </div>
       </section>
     </div>
   );
 }
 
 function PatientChartCard({
+  title,
   slices,
   maleCount,
   femaleCount,
 }: {
+  title: string;
   slices: DashboardSlice[];
   maleCount: number;
   femaleCount: number;
@@ -164,17 +201,15 @@ function PatientChartCard({
   const femalePercent = percent(femaleCount, maleCount + femaleCount);
 
   return (
-    <Card>
-      <CardHeader>
-        <h2 className="font-semibold text-primary">
-          Consultas por tipo de paciente
-        </h2>
+    <Card className="flex h-full min-w-0 flex-col">
+      <CardHeader className="flex min-h-20 items-center">
+        <h2 className="font-semibold text-primary">{title}</h2>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1">
         <PieBlock
           slices={slices}
           innerRadius={0}
-          outerRadius={88}
+          outerRadius="86%"
           emptyLabel="Nenhuma consulta no periodo."
           emptyIcon={UsersRound}
         />
@@ -216,22 +251,22 @@ function DonutMetricCard({
   emptyIcon?: LucideIcon;
 }) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex h-full min-w-0 flex-col">
+      <CardHeader className="flex min-h-20 items-center">
         <h2 className="font-semibold text-primary">{title}</h2>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1">
         <div className="relative">
           <PieBlock
             slices={slices}
-            innerRadius={68}
-            outerRadius={100}
+            innerRadius="58%"
+            outerRadius="86%"
             emptyLabel={emptyLabel}
             emptyIcon={emptyIcon}
           />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <p className="text-5xl font-bold tabular-nums text-foreground">
+              <p className="text-display font-bold tabular-nums text-foreground">
                 {total}
               </p>
               <p className="text-xs font-medium text-muted-foreground">
@@ -248,28 +283,32 @@ function DonutMetricCard({
 
 function InsuranceMetricCard({
   data,
+  view,
 }: {
   data: CompanyDashboardChartsData["insurances"];
+  view: DashboardView;
 }) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex h-full min-w-0 flex-col">
+      <CardHeader className="flex min-h-20 items-center">
         <h2 className="font-semibold text-primary">
-          Agendamentos por convenio
+          {view === "commercial"
+            ? "Agendamentos gerados por convênio"
+            : "Agendamentos por convênio"}
         </h2>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1">
         <div className="relative">
           <PieBlock
             slices={data.slices}
-            innerRadius={68}
-            outerRadius={100}
+            innerRadius="58%"
+            outerRadius="86%"
             emptyLabel="Nenhum agendamento no periodo."
             emptyIcon={CreditCard}
           />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <p className="text-5xl font-bold tabular-nums text-foreground">
+              <p className="text-display font-bold tabular-nums text-foreground">
                 {data.total}
               </p>
               <p className="text-xs font-medium text-muted-foreground">
@@ -311,8 +350,10 @@ function InsuranceMetricCard({
 
 function CancellationRatesCard({
   data,
+  view,
 }: {
   data: CompanyDashboardChartsData["cancellations"];
+  view: DashboardView;
 }) {
   const items = [
     {
@@ -322,25 +363,23 @@ function CancellationRatesCard({
       tone: "text-warning-foreground bg-warning-muted",
     },
     {
-      label: "Cancelamentos pela clinica",
-      value: data.clinicCancellationRate,
-      count: data.clinicCancellations,
-      tone: "text-destructive bg-destructive-muted",
-    },
-    {
-      label: "Cancelamentos pelo paciente",
-      value: data.patientCancellationRate,
-      count: data.patientCancellations,
+      label: "Cancelamentos",
+      value: data.cancellationRate,
+      count: data.cancellations,
       tone: "text-destructive bg-destructive-muted",
     },
   ];
 
   return (
-    <Card>
-      <CardHeader>
-        <h2 className="font-semibold text-primary">Cancelamentos e faltas</h2>
+    <Card className="flex h-full min-w-0 flex-col">
+      <CardHeader className="flex min-h-20 items-center">
+        <h2 className="font-semibold text-primary">
+          {view === "commercial"
+            ? "Perdas registradas até agora"
+            : "Cancelamentos e faltas"}
+        </h2>
       </CardHeader>
-      <CardContent className="grid gap-4">
+      <CardContent className="grid flex-1 content-center gap-5">
         {items.map((item) => (
           <div key={item.label} className="flex items-center gap-3">
             <span
@@ -350,7 +389,7 @@ function CancellationRatesCard({
             </span>
             <div>
               <p className="text-xl font-semibold tabular-nums">
-                {item.value}%
+                {item.value == null ? "—" : `${item.value}%`}
               </p>
               <p className="text-sm text-secondary-foreground">{item.label}</p>
               <p className="text-xs text-muted-foreground">
@@ -364,27 +403,33 @@ function CancellationRatesCard({
   );
 }
 
-function DurationCard({
+function TimingCard({
   data,
+  view,
 }: {
-  data: CompanyDashboardChartsData["duration"];
+  data: CompanyDashboardChartsData["timing"];
+  view: DashboardView;
 }) {
+  const isCommercial = view === "commercial";
+
   return (
-    <Card>
-      <CardHeader>
-        <h2 className="font-semibold text-primary">Duração do atendimento</h2>
+    <Card className="flex h-full min-w-0 flex-col">
+      <CardHeader className="flex min-h-20 items-center">
+        <h2 className="font-semibold text-primary">
+          {isCommercial ? "Antecedência do agendamento" : "Duração reservada"}
+        </h2>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         <div className="flex items-center gap-3">
-          <Clock3 className="size-8 text-muted-foreground" aria-hidden />
+          <Clock3 className="size-5 text-muted-foreground" aria-hidden />
           <p className="text-3xl font-light italic text-foreground">
-            {formatDuration(data.averageMinutes)}
+            {formatTiming(data.averageValue, view)}
           </p>
         </div>
         <h3 className="mt-8 text-sm font-semibold text-primary">
           Tipo de atendimento
         </h3>
-        <div className="mt-4 h-48">
+        <div className="mt-4 h-52">
           {data.byType.some((item) => item.value > 0) ? (
             <ResponsiveContainer height="100%" width="100%">
               <BarChart data={data.byType} margin={{ left: 0, right: 8 }}>
@@ -401,11 +446,80 @@ function DurationCard({
             </ResponsiveContainer>
           ) : (
             <EmptyChart
-              label="Sem duração registrada no período."
-              icon={Clock3}
+              label={
+                isCommercial
+                  ? "Sem antecedência calculável no período."
+                  : "Sem duração reservada no período."
+              }
+              icon={isCommercial ? CalendarClock : Clock3}
             />
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CommercialSummaryCard({
+  data,
+}: {
+  data: CompanyDashboardChartsData["commercialSummary"];
+}) {
+  const items = [
+    {
+      label: "Agenda futura gerada",
+      value: data.future,
+      icon: CalendarClock,
+      tone: "bg-primary-muted text-primary",
+    },
+    {
+      label: "Atendimentos realizados",
+      value: data.attended,
+      icon: CheckCircle2,
+      tone: "bg-success-muted text-success-foreground",
+    },
+    {
+      label: "Em aberto ou atrasados",
+      value: data.open,
+      icon: Clock3,
+      tone: "bg-warning-muted text-warning-foreground",
+    },
+    {
+      label: "Cancelamentos e faltas",
+      value: data.losses,
+      icon: Ban,
+      tone: "bg-destructive-muted text-destructive-foreground",
+    },
+  ];
+
+  return (
+    <Card className="flex h-full min-w-0 flex-col">
+      <CardHeader>
+        <h2 className="font-semibold text-primary">
+          Situação atual dos agendamentos gerados
+        </h2>
+      </CardHeader>
+      <CardContent className="grid flex-1 content-center gap-4">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <div key={item.label} className="flex items-center gap-3">
+              <span
+                className={`flex size-10 shrink-0 items-center justify-center rounded-md ${item.tone}`}
+              >
+                <Icon className="size-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-xl font-semibold tabular-nums">
+                  {item.value}
+                </p>
+                <p className="text-sm text-secondary-foreground">
+                  {item.label}
+                </p>
+              </div>
+            </div>
+          );
+        })}
       </CardContent>
     </Card>
   );
@@ -429,11 +543,11 @@ function AreaLineCard({
     .toLowerCase()}`;
 
   return (
-    <Card>
+    <Card className="flex h-full min-w-0 flex-col">
       <CardHeader>
         <h2 className="font-semibold text-primary">{title}</h2>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1">
         <div className={heightClassName}>
           {data.some((item) => item.value > 0) ? (
             <ResponsiveContainer height="100%" width="100%">
@@ -475,11 +589,11 @@ function AreaLineCard({
 
 function BirthdaysCard({ birthdays }: { birthdays: BirthdayPatient[] }) {
   return (
-    <Card>
+    <Card className="flex h-full min-w-0 flex-col">
       <CardHeader>
         <h2 className="font-semibold text-primary">Aniversariantes do dia</h2>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         {birthdays.length ? (
           <div className="grid gap-3">
             {birthdays.slice(0, 5).map((patient) => (
@@ -497,10 +611,27 @@ function BirthdaysCard({ birthdays }: { birthdays: BirthdayPatient[] }) {
             ))}
           </div>
         ) : (
-          <div className="flex h-48 items-center justify-center">
+          <div className="flex min-h-48 flex-1 items-center justify-center">
             <EmptyState icon={CakeSlice} title="Nenhum aniversariante hoje" />
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UnavailableDataCard({ title }: { title: string }) {
+  return (
+    <Card className="flex h-full min-w-0 flex-col">
+      <CardHeader className="flex min-h-20 items-center">
+        <h2 className="font-semibold text-primary">{title}</h2>
+      </CardHeader>
+      <CardContent className="flex min-h-52 flex-1 items-center justify-center">
+        <EmptyState
+          icon={UsersRound}
+          title="Dados de pacientes indisponíveis"
+          description="Seu perfil não possui permissão para visualizar estes dados."
+        />
       </CardContent>
     </Card>
   );
@@ -514,15 +645,15 @@ function PieBlock({
   emptyIcon,
 }: {
   slices: DashboardSlice[];
-  innerRadius: number;
-  outerRadius: number;
+  innerRadius: number | string;
+  outerRadius: number | string;
   emptyLabel: string;
   emptyIcon?: LucideIcon;
 }) {
   const hasData = slices.some((item) => item.value > 0);
 
   return (
-    <div className="h-56">
+    <div className="h-52 min-w-0">
       {hasData ? (
         <ResponsiveContainer height="100%" width="100%">
           <PieChart>
@@ -636,12 +767,16 @@ function percent(value: number, total: number) {
   return Math.round((value / total) * 100);
 }
 
-function formatDuration(minutes: number | null) {
-  if (minutes == null || !Number.isFinite(minutes)) {
-    return "0min";
+function formatTiming(value: number | null, view: DashboardView) {
+  if (value == null || !Number.isFinite(value)) {
+    return view === "commercial" ? "0 dias" : "0min";
   }
 
-  const rounded = Math.round(minutes);
+  const rounded = Math.round(value);
+  if (view === "commercial") {
+    return `${rounded} ${rounded === 1 ? "dia" : "dias"}`;
+  }
+
   const hours = Math.floor(rounded / 60);
   const rest = rounded % 60;
 

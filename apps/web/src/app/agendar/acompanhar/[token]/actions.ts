@@ -10,6 +10,15 @@ export type BookingManageState = {
 };
 
 function friendlyError(message: string, code?: string) {
+  const normalizedMessage = message.toLowerCase();
+  if (normalizedMessage.includes("schedule does not accept online booking")) {
+    return "Esta agenda não está mais disponível para remarcação online.";
+  }
+  if (
+    normalizedMessage.includes("procedure is not available on this schedule")
+  ) {
+    return "Este serviço não está mais disponível nesta agenda.";
+  }
   if (code === "23P01" || message.includes("slot is not available")) {
     return "Este horario nao esta mais disponivel.";
   }

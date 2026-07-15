@@ -13,6 +13,7 @@ type RichTextEditorProps = {
   minHeightClassName?: string;
   name: string;
   output?: "html" | "text";
+  onChange?: (value: string) => void;
   placeholder?: string;
   required?: boolean;
 };
@@ -23,10 +24,12 @@ export function RichTextEditor({
   minHeightClassName = "min-h-32",
   name,
   output = "text",
+  onChange,
   placeholder,
   required,
 }: RichTextEditorProps) {
   const [serialized, setSerialized] = useState(defaultValue ?? "");
+  const [isEmpty, setIsEmpty] = useState(!defaultValue);
   const editor = useEditor({
     content: defaultValue ? plainTextToHtml(defaultValue) : "",
     editable: !disabled,
@@ -36,15 +39,21 @@ export function RichTextEditor({
           minHeightClassName,
           "prose prose-sm max-w-none rounded-b-md border-x border-b border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/15",
         ),
+        "aria-placeholder": placeholder ?? "",
         "data-placeholder": placeholder ?? "",
       },
     },
     extensions: [StarterKit],
     immediatelyRender: false,
+    onCreate: ({ editor: currentEditor }) => {
+      setIsEmpty(currentEditor.isEmpty);
+    },
     onUpdate: ({ editor: currentEditor }) => {
-      setSerialized(
-        output === "html" ? currentEditor.getHTML() : currentEditor.getText(),
-      );
+      const nextValue =
+        output === "html" ? currentEditor.getHTML() : currentEditor.getText();
+      setSerialized(nextValue);
+      setIsEmpty(currentEditor.isEmpty);
+      onChange?.(nextValue);
     },
   });
 
@@ -98,7 +107,17 @@ export function RichTextEditor({
           <Pilcrow className="size-4" />
         </ToolbarButton>
       </div>
-      <EditorContent editor={editor} />
+      <div className="relative">
+        <EditorContent editor={editor} />
+        {placeholder && isEmpty ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2 text-sm text-muted-foreground"
+          >
+            {placeholder}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }

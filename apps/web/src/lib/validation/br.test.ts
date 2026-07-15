@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCPF, isValidCPF } from "./br";
+import { formatCPF, isValidCEP, isValidCPF } from "./br";
 
 describe("CPF helpers", () => {
   it("accepts valid formatted and unformatted CPFs", () => {
@@ -14,5 +14,16 @@ describe("CPF helpers", () => {
 
   it("formats a CPF progressively", () => {
     expect(formatCPF("52998224725")).toBe("529.982.247-25");
+  });
+});
+
+describe("CEP helpers", () => {
+  it("accepts formatted and unformatted CEPs with eight digits", () => {
+    expect(isValidCEP("60160-230")).toBe(true);
+    expect(isValidCEP("60160230")).toBe(true);
+  });
+
+  it("rejects incomplete CEPs", () => {
+    expect(isValidCEP("60160-23")).toBe(false);
   });
 });

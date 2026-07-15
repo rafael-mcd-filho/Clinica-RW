@@ -7,7 +7,18 @@ import {
   useMemo,
   useState,
 } from "react";
-import { CheckCircle2, Clock3, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import {
+  Boxes,
+  Building2,
+  CheckCircle2,
+  Clock3,
+  Pencil,
+  Plus,
+  Save,
+  Stethoscope,
+  Trash2,
+  UsersRound,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   completeOnboarding,
@@ -19,11 +30,19 @@ import {
   type CompanyActionState,
   type RegistrationKind,
 } from "./company-actions";
+import {
+  PaymentMethodsSettings,
+  ProcedureCostsSection,
+} from "./financial-catalog-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input, Select, Textarea } from "@/components/ui/field";
+import { MaskedInput } from "@/components/ui/masked-input";
+import { FormError } from "@/components/ui/form-error";
+import { HelpTooltip } from "@/components/ui/help-tooltip";
+import { LogoUploadField } from "@/components/ui/logo-upload-field";
 import { RequiredMark } from "@/components/ui/required-mark";
 import { Switch } from "@/components/ui/switch";
 import { Tabs } from "@/components/ui/tabs";
@@ -49,6 +68,7 @@ type FieldDefinition = {
   max?: number;
   step?: string;
   wide?: boolean;
+  help?: React.ReactNode;
 };
 
 const weekdays = [
@@ -61,7 +81,43 @@ const weekdays = [
   "Sábado",
 ];
 
-export function CompanySettings({ data }: { data: CompanySettingsData }) {
+const brazilianStates = [
+  ["AC", "Acre"],
+  ["AL", "Alagoas"],
+  ["AP", "Amapá"],
+  ["AM", "Amazonas"],
+  ["BA", "Bahia"],
+  ["CE", "Ceará"],
+  ["DF", "Distrito Federal"],
+  ["ES", "Espírito Santo"],
+  ["GO", "Goiás"],
+  ["MA", "Maranhão"],
+  ["MT", "Mato Grosso"],
+  ["MS", "Mato Grosso do Sul"],
+  ["MG", "Minas Gerais"],
+  ["PA", "Pará"],
+  ["PB", "Paraíba"],
+  ["PR", "Paraná"],
+  ["PE", "Pernambuco"],
+  ["PI", "Piauí"],
+  ["RJ", "Rio de Janeiro"],
+  ["RN", "Rio Grande do Norte"],
+  ["RS", "Rio Grande do Sul"],
+  ["RO", "Rondônia"],
+  ["RR", "Roraima"],
+  ["SC", "Santa Catarina"],
+  ["SP", "São Paulo"],
+  ["SE", "Sergipe"],
+  ["TO", "Tocantins"],
+] as const;
+
+export function CompanySettings({
+  data,
+  organizationLogoUrl,
+}: {
+  data: CompanySettingsData;
+  organizationLogoUrl: string | null;
+}) {
   const checklist = [
     { label: "Dados da clínica", done: Boolean(data.clinic.trade_name) },
     { label: "Unidade ativa", done: data.units.some((item) => item.active) },
@@ -108,20 +164,24 @@ export function CompanySettings({ data }: { data: CompanySettingsData }) {
 
   return (
     <div className="grid gap-6">
-      <OnboardingCard
-        checklist={checklist}
-        completedAt={data.settings.onboarding_completed_at}
-        mode={data.organization.mode}
-      />
+      {!data.settings.onboarding_completed_at ? (
+        <OnboardingCard checklist={checklist} mode={data.organization.mode} />
+      ) : null}
 
       <Tabs
+        ariaLabel="Cadastros da clínica"
+        urlParam="section"
         items={[
           {
             id: "clinica",
             label: "Clínica e horários",
+            icon: <Building2 />,
             content: (
               <div className="grid gap-5">
-                <ClinicForm data={data} />
+                <ClinicForm
+                  data={data}
+                  organizationLogoUrl={organizationLogoUrl}
+                />
                 <BusinessHoursForm hours={data.businessHours} />
               </div>
             ),
@@ -129,6 +189,7 @@ export function CompanySettings({ data }: { data: CompanySettingsData }) {
           {
             id: "estrutura",
             label: "Estrutura",
+            icon: <Boxes />,
             content: (
               <div className="grid gap-5">
                 <RegistrationSection
@@ -178,6 +239,7 @@ export function CompanySettings({ data }: { data: CompanySettingsData }) {
           {
             id: "equipe",
             label: "Equipe",
+            icon: <UsersRound />,
             content: (
               <div className="grid gap-5">
                 <RegistrationSection
@@ -187,7 +249,10 @@ export function CompanySettings({ data }: { data: CompanySettingsData }) {
                   rows={data.specialties as EditableRow[]}
                   fields={[
                     textField("name", "Nome", true, "Clínica geral"),
-                    textField("cbo_code", "Código CBO"),
+                    {
+                      ...textField("cbo_code", "Código CBO"),
+                      help: "Código da ocupação na Classificação Brasileira de Ocupações, usado em integrações e documentos assistenciais.",
+                    },
                   ]}
                   summary={(row) =>
                     row.cbo_code ? `CBO ${row.cbo_code}` : "Sem CBO informado"
@@ -199,7 +264,14 @@ export function CompanySettings({ data }: { data: CompanySettingsData }) {
                   description="Profissionais assistenciais que terão agenda e atendimentos."
                   rows={data.professionals as EditableRow[]}
                   fields={[
-                    selectField("user_id", "Usuário vinculado", userOptions),
+                    {
+                      ...selectField(
+                        "user_id",
+                        "Usuário vinculado",
+                        userOptions,
+                      ),
+                      help: "Permite que este usuário acesse a própria agenda e seja identificado nas ações do profissional.",
+                    },
                     textField("name", "Nome", true, "Nome do profissional"),
                     selectField(
                       "specialty_id",
@@ -229,36 +301,51 @@ export function CompanySettings({ data }: { data: CompanySettingsData }) {
           },
           {
             id: "servicos",
-            label: "Serviços e preços",
+            label: "Procedimentos e serviços",
+            icon: <Stethoscope />,
             content: (
               <div className="grid gap-5">
                 <RegistrationSection
                   kind="procedure"
-                  title="Procedimentos"
-                  description="Serviços que poderão ser agendados e cobrados."
+                  title="Procedimentos e serviços"
+                  description="Itens que poderão ser agendados e cobrados."
                   rows={data.procedures as EditableRow[]}
                   fields={[
                     textField("name", "Nome", true, "Consulta"),
                     textField("code", "Código interno"),
-                    numberField(
-                      "duration_minutes",
-                      "Duração (min)",
-                      30,
-                      5,
-                      1440,
-                    ),
-                    numberField(
-                      "base_price",
-                      "Preço base (R$)",
-                      0,
-                      0,
-                      undefined,
-                      "0.01",
-                    ),
+                    {
+                      ...numberField(
+                        "duration_minutes",
+                        "Duração (min)",
+                        30,
+                        5,
+                        1440,
+                      ),
+                      help: "Tempo reservado na agenda ao selecionar este procedimento.",
+                    },
+                    {
+                      ...numberField(
+                        "base_price",
+                        "Preço base (R$)",
+                        0,
+                        0,
+                        undefined,
+                        "0.01",
+                      ),
+                      help: "Valor padrão usado quando nenhuma tabela de preço específica sobrescrever o procedimento.",
+                    },
                   ]}
                   summary={(row) =>
                     `${row.duration_minutes} min · ${formatCurrency(Number(row.base_price))}`
                   }
+                />
+                <ProcedureCostsSection
+                  procedures={data.procedures}
+                  costs={data.procedureCosts}
+                />
+                <PaymentMethodsSettings
+                  methods={data.paymentMethods}
+                  fees={data.paymentMethodFees}
                 />
                 <RegistrationSection
                   kind="health_insurance"
@@ -309,11 +396,9 @@ export function CompanySettings({ data }: { data: CompanySettingsData }) {
 
 function OnboardingCard({
   checklist,
-  completedAt,
   mode,
 }: {
   checklist: Array<{ label: string; done: boolean }>;
-  completedAt: string | null;
   mode: "solo" | "clinic";
 }) {
   const [state, action, pending] = useActionState(
@@ -332,9 +417,7 @@ function OnboardingCard({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-semibold">Configuração inicial</h2>
-            <Badge variant={completedAt ? "success" : "primary"}>
-              {completedAt ? "Concluída" : `${doneCount}/${checklist.length}`}
-            </Badge>
+            <Badge variant="primary">{`${doneCount}/${checklist.length}`}</Badge>
             <Badge variant="neutral">
               {mode === "solo" ? "Modo solo" : "Modo clínica"}
             </Badge>
@@ -343,17 +426,15 @@ function OnboardingCard({
             Complete estes dados para liberar pacientes e agenda.
           </p>
         </div>
-        {!completedAt ? (
-          <form action={action}>
-            <Button
-              type="submit"
-              disabled={pending || doneCount < checklist.length}
-            >
-              <CheckCircle2 className="size-4" aria-hidden="true" />
-              {pending ? "Concluindo..." : "Concluir configuração"}
-            </Button>
-          </form>
-        ) : null}
+        <form action={action}>
+          <Button
+            type="submit"
+            disabled={pending || doneCount < checklist.length}
+          >
+            <CheckCircle2 className="size-4" aria-hidden="true" />
+            {pending ? "Concluindo..." : "Concluir configuração"}
+          </Button>
+        </form>
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
@@ -369,15 +450,19 @@ function OnboardingCard({
             </div>
           ))}
         </div>
-        {state.error ? (
-          <p className="mt-3 text-sm text-destructive">{state.error}</p>
-        ) : null}
+        <FormError message={state.error} className="mt-3" />
       </CardContent>
     </Card>
   );
 }
 
-function ClinicForm({ data }: { data: CompanySettingsData }) {
+function ClinicForm({
+  data,
+  organizationLogoUrl,
+}: {
+  data: CompanySettingsData;
+  organizationLogoUrl: string | null;
+}) {
   const [state, action, pending] = useActionState(
     saveClinicSettings,
     initialState,
@@ -385,6 +470,15 @@ function ClinicForm({ data }: { data: CompanySettingsData }) {
   const [automaticMode, setAutomaticMode] = useState(
     data.settings.automatic_mode,
   );
+  const [manualMode, setManualMode] = useState<"solo" | "clinic">(
+    data.organization.mode,
+  );
+  const activeProfessionalCount = data.professionals.filter(
+    (professional) => professional.active,
+  ).length;
+  const automaticallyDetectedMode =
+    activeProfessionalCount > 1 ? "clinic" : "solo";
+  const effectiveMode = automaticMode ? automaticallyDetectedMode : manualMode;
 
   useEffect(() => {
     if (state.success) toast.success(state.success);
@@ -400,6 +494,15 @@ function ClinicForm({ data }: { data: CompanySettingsData }) {
       </CardHeader>
       <CardContent>
         <form action={action} className="grid gap-5">
+          <div className="grid gap-2">
+            <span className="text-sm font-medium">Logo da clínica</span>
+            <LogoUploadField currentUrl={organizationLogoUrl} />
+            <p className="text-xs text-muted-foreground">
+              A logo será usada na identificação da empresa, nos documentos e
+              nas páginas públicas da clínica.
+            </p>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <FormField label="Nome fantasia" required wide>
               <Input
@@ -415,62 +518,95 @@ function ClinicForm({ data }: { data: CompanySettingsData }) {
               />
             </FormField>
             <FormField label="CNPJ">
-              <Input
+              <MaskedInput
                 name="document"
+                maskKind="cnpj"
+                inputMode="numeric"
+                placeholder="00.000.000/0000-00"
+                autoComplete="off"
                 defaultValue={data.clinic.document ?? ""}
               />
             </FormField>
             <FormField label="Telefone">
-              <Input name="phone" defaultValue={data.clinic.phone ?? ""} />
+              <MaskedInput
+                name="phone"
+                maskKind="phone"
+                inputMode="tel"
+                placeholder="(85) 90000-0000"
+                autoComplete="tel"
+                defaultValue={data.clinic.phone ?? ""}
+              />
             </FormField>
             <FormField label="E-mail">
               <Input
                 name="email"
                 type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="contato@clinica.com.br"
                 defaultValue={data.clinic.email ?? ""}
               />
             </FormField>
             <FormField label="CEP">
-              <Input
+              <MaskedInput
                 name="postal_code"
+                maskKind="cep"
+                inputMode="numeric"
+                autoComplete="postal-code"
+                placeholder="00000-000"
                 defaultValue={data.clinic.postal_code ?? ""}
               />
             </FormField>
             <FormField label="Endereço" wide>
               <Input
                 name="address_line"
+                autoComplete="address-line1"
                 defaultValue={data.clinic.address_line ?? ""}
               />
             </FormField>
             <FormField label="Número">
               <Input
                 name="address_number"
+                inputMode="numeric"
                 defaultValue={data.clinic.address_number ?? ""}
               />
             </FormField>
             <FormField label="Complemento">
               <Input
                 name="address_complement"
+                autoComplete="address-line2"
                 defaultValue={data.clinic.address_complement ?? ""}
               />
             </FormField>
             <FormField label="Bairro">
               <Input
                 name="district"
+                autoComplete="address-level3"
                 defaultValue={data.clinic.district ?? ""}
               />
             </FormField>
             <FormField label="Cidade">
-              <Input name="city" defaultValue={data.clinic.city ?? ""} />
-            </FormField>
-            <FormField label="UF">
               <Input
-                name="state"
-                maxLength={2}
-                defaultValue={data.clinic.state ?? ""}
+                name="city"
+                autoComplete="address-level2"
+                defaultValue={data.clinic.city ?? ""}
               />
             </FormField>
-            <FormField label="Fuso horário" required>
+            <FormField label="UF">
+              <Select name="state" defaultValue={data.clinic.state ?? ""}>
+                <option value="">Selecione a UF</option>
+                {brazilianStates.map(([code, name]) => (
+                  <option key={code} value={code}>
+                    {code} — {name}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+            <FormField
+              label="Fuso horário"
+              required
+              help="Define a data e o horário usados na agenda, nos filtros, nos relatórios e nos comparativos do painel."
+            >
               <Select name="timezone" defaultValue={data.settings.timezone}>
                 <option value="America/Fortaleza">Fortaleza</option>
                 <option value="America/Sao_Paulo">São Paulo</option>
@@ -485,29 +621,99 @@ function ClinicForm({ data }: { data: CompanySettingsData }) {
             </FormField>
           </div>
 
-          <div className="rounded-md border border-border bg-background p-4">
-            <Switch
-              name="automatic_mode"
-              label="Definir modo automaticamente pela quantidade de profissionais"
-              checked={automaticMode}
-              onCheckedChange={setAutomaticMode}
-            />
-            <div className="mt-3 max-w-xs">
-              <FormField label="Modo manual">
-                <Select
-                  name="manual_mode"
-                  defaultValue={data.organization.mode}
-                >
-                  <option value="solo">Profissional solo</option>
-                  <option value="clinic">Clínica multiprofissional</option>
-                </Select>
-              </FormField>
+          <section className="grid gap-4 rounded-md border border-border bg-background p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-semibold">Modo de operação</h3>
+                  <Badge variant="primary">
+                    {effectiveMode === "solo"
+                      ? "Profissional solo"
+                      : "Clínica multiprofissional"}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Classifica a estrutura da operação; não substitui perfis,
+                  permissões ou escopos de acesso.
+                </p>
+              </div>
+              <Switch
+                name="automatic_mode"
+                label="Detectar automaticamente"
+                checked={automaticMode}
+                onCheckedChange={setAutomaticMode}
+              />
             </div>
-          </div>
 
-          {state.error ? (
-            <p className="text-sm text-destructive">{state.error}</p>
-          ) : null}
+            <div className="rounded-md bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
+              {automaticMode ? (
+                <p>
+                  <strong className="font-medium text-foreground">
+                    Detecção automática ativa:
+                  </strong>{" "}
+                  {activeProfessionalCount} profissional
+                  {activeProfessionalCount === 1 ? " ativo" : "ais ativos"}. Até
+                  1 resulta em Solo; a partir de 2, em Clínica.
+                </p>
+              ) : (
+                <p>
+                  <strong className="font-medium text-foreground">
+                    Definição manual ativa:
+                  </strong>{" "}
+                  o modo escolhido permanecerá fixo mesmo se a quantidade de
+                  profissionais mudar.
+                </p>
+              )}
+            </div>
+
+            {automaticMode ? (
+              <input
+                type="hidden"
+                name="manual_mode"
+                value={data.organization.mode}
+                readOnly
+              />
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <OperationModeOption
+                mode="solo"
+                selected={effectiveMode === "solo"}
+                disabled={automaticMode}
+                name={automaticMode ? undefined : "manual_mode"}
+                checked={!automaticMode && manualMode === "solo"}
+                onChange={() => setManualMode("solo")}
+                icon={Stethoscope}
+                title="Profissional solo"
+                description="Para uma operação centrada em um único profissional, mesmo que exista secretária ou equipe de apoio."
+                rule="No automático: até 1 profissional ativo."
+              />
+              <OperationModeOption
+                mode="clinic"
+                selected={effectiveMode === "clinic"}
+                disabled={automaticMode}
+                name={automaticMode ? undefined : "manual_mode"}
+                checked={!automaticMode && manualMode === "clinic"}
+                onChange={() => setManualMode("clinic")}
+                icon={UsersRound}
+                title="Clínica multiprofissional"
+                description="Para operações com vários profissionais, agendas e análises organizadas por responsável."
+                rule="No automático: 2 ou mais profissionais ativos."
+              />
+            </div>
+
+            <p className="rounded-md border border-primary/20 bg-primary-muted/35 px-3 py-2 text-xs text-muted-foreground">
+              <strong className="font-semibold text-foreground">
+                Implicação atual:
+              </strong>{" "}
+              trocar o modo não altera o plano, não concede permissões e não
+              exclui pacientes, agendas ou cadastros. Os mesmos recursos
+              continuam disponíveis; a segurança permanece definida pelos perfis
+              e escopos dos usuários.
+            </p>
+          </section>
+
+          <FormError message={state.error} />
           <div className="flex justify-end">
             <Button type="submit" disabled={pending}>
               <Save className="size-4" aria-hidden="true" />
@@ -547,44 +753,31 @@ function BusinessHoursForm({ hours }: { hours: BusinessHourRow[] }) {
           <h2 className="font-semibold">Horários de funcionamento</h2>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Horário geral da clínica; agendas específicas serão configuradas na
-          Fase 6.
+          Referência geral da clínica. Não abre nem bloqueia horários; cada
+          agenda possui sua própria disponibilidade e regras online.
         </p>
       </CardHeader>
       <CardContent>
         <form action={action} className="grid gap-4">
           <div className="grid gap-2">
+            <div className="hidden grid-cols-[10.5rem_minmax(16rem,0.9fr)_minmax(19rem,1.1fr)] gap-3 px-3 text-xs font-medium text-muted-foreground lg:grid">
+              <span>Dia</span>
+              <span>Funcionamento</span>
+              <span>Intervalo</span>
+            </div>
             {weekdays.map((label, weekday) => {
               const hour = clinicHours.get(weekday);
               return (
-                <div
+                <BusinessHourDay
                   key={label}
-                  className="grid items-center gap-3 rounded-md border border-border px-3 py-2 sm:grid-cols-[11rem_1fr_1fr]"
-                >
-                  <Checkbox
-                    name={`enabled_${weekday}`}
-                    defaultChecked={Boolean(hour?.active)}
-                    label={label}
-                  />
-                  <Input
-                    aria-label={`Abertura de ${label}`}
-                    name={`start_${weekday}`}
-                    type="time"
-                    defaultValue={hour?.start_time.slice(0, 5) ?? "08:00"}
-                  />
-                  <Input
-                    aria-label={`Fechamento de ${label}`}
-                    name={`end_${weekday}`}
-                    type="time"
-                    defaultValue={hour?.end_time.slice(0, 5) ?? "18:00"}
-                  />
-                </div>
+                  weekday={weekday}
+                  label={label}
+                  hour={hour}
+                />
               );
             })}
           </div>
-          {state.error ? (
-            <p className="text-sm text-destructive">{state.error}</p>
-          ) : null}
+          <FormError message={state.error} />
           <div className="flex justify-end">
             <Button type="submit" disabled={pending}>
               <Save className="size-4" aria-hidden="true" />
@@ -594,6 +787,161 @@ function BusinessHoursForm({ hours }: { hours: BusinessHourRow[] }) {
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+function BusinessHourDay({
+  weekday,
+  label,
+  hour,
+}: {
+  weekday: number;
+  label: string;
+  hour?: BusinessHourRow;
+}) {
+  const [enabled, setEnabled] = useState(Boolean(hour?.active));
+  const [lunchEnabled, setLunchEnabled] = useState(
+    Boolean(hour?.lunch_start_time && hour?.lunch_end_time),
+  );
+
+  return (
+    <section className="rounded-md border border-border px-3 py-2.5">
+      <div className="grid min-w-0 gap-2.5 lg:grid-cols-[10.5rem_minmax(16rem,0.9fr)_minmax(19rem,1.1fr)] lg:items-center lg:gap-3">
+        <Checkbox
+          name={`enabled_${weekday}`}
+          checked={enabled}
+          onChange={(event) => setEnabled(event.target.checked)}
+          label={label}
+        />
+        {enabled ? (
+          <>
+            <div className="flex min-w-0 items-center gap-2">
+              <Input
+                aria-label={`Abertura de ${label}`}
+                name={`start_${weekday}`}
+                type="time"
+                defaultValue={hour?.start_time.slice(0, 5) ?? "08:00"}
+                className="min-w-0 flex-1"
+                required
+              />
+              <span className="shrink-0 text-xs text-muted-foreground">às</span>
+              <Input
+                aria-label={`Fechamento de ${label}`}
+                name={`end_${weekday}`}
+                type="time"
+                defaultValue={hour?.end_time.slice(0, 5) ?? "18:00"}
+                className="min-w-0 flex-1"
+                required
+              />
+            </div>
+
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <Switch
+                checked={lunchEnabled}
+                label="Almoço"
+                onCheckedChange={setLunchEnabled}
+              />
+              <input
+                type="hidden"
+                name={`lunch_enabled_${weekday}`}
+                value={lunchEnabled ? "on" : "off"}
+              />
+              {lunchEnabled ? (
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <Input
+                    aria-label={`Início da pausa de ${label}`}
+                    name={`lunch_start_${weekday}`}
+                    type="time"
+                    defaultValue={
+                      hour?.lunch_start_time?.slice(0, 5) ?? "12:00"
+                    }
+                    className="min-w-0 flex-1"
+                    required
+                  />
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    às
+                  </span>
+                  <Input
+                    aria-label={`Fim da pausa de ${label}`}
+                    name={`lunch_end_${weekday}`}
+                    type="time"
+                    defaultValue={hour?.lunch_end_time?.slice(0, 5) ?? "13:00"}
+                    className="min-w-0 flex-1"
+                    required
+                  />
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground">Sem pausa</span>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground lg:col-span-2">Fechado</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function OperationModeOption({
+  mode,
+  selected,
+  disabled,
+  name,
+  checked,
+  onChange,
+  icon: Icon,
+  title,
+  description,
+  rule,
+}: {
+  mode: "solo" | "clinic";
+  selected: boolean;
+  disabled: boolean;
+  name?: string;
+  checked: boolean;
+  onChange: () => void;
+  icon: typeof Stethoscope;
+  title: string;
+  description: string;
+  rule: string;
+}) {
+  return (
+    <label
+      className={`relative flex min-w-0 gap-3 rounded-md border p-3 transition-colors ${
+        selected
+          ? "border-primary bg-primary-muted/35"
+          : "border-border bg-card"
+      } ${disabled ? "cursor-default" : "cursor-pointer hover:border-primary/50"}`}
+    >
+      <input
+        type="radio"
+        name={name}
+        value={mode}
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+        className="sr-only"
+      />
+      <span
+        className={`grid size-9 shrink-0 place-items-center rounded-md ${
+          selected
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-muted-foreground"
+        }`}
+      >
+        <Icon className="size-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+          {description}
+        </span>
+        <span className="mt-2 block text-xs font-medium text-foreground">
+          {rule}
+        </span>
+      </span>
+    </label>
   );
 }
 
@@ -732,9 +1080,7 @@ function RegistrationForm({
           <DynamicField key={field.name} field={field} row={editing} />
         ))}
       </div>
-      {state.error ? (
-        <p className="mt-3 text-sm text-destructive">{state.error}</p>
-      ) : null}
+      <FormError message={state.error} className="mt-3" />
       <div className="mt-4 flex justify-end">
         <Button type="submit" size="sm" disabled={pending}>
           {editing ? (
@@ -764,7 +1110,12 @@ function DynamicField({
   const defaultValue = value == null ? "" : String(value);
 
   return (
-    <FormField label={field.label} required={field.required} wide={field.wide}>
+    <FormField
+      label={field.label}
+      required={field.required}
+      wide={field.wide}
+      help={field.help}
+    >
       {field.type === "select" ? (
         <Select
           name={field.name}
@@ -845,7 +1196,11 @@ function PriceItemsSection({
           action={action}
           className="grid gap-4 rounded-md border border-border bg-background p-4 md:grid-cols-3"
         >
-          <FormField label="Tabela" required>
+          <FormField
+            label="Tabela"
+            required
+            help="A tabela define em qual contexto o valor específico será usado, como particular ou convênio."
+          >
             <Select
               name="price_table_id"
               required
@@ -873,7 +1228,11 @@ function PriceItemsSection({
               ))}
             </Select>
           </FormField>
-          <FormField label="Valor (R$)" required>
+          <FormField
+            label="Valor (R$)"
+            required
+            help="Este valor substitui o preço base apenas para a combinação de tabela e procedimento selecionada."
+          >
             <Input
               name="price"
               type="number"
@@ -883,11 +1242,7 @@ function PriceItemsSection({
               defaultValue={editing?.price ?? ""}
             />
           </FormField>
-          {state.error ? (
-            <p className="text-sm text-destructive md:col-span-3">
-              {state.error}
-            </p>
-          ) : null}
+          <FormError message={state.error} className="md:col-span-3" />
           <div className="flex justify-end gap-2 md:col-span-3">
             {editing ? (
               <Button
@@ -966,20 +1321,25 @@ function FormField({
   label,
   required,
   wide,
+  help,
   children,
 }: {
   label: string;
   required?: boolean;
   wide?: boolean;
+  help?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <label
       className={`grid gap-2 text-sm font-medium ${wide ? "lg:col-span-2" : ""}`}
     >
-      <span>
-        {label}
-        {required ? <RequiredMark /> : null}
+      <span className="inline-flex items-center gap-1">
+        <span>
+          {label}
+          {required ? <RequiredMark /> : null}
+        </span>
+        {help ? <HelpTooltip>{help}</HelpTooltip> : null}
       </span>
       {children}
     </label>

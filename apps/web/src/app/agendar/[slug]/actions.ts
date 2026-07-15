@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isValidCPF, isValidPhoneBR } from "@/lib/validation/br";
 
 export type OnlineBookingState = {
   error?: string;
@@ -19,11 +20,20 @@ export type ContactVerificationState = {
 };
 
 function friendlyError(message: string, code?: string) {
+  const normalizedMessage = message.toLowerCase();
+  if (normalizedMessage.includes("schedule does not accept online booking")) {
+    return "Esta agenda não está mais disponível para agendamento online.";
+  }
+  if (
+    normalizedMessage.includes("procedure is not available on this schedule")
+  ) {
+    return "Este serviço não está mais disponível nesta agenda.";
+  }
   if (code === "23P01" || message.includes("slot is not available")) {
     return "Este horário acabou de ficar indisponível. Escolha outro horário.";
   }
   if (message.includes("booking window")) {
-    return "O horário escolhido está fora da janela de agendamento da clínica.";
+    return "O horário escolhido está fora da janela desta agenda.";
   }
   if (message.includes("LGPD consent")) {
     return "Aceite o consentimento para enviar a solicitação.";
@@ -50,7 +60,7 @@ function friendlyError(message: string, code?: string) {
     return "Não foi possível solicitar online por histórico recente de faltas. Entre em contato com a clínica.";
   }
   if (message.includes("not available")) {
-    return "O agendamento online desta clínica não está disponível.";
+    return "Esta agenda ou serviço não está disponível para agendamento online.";
   }
   return message;
 }
@@ -169,6 +179,12 @@ export async function submitOnlineBookingRequest(
 
   if (!parsed.data.patient_email && !parsed.data.patient_phone) {
     return { error: "Informe e-mail ou telefone para contato." };
+  }
+  if (parsed.data.patient_phone && !isValidPhoneBR(parsed.data.patient_phone)) {
+    return { error: "Informe um telefone com DDD válido." };
+  }
+  if (parsed.data.patient_cpf && !isValidCPF(parsed.data.patient_cpf)) {
+    return { error: "Informe um CPF válido." };
   }
 
   const supabase = await createSupabaseServerClient();

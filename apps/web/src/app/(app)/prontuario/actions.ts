@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getRequestContext } from "@/lib/auth/context";
+import {
+  ClinicalStructuredDataError,
+  parseClinicalStructuredData,
+} from "@/lib/clinical/structured-data";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ClinicalActionState = {
@@ -23,6 +27,9 @@ function friendlyError(message: string) {
   }
   if (message.includes("Clinical encounter is empty")) {
     return "Preencha ao menos um campo ou uma anotação antes de finalizar.";
+  }
+  if (message.includes("Required clinical fields are missing")) {
+    return "Preencha todos os campos obrigatórios antes de finalizar.";
   }
   if (message.includes("Not allowed to issue clinical document")) {
     return "Seu perfil não possui permissão para emitir este documento.";
@@ -80,79 +87,6 @@ export async function createEncounter(formData: FormData) {
   redirect(`/prontuario/${data}`);
 }
 
-export async function createClinicalTemplate(
-  _state: ClinicalActionState,
-  formData: FormData,
-): Promise<ClinicalActionState> {
-  const context = await requireClinicalPermission("clinico.criar_template");
-  if (!context?.organization) return { error: "Acesso negado." };
-  const parsed = z
-    .object({
-      name: z.string().trim().min(3),
-      section_title: z.string().trim().min(3),
-      fields: z.string().trim().min(3),
-    })
-    .safeParse(Object.fromEntries(formData));
-  if (!parsed.success) {
-    return { error: "Informe nome, seção e campos do template." };
-  }
-
-  const fields = parsed.data.fields
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((label, index) => ({
-      id:
-        label
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "_")
-          .replace(/^_|_$/g, "") || `campo_${index + 1}`,
-      label,
-      type: "textarea",
-      required: index === 0,
-    }));
-
-  const supabase = await createSupabaseServerClient();
-  const { data: template, error: templateError } = await supabase
-    .from("clinical_templates")
-    .insert({
-      organization_id: context.organization.id,
-      name: parsed.data.name,
-      description: "Criado pelo builder simples.",
-      created_by_user_id: context.effectiveUser?.id ?? null,
-    })
-    .select("id")
-    .single<{ id: string }>();
-  if (templateError || !template) {
-    return { error: templateError?.message ?? "Não foi possível criar." };
-  }
-
-  const { error: versionError } = await supabase
-    .from("clinical_template_versions")
-    .insert({
-      organization_id: context.organization.id,
-      template_id: template.id,
-      version_number: 1,
-      schema: {
-        sections: [
-          {
-            id: "secao_1",
-            title: parsed.data.section_title,
-            fields,
-          },
-        ],
-      },
-      created_by_user_id: context.effectiveUser?.id ?? null,
-    });
-  if (versionError) return { error: versionError.message };
-
-  revalidatePath("/prontuario");
-  revalidatePath("/configuracoes");
-  return { success: "Template criado." };
-}
-
 export async function saveEncounterDraft(
   encounterId: string,
   _state: ClinicalActionState,
@@ -163,30 +97,56 @@ export async function saveEncounterDraft(
   );
   if (!context?.organization) return { error: "Acesso negado." };
 
-  const structuredData = Object.fromEntries(
-    Array.from(formData.entries())
-      .filter(([key]) => key.startsWith("field:"))
-      .map(([key, value]) => [key.slice(6), String(value).trim()]),
-  );
-  const cidCode = String(formData.get("cid_code") ?? "")
-    .trim()
-    .toUpperCase();
-  const cidDescription = String(formData.get("cid_description") ?? "").trim();
-  const diagnoses = cidCode
-    ? [{ cid_code: cidCode, description: cidDescription, is_primary: true }]
-    : [];
-
   const supabase = await createSupabaseServerClient();
+  let payload;
+  try {
+    payload = await encounterPayload(supabase, encounterId, formData);
+  } catch (error) {
+    return { error: clinicalPayloadError(error) };
+  }
   const { error } = await supabase.rpc("save_clinical_encounter_draft", {
     p_encounter_id: encounterId,
-    p_structured_data: structuredData,
-    p_free_notes: String(formData.get("free_notes") ?? ""),
-    p_diagnoses: diagnoses,
+    p_structured_data: payload.structuredData,
+    p_free_notes: payload.freeNotes,
+    p_diagnoses: payload.diagnoses,
   });
   if (error) return { error: friendlyError(error.message) };
 
   revalidatePath(`/prontuario/${encounterId}`);
   return { success: "Rascunho salvo." };
+}
+
+export async function saveAndFinalizeEncounter(
+  encounterId: string,
+  _state: ClinicalActionState,
+  formData: FormData,
+): Promise<ClinicalActionState> {
+  const context = await requireClinicalPermission(
+    "clinico.finalizar_prontuario",
+  );
+  if (!context?.organization) return { error: "Acesso negado." };
+
+  // A única RPC salva o conteúdo e muda o status na mesma transação. Se a
+  // validação da finalização falhar, nenhuma alteração parcial é persistida.
+  const supabase = await createSupabaseServerClient();
+  let payload;
+  try {
+    payload = await encounterPayload(supabase, encounterId, formData);
+  } catch (error) {
+    return { error: clinicalPayloadError(error) };
+  }
+  const { error } = await supabase.rpc("save_and_finalize_clinical_encounter", {
+    p_encounter_id: encounterId,
+    p_structured_data: payload.structuredData,
+    p_free_notes: payload.freeNotes,
+    p_diagnoses: payload.diagnoses,
+  });
+  if (error) return { error: friendlyError(error.message) };
+
+  revalidatePath(`/prontuario/${encounterId}`);
+  revalidatePath("/prontuario");
+  revalidatePath("/agenda");
+  return { success: "Alterações salvas e atendimento finalizado." };
 }
 
 export async function finalizeEncounter(
@@ -206,6 +166,47 @@ export async function finalizeEncounter(
   revalidatePath(`/prontuario/${encounterId}`);
   revalidatePath("/prontuario");
   return { success: "Atendimento finalizado." };
+}
+
+async function encounterPayload(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  encounterId: string,
+  formData: FormData,
+) {
+  const { data: entry, error } = await supabase
+    .from("encounter_entries")
+    .select("template_snapshot")
+    .eq("encounter_id", encounterId)
+    .maybeSingle<{ template_snapshot: { schema?: unknown } }>();
+  if (error || !entry) {
+    throw new Error("Não foi possível carregar a estrutura deste prontuário.");
+  }
+
+  const structuredData = parseClinicalStructuredData(
+    formData,
+    entry.template_snapshot.schema,
+  );
+  const cidCode = String(formData.get("cid_code") ?? "")
+    .trim()
+    .toUpperCase();
+  const cidDescription = String(formData.get("cid_description") ?? "").trim();
+
+  return {
+    structuredData,
+    freeNotes: String(formData.get("free_notes") ?? ""),
+    diagnoses: cidCode
+      ? [{ cid_code: cidCode, description: cidDescription, is_primary: true }]
+      : [],
+  };
+}
+
+function clinicalPayloadError(error: unknown) {
+  if (error instanceof ClinicalStructuredDataError) {
+    return error.issues[0]?.message ?? "Revise os campos clínicos informados.";
+  }
+  return error instanceof Error
+    ? error.message
+    : "Não foi possível validar os dados clínicos.";
 }
 
 export async function addEncounterAddendum(
@@ -250,9 +251,15 @@ export async function issueClinicalDocument(
         "attendance_declaration",
       ]),
       template_id: z.union([z.string().uuid(), z.literal("")]),
+      template_version_id: z.union([z.string().uuid(), z.literal("")]),
       title: z.string().trim().min(3),
       body: z.string().trim().min(3),
     })
+    .refine(
+      (value) =>
+        Boolean(value.template_id) === Boolean(value.template_version_id),
+      { message: "A versão do modelo selecionado é inválida." },
+    )
     .safeParse(Object.fromEntries(formData));
 
   if (!parsed.success) {
@@ -260,15 +267,17 @@ export async function issueClinicalDocument(
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("issue_clinical_document", {
+  const { error } = await supabase.rpc("issue_clinical_document_v2", {
     p_encounter_id: encounterId,
     p_document_type: parsed.data.document_type,
     p_title: parsed.data.title,
     p_body: parsed.data.body,
     p_template_id: parsed.data.template_id || null,
+    p_template_version_id: parsed.data.template_version_id || null,
     p_metadata: {
       issued_from: "encounter_page",
     },
+    p_impersonation_session_id: context.impersonation?.id ?? null,
   });
   if (error) return { error: friendlyError(error.message) };
 

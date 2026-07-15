@@ -36,8 +36,17 @@ type DataTableProps<TData> = {
   data: TData[];
   emptyDescription?: string;
   emptyTitle?: string;
+  enableSorting?: boolean;
   globalFilter?: string;
   pageSize?: number;
+  renderMobileRow?: (row: TData) => React.ReactNode;
+  serverPagination?: {
+    page: number;
+    pageSize: number;
+    total: number;
+    pending?: boolean;
+    onPageChange: (page: number) => void;
+  };
 };
 
 export function DataTable<TData>({
@@ -45,14 +54,18 @@ export function DataTable<TData>({
   data,
   emptyDescription = "Ajuste os filtros ou cadastre novos registros.",
   emptyTitle = "Nenhum registro encontrado",
+  enableSorting = true,
   globalFilter,
   pageSize = 10,
+  renderMobileRow,
+  serverPagination,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     columns,
     data,
+    enableSorting,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -64,15 +77,41 @@ export function DataTable<TData>({
   const rows = table.getRowModel().rows;
   const pageCount = table.getPageCount();
   const paginationLabel = useMemo(() => {
+    if (serverPagination) {
+      const from = rows.length
+        ? (serverPagination.page - 1) * serverPagination.pageSize + 1
+        : 0;
+      const to = rows.length
+        ? Math.min(
+            serverPagination.page * serverPagination.pageSize,
+            serverPagination.total,
+          )
+        : 0;
+      return `${from}-${to} de ${serverPagination.total}`;
+    }
+
     const state = table.getState().pagination;
     const from = rows.length ? state.pageIndex * state.pageSize + 1 : 0;
     const to = state.pageIndex * state.pageSize + rows.length;
     return `${from}-${to} de ${data.length}`;
-  }, [data.length, rows.length, table]);
+  }, [data.length, rows.length, serverPagination, table]);
+  const currentPage =
+    serverPagination?.page ?? table.getState().pagination.pageIndex + 1;
+  const totalPages = serverPagination
+    ? Math.max(Math.ceil(serverPagination.total / serverPagination.pageSize), 1)
+    : Math.max(pageCount, 1);
+  const canPrevious = serverPagination
+    ? serverPagination.page > 1
+    : table.getCanPreviousPage();
+  const canNext = serverPagination
+    ? serverPagination.page < totalPages
+    : table.getCanNextPage();
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
-      <div className="overflow-x-auto">
+      <div
+        className={cn("overflow-x-auto", renderMobileRow && "hidden md:block")}
+      >
         <table className="w-full min-w-[760px] border-collapse text-body tabular-nums">
           <thead className="bg-muted/50 text-left text-label tracking-wide uppercase text-muted-foreground">
             {table.getHeaderGroups().map((headerGroup) => (
@@ -144,6 +183,15 @@ export function DataTable<TData>({
           </tbody>
         </table>
       </div>
+      {renderMobileRow && rows.length ? (
+        <div className="divide-y divide-border md:hidden">
+          {rows.map((row) => (
+            <div key={row.id} className="p-4">
+              {renderMobileRow(row.original)}
+            </div>
+          ))}
+        </div>
+      ) : null}
       {!rows.length ? (
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : null}
@@ -154,21 +202,28 @@ export function DataTable<TData>({
             type="button"
             size="sm"
             variant="secondary"
-            disabled={!table.getCanPreviousPage()}
-            onClick={() => table.previousPage()}
+            disabled={!canPrevious || serverPagination?.pending}
+            onClick={() =>
+              serverPagination
+                ? serverPagination.onPageChange(serverPagination.page - 1)
+                : table.previousPage()
+            }
           >
             Anterior
           </Button>
           <span className="tabular-nums">
-            {table.getState().pagination.pageIndex + 1} /{" "}
-            {Math.max(pageCount, 1)}
+            {currentPage} / {totalPages}
           </span>
           <Button
             type="button"
             size="sm"
             variant="secondary"
-            disabled={!table.getCanNextPage()}
-            onClick={() => table.nextPage()}
+            disabled={!canNext || serverPagination?.pending}
+            onClick={() =>
+              serverPagination
+                ? serverPagination.onPageChange(serverPagination.page + 1)
+                : table.nextPage()
+            }
           >
             Próxima
           </Button>

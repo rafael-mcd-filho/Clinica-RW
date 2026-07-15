@@ -164,10 +164,54 @@
   --color-sidebar-active-foreground: var(--sidebar-active-foreground);
 }
 
+html {
+  /* Reserva o espaco da barra vertical para evitar saltos de largura entre
+     telas e paineis com alturas diferentes. */
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+@supports not (scrollbar-gutter: stable) {
+  html {
+    overflow-y: scroll;
+  }
+}
+
 body {
+  min-width: 0;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-plex), "Segoe UI", Arial, Helvetica, sans-serif;
+}
+
+/* Scrollbars discretas, mas sempre perceptiveis e operaveis. */
+* {
+  scrollbar-color: color-mix(in srgb, var(--border-strong) 85%, transparent)
+    transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 2.5rem;
+  border: 0.1875rem solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-strong) 85%, transparent);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+  background-clip: padding-box;
 }
 
 ::placeholder {
@@ -185,59 +229,6 @@ textarea {
 /* Traço refinado e uniforme para toda a iconografia lucide. */
 svg.lucide {
   stroke-width: 1.75;
-}
-
-/*
- * Prévia de formulário gerado por JSON Schema (@rjsf) no construtor de
- * templates do prontuário: alinha o markup cru do rjsf aos tokens.
- */
-.rjsf-preview fieldset {
-  display: grid;
-  gap: 0.75rem;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.rjsf-preview legend {
-  padding: 0;
-  font-size: var(--text-label);
-  font-weight: 500;
-  color: var(--muted-foreground);
-}
-
-.rjsf-preview label {
-  display: block;
-  margin-bottom: 0.375rem;
-  font-size: var(--text-body-sm);
-  font-weight: 500;
-  color: var(--foreground);
-}
-
-.rjsf-preview input,
-.rjsf-preview select,
-.rjsf-preview textarea {
-  width: 100%;
-  height: 2.25rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--input);
-  border-radius: 0.5rem;
-  background: var(--card);
-  font-size: var(--text-body-sm);
-  color: var(--foreground);
-}
-
-.rjsf-preview textarea {
-  height: auto;
-  min-height: 4.5rem;
-  padding: 0.5rem 0.75rem;
-}
-
-.rjsf-preview input:disabled,
-.rjsf-preview select:disabled,
-.rjsf-preview textarea:disabled {
-  opacity: 0.6;
-  background: var(--secondary);
 }
 
 @keyframes shimmer {

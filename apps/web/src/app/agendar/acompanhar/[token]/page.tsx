@@ -1,8 +1,16 @@
+import { Suspense } from "react";
 import { addDays } from "date-fns";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { ShieldCheck } from "lucide-react";
-import { ManageBookingPanel } from "./manage-panel";
+import {
+  CancelCard,
+  ManageBookingPanel,
+  RescheduleCard,
+  type BookingDetails,
+} from "./manage-panel";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/loader";
 import { buildOnlineBookingSlots } from "@/lib/online-booking/slots";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -23,6 +31,13 @@ type RequestRow = {
 
 type SettingsRow = {
   public_slug: string;
+  enabled: boolean;
+  min_notice_hours: number;
+  max_days_ahead: number;
+  cancellation_notice_hours: number;
+};
+
+type ScheduleOnlineSettingsRow = {
   enabled: boolean;
   min_notice_hours: number;
   max_days_ahead: number;
@@ -71,7 +86,7 @@ export default async function ManageOnlineBookingPage({
   if (!isUuid(token)) notFound();
 
   const supabase = createSupabaseAdminClient();
-  const { data: request } = await supabase
+  const { data: request, error: requestError } = await supabase
     .from("online_booking_requests")
     .select(
       "id, organization_id, schedule_id, procedure_id, requested_start_at, requested_end_at, patient_name, status, public_access_token, procedures(name, duration_minutes), professionals(name), units(name)",
@@ -79,10 +94,20 @@ export default async function ManageOnlineBookingPage({
     .eq("public_access_token", token)
     .maybeSingle<RequestRow>();
 
+  if (requestError) {
+    throw new Error("Unable to load the public booking request.");
+  }
   if (!request) notFound();
 
   const organizationId = request.organization_id;
-  const [settings, clinic, organization, timezone] = await Promise.all([
+  const [
+    settings,
+    scheduleSettings,
+    procedureMapping,
+    clinic,
+    organization,
+    timezone,
+  ] = await Promise.all([
     supabase
       .from("online_booking_settings")
       .select(
@@ -90,6 +115,21 @@ export default async function ManageOnlineBookingPage({
       )
       .eq("organization_id", organizationId)
       .maybeSingle<SettingsRow>(),
+    supabase
+      .from("schedule_online_booking_settings")
+      .select(
+        "enabled, min_notice_hours, max_days_ahead, cancellation_notice_hours",
+      )
+      .eq("organization_id", organizationId)
+      .eq("schedule_id", request.schedule_id)
+      .maybeSingle<ScheduleOnlineSettingsRow>(),
+    supabase
+      .from("schedule_online_booking_procedures")
+      .select("procedure_id")
+      .eq("organization_id", organizationId)
+      .eq("schedule_id", request.schedule_id)
+      .eq("procedure_id", request.procedure_id)
+      .maybeSingle<{ procedure_id: string }>(),
     supabase
       .from("clinics")
       .select("trade_name")
@@ -108,40 +148,58 @@ export default async function ManageOnlineBookingPage({
   ]);
 
   const settingsRow = settings.data;
+  if (settings.error || scheduleSettings.error || procedureMapping.error) {
+    throw new Error("Unable to load the online booking settings.");
+  }
   if (!settingsRow) notFound();
+
+  const scheduleRules = scheduleSettings.data;
 
   const timezoneName = timezone.data?.timezone ?? "America/Fortaleza";
   const clinicName =
     clinic.data?.trade_name ?? organization.data?.name ?? "Clinica";
-  const slots =
-    request.status === "requested" && settingsRow.enabled
-      ? await loadRescheduleSlots({
-          supabase,
-          request,
-          timezone: timezoneName,
-          minNoticeHours: settingsRow.min_notice_hours,
-          maxDaysAhead: settingsRow.max_days_ahead,
-        })
-      : [];
+  const booking: BookingDetails = {
+    token,
+    status: request.status,
+    patientName: request.patient_name,
+    requestedStartAt: request.requested_start_at,
+    requestedEndAt: request.requested_end_at,
+    clinicName,
+    professionalName: request.professionals?.name ?? "Profissional",
+    procedureName: request.procedures?.name ?? "Procedimento",
+    unitName: request.units?.name ?? "Unidade",
+    timezone: timezoneName,
+    cancellationNoticeHours:
+      scheduleRules?.cancellation_notice_hours ??
+      settingsRow.cancellation_notice_hours,
+  };
+  const cancellationDeadline =
+    new Date(request.requested_start_at).getTime() -
+    booking.cancellationNoticeHours * 3_600_000;
+  const serverTimestamp = await getServerTimestamp();
+  const canCancel =
+    (request.status === "requested" || request.status === "confirmed") &&
+    serverTimestamp < cancellationDeadline;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto grid w-full max-w-4xl gap-5 px-4 py-6 md:px-6">
-        <ManageBookingPanel
-          booking={{
-            token,
-            status: request.status,
-            patientName: request.patient_name,
-            requestedStartAt: request.requested_start_at,
-            requestedEndAt: request.requested_end_at,
-            clinicName,
-            professionalName: request.professionals?.name ?? "Profissional",
-            procedureName: request.procedures?.name ?? "Procedimento",
-            unitName: request.units?.name ?? "Unidade",
-            cancellationNoticeHours: settingsRow.cancellation_notice_hours,
-          }}
-          slots={slots}
-        />
+        <ManageBookingPanel booking={booking} />
+
+        {request.status === "requested" &&
+        settingsRow.enabled &&
+        scheduleRules?.enabled &&
+        procedureMapping.data ? (
+          <Suspense fallback={<RescheduleLoadingCard />}>
+            <RescheduleSection
+              request={request}
+              timezone={timezoneName}
+              scheduleRules={scheduleRules}
+            />
+          </Suspense>
+        ) : null}
+
+        {canCancel ? <CancelCard token={token} /> : null}
 
         <Card>
           <CardContent className="flex items-start gap-3 p-4">
@@ -160,23 +218,83 @@ export default async function ManageOnlineBookingPage({
   );
 }
 
+async function RescheduleSection({
+  request,
+  timezone,
+  scheduleRules,
+}: {
+  request: RequestRow;
+  timezone: string;
+  scheduleRules: ScheduleOnlineSettingsRow;
+}) {
+  let slots: Awaited<ReturnType<typeof loadRescheduleSlots>> = [];
+  let loadError = false;
+
+  try {
+    slots = await loadRescheduleSlots({
+      supabase: createSupabaseAdminClient(),
+      request,
+      timezone,
+      scheduleRules,
+    });
+  } catch (error) {
+    console.error("Unable to load public booking reschedule slots", error);
+    loadError = true;
+  }
+
+  if (loadError) {
+    return (
+      <Card>
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          Os dados da solicitação foram carregados, mas não foi possível buscar
+          novos horários agora. Tente atualizar a página em alguns instantes.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (slots.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          Não há outros horários disponíveis para remarcação no momento.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return <RescheduleCard token={request.public_access_token} slots={slots} />;
+}
+
+function RescheduleLoadingCard() {
+  return (
+    <Card aria-busy="true" aria-label="Carregando horários para remarcação">
+      <CardContent className="grid gap-3 p-4">
+        <Skeleton className="h-5 w-56" />
+        <div className="grid gap-3 md:grid-cols-[1fr_8rem]">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 async function loadRescheduleSlots({
   supabase,
   request,
   timezone,
-  minNoticeHours,
-  maxDaysAhead,
+  scheduleRules,
 }: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   request: RequestRow;
   timezone: string;
-  minNoticeHours: number;
-  maxDaysAhead: number;
+  scheduleRules: ScheduleOnlineSettingsRow;
 }) {
   if (!request.procedures) return [];
 
-  const from = new Date(Date.now() + minNoticeHours * 3_600_000);
-  const until = addDays(new Date(), maxDaysAhead);
+  const from = new Date();
+  const until = addDays(from, scheduleRules.max_days_ahead);
 
   const [availability, appointments, blocks, pendingRequests] =
     await Promise.all([
@@ -192,16 +310,16 @@ async function loadRescheduleSlots({
         .eq("organization_id", request.organization_id)
         .eq("schedule_id", request.schedule_id)
         .in("status", ["scheduled", "confirmed", "waiting", "in_progress"])
-        .gte("start_at", from.toISOString())
-        .lte("start_at", until.toISOString())
+        .lt("start_at", until.toISOString())
+        .gt("end_at", from.toISOString())
         .returns<BusyRange[]>(),
       supabase
         .from("schedule_blocks")
         .select("schedule_id, start_at, end_at")
         .eq("organization_id", request.organization_id)
         .eq("schedule_id", request.schedule_id)
-        .lte("start_at", until.toISOString())
-        .gte("end_at", from.toISOString())
+        .lt("start_at", until.toISOString())
+        .gt("end_at", from.toISOString())
         .returns<BusyRange[]>(),
       supabase
         .from("online_booking_requests")
@@ -210,13 +328,31 @@ async function loadRescheduleSlots({
         .eq("schedule_id", request.schedule_id)
         .eq("status", "requested")
         .neq("id", request.id)
-        .gte("requested_start_at", from.toISOString())
-        .lte("requested_start_at", until.toISOString())
+        .lt("requested_start_at", until.toISOString())
+        .gt("requested_end_at", from.toISOString())
         .returns<PendingRange[]>(),
     ]);
 
+  const queryError = [
+    availability.error,
+    appointments.error,
+    blocks.error,
+    pendingRequests.error,
+  ].find(Boolean);
+  if (queryError) {
+    throw new Error("Unable to load availability for public rescheduling.");
+  }
+
   return buildOnlineBookingSlots({
-    schedules: [{ id: request.schedule_id }],
+    schedules: [
+      {
+        id: request.schedule_id,
+        enabled: scheduleRules.enabled,
+        minNoticeHours: scheduleRules.min_notice_hours,
+        maxDaysAhead: scheduleRules.max_days_ahead,
+        procedureIds: [request.procedure_id],
+      },
+    ],
     procedures: [
       {
         id: request.procedure_id,
@@ -235,7 +371,8 @@ async function loadRescheduleSlots({
     ],
     timezone,
     from,
-    maxDaysAhead,
+    until,
+    maxDaysAhead: scheduleRules.max_days_ahead,
     limit: 80,
   });
 }
@@ -244,4 +381,9 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+async function getServerTimestamp() {
+  await connection();
+  return Date.now();
 }

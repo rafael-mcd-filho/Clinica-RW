@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Settings, Waypoints } from "lucide-react";
+import { Settings } from "lucide-react";
 import {
   FunnelBoard,
   stagnationDays,
@@ -10,8 +9,9 @@ import {
 import { CreateCardDialog } from "./create-card-dialog";
 import { StageSettingsDialog } from "./stage-settings-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { requireCompanyPermission } from "@/lib/authz/guards";
+import { parseFunnelBoardAggregate } from "@/lib/funnels/aggregates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type FunnelRow = {
@@ -46,15 +46,6 @@ type FunnelMovementRow = {
   to_stage_id: string;
   moved_at: string;
 };
-type PatientOption = {
-  id: string;
-  full_name: string;
-  social_name: string | null;
-  cpf: string | null;
-  email: string | null;
-  phone: string | null;
-  whatsapp: string | null;
-};
 type ProfessionalOption = { id: string; name: string };
 
 function isCardStagnant(lastMovedAt: string) {
@@ -85,7 +76,7 @@ export default async function FunilBoardPage({
   if (!funnelResult.data) notFound();
   const funnel = funnelResult.data;
 
-  const [stagesResult, cardsResult, patientsResult, professionalsResult] =
+  const [stagesResult, cardsResult, professionalsResult, aggregateResult] =
     await Promise.all([
       supabase
         .from("funnel_stages")
@@ -103,36 +94,44 @@ export default async function FunilBoardPage({
         .eq("funnel_id", id)
         .returns<CardRow[]>(),
       supabase
-        .from("patients")
-        .select("id, full_name, social_name, cpf, email, phone, whatsapp")
-        .eq("organization_id", organizationId)
-        .is("deleted_at", null)
-        .returns<PatientOption[]>(),
-      supabase
         .from("professionals")
         .select("id, name")
         .eq("organization_id", organizationId)
         .returns<ProfessionalOption[]>(),
+      supabase.rpc("funnel_board_aggregates", {
+        p_organization_id: organizationId,
+        p_funnel_id: id,
+      }),
     ]);
 
   const stages = stagesResult.data ?? [];
   const cardRows = cardsResult.data ?? [];
   const cardIds = cardRows.map((row) => row.id);
+  const aggregate = aggregateResult.error
+    ? null
+    : parseFunnelBoardAggregate(aggregateResult.data);
 
-  const movementsResult = cardIds.length
-    ? await supabase
-        .from("funnel_card_movements")
-        .select("card_id, from_stage_id, to_stage_id, moved_at")
-        .eq("organization_id", organizationId)
-        .in("card_id", cardIds)
-        .returns<FunnelMovementRow[]>()
-    : { data: [] as FunnelMovementRow[] };
+  const movementsResult =
+    !aggregate && cardIds.length
+      ? await supabase
+          .from("funnel_card_movements")
+          .select("card_id, from_stage_id, to_stage_id, moved_at")
+          .eq("organization_id", organizationId)
+          .in("card_id", cardIds)
+          .returns<FunnelMovementRow[]>()
+      : { data: [] as FunnelMovementRow[] };
 
   const lastMovedByCard = new Map<string, string>();
-  for (const movement of movementsResult.data ?? []) {
-    const current = lastMovedByCard.get(movement.card_id);
-    if (!current || movement.moved_at > current) {
+  if (aggregate) {
+    for (const movement of aggregate.last_movements) {
       lastMovedByCard.set(movement.card_id, movement.moved_at);
+    }
+  } else {
+    for (const movement of movementsResult.data ?? []) {
+      const current = lastMovedByCard.get(movement.card_id);
+      if (!current || movement.moved_at > current) {
+        lastMovedByCard.set(movement.card_id, movement.moved_at);
+      }
     }
   }
 
@@ -154,11 +153,22 @@ export default async function FunilBoardPage({
       is_stagnant: isCardStagnant(lastMovedAt),
     };
   });
-  const stageMetrics = buildStageMetrics(
-    stages,
-    cardRows.filter((row) => !row.archived_at),
-    movementsResult.data ?? [],
-  );
+  const stageMetrics = aggregate
+    ? Object.fromEntries(
+        aggregate.stage_metrics.map((metric) => [
+          metric.stage_id,
+          {
+            enteredCount: metric.entered_count,
+            conversionRate: metric.conversion_rate,
+            averageDurationHours: metric.average_duration_hours,
+          },
+        ]),
+      )
+    : buildStageMetrics(
+        stages,
+        cardRows.filter((row) => !row.archived_at),
+        movementsResult.data ?? [],
+      );
 
   const defaultStageId =
     stages.find((stage) => stage.stage_type === "initial")?.id ??
@@ -167,46 +177,35 @@ export default async function FunilBoardPage({
 
   return (
     <div className="grid gap-5">
-      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button asChild variant="secondary" size="icon">
-            <Link href="/funis" aria-label="Voltar para funis">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-            </Link>
-          </Button>
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
-            <Waypoints className="size-5" aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-semibold">{funnel.name}</h1>
-              <Badge variant={funnel.active ? "success" : "neutral"}>
-                {funnel.active ? "Ativo" : "Arquivado"}
-              </Badge>
-            </div>
-            {funnel.description ? (
-              <p className="mt-1 truncate text-sm text-muted-foreground">
-                {funnel.description}
-              </p>
+      <PageHeader
+        backHref="/funis"
+        backLabel="Voltar para funis"
+        title={
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="truncate">{funnel.name}</span>
+            <Badge variant={funnel.active ? "success" : "neutral"}>
+              {funnel.active ? "Ativo" : "Arquivado"}
+            </Badge>
+          </span>
+        }
+        description={funnel.description}
+        actions={
+          <>
+            {canConfigure ? (
+              <StageSettingsDialog funnelId={id} stages={stages} />
             ) : null}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canConfigure ? (
-            <StageSettingsDialog funnelId={id} stages={stages} />
-          ) : null}
-          {canManage && defaultStageId ? (
-            <CreateCardDialog
-              funnelId={id}
-              stages={stages}
-              defaultStageId={defaultStageId}
-              patients={patientsResult.data ?? []}
-              professionals={professionalsResult.data ?? []}
-              canCreatePatient={canCreatePatient}
-            />
-          ) : null}
-        </div>
-      </section>
+            {canManage && defaultStageId ? (
+              <CreateCardDialog
+                funnelId={id}
+                stages={stages}
+                defaultStageId={defaultStageId}
+                professionals={professionalsResult.data ?? []}
+                canCreatePatient={canCreatePatient}
+              />
+            ) : null}
+          </>
+        }
+      />
 
       {stages.length ? (
         <FunnelBoard

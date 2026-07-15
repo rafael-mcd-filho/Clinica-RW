@@ -1,29 +1,82 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
 
-type TabItem = {
+export type TabItem = {
   id: string;
   label: string;
-  content: React.ReactNode;
+  icon?: React.ReactNode;
+  content?: React.ReactNode;
+  href?: string;
 };
 
 export function Tabs({
+  ariaLabel = "Seções",
+  className,
+  contentClassName,
   defaultTab,
   items,
+  onValueChange,
+  urlParam,
+  value,
 }: {
+  ariaLabel?: string;
+  className?: string;
+  contentClassName?: string;
   defaultTab?: string;
   items: TabItem[];
+  onValueChange?: (value: string) => void;
+  urlParam?: string;
+  value?: string;
 }) {
-  const [activeTab, setActiveTab] = useState(defaultTab ?? items[0]?.id);
-  const activeItem = items.find((item) => item.id === activeTab);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const instanceId = useId().replaceAll(":", "");
+  const [internalActiveTab, setInternalActiveTab] = useState(
+    defaultTab ?? items[0]?.id,
+  );
+  const requestedUrlTab = urlParam ? searchParams.get(urlParam) : null;
+  const activeTab =
+    value ??
+    (requestedUrlTab && items.some((item) => item.id === requestedUrlTab)
+      ? requestedUrlTab
+      : internalActiveTab);
+  const activeItem =
+    items.find((item) => item.id === activeTab) ?? items[0] ?? null;
+
+  function tabId(itemId: string) {
+    return `${instanceId}-tab-${itemId}`;
+  }
+
+  function panelId(itemId: string) {
+    return `${instanceId}-tabpanel-${itemId}`;
+  }
+
+  function selectTab(itemId: string) {
+    setInternalActiveTab(itemId);
+    onValueChange?.(itemId);
+
+    if (urlParam) {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set(urlParam, itemId);
+      window.history.replaceState(null, "", `${pathname}?${next.toString()}`);
+    }
+  }
 
   function focusTab(index: number) {
     const item = items[(index + items.length) % items.length];
     if (item) {
-      setActiveTab(item.id);
-      document.getElementById(`tab-${item.id}`)?.focus();
+      const element = document.getElementById(tabId(item.id));
+      element?.focus();
+
+      if (item.href) {
+        element?.click();
+      } else {
+        selectTab(item.id);
+      }
     }
   }
 
@@ -44,39 +97,81 @@ export function Tabs({
   }
 
   return (
-    <div>
-      <div
-        className="flex gap-1 overflow-x-auto border-b border-border"
-        role="tablist"
-      >
-        {items.map((item, index) => (
-          <button
-            key={item.id}
-            id={`tab-${item.id}`}
-            type="button"
-            role="tab"
-            aria-controls={`tabpanel-${item.id}`}
-            aria-selected={activeTab === item.id}
-            tabIndex={activeTab === item.id ? 0 : -1}
-            onClick={() => setActiveTab(item.id)}
-            onKeyDown={(event) => onKeyDown(event, index)}
-            className={cn(
-              "shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors duration-[var(--motion-fast)]",
-              activeTab === item.id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      {activeItem ? (
+    <div className={cn("min-w-0 w-full", className)}>
+      <div className="max-w-full overflow-x-auto overscroll-x-contain pb-1">
         <div
-          id={`tabpanel-${activeItem.id}`}
+          className="inline-flex min-w-max items-center gap-1 rounded-lg border border-border bg-muted p-1 shadow-[var(--shadow-soft)]"
+          role="tablist"
+          aria-label={ariaLabel}
+          aria-orientation="horizontal"
+        >
+          {items.map((item, index) => {
+            const isActive = activeItem?.id === item.id;
+
+            const content = (
+              <>
+                {item.icon ? (
+                  <span
+                    className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4"
+                    aria-hidden="true"
+                  >
+                    {item.icon}
+                  </span>
+                ) : null}
+                <span>{item.label}</span>
+              </>
+            );
+            const tabClassName = cn(
+              "relative inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border px-3.5 text-body-sm font-medium transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
+              isActive
+                ? "border-border-strong bg-card text-foreground shadow-[var(--shadow-soft)] after:absolute after:inset-x-3 after:bottom-1 after:h-0.5 after:rounded-full after:bg-primary"
+                : "border-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground",
+            );
+
+            return item.href ? (
+              <Link
+                key={item.id}
+                id={tabId(item.id)}
+                href={item.href}
+                role="tab"
+                aria-controls={panelId(item.id)}
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
+                scroll={false}
+                prefetch={false}
+                onKeyDown={(event) => onKeyDown(event, index)}
+                className={tabClassName}
+              >
+                {content}
+              </Link>
+            ) : (
+              <button
+                key={item.id}
+                id={tabId(item.id)}
+                type="button"
+                role="tab"
+                aria-controls={panelId(item.id)}
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
+                onClick={() => {
+                  selectTab(item.id);
+                }}
+                onKeyDown={(event) => onKeyDown(event, index)}
+                className={tabClassName}
+              >
+                {content}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {activeItem?.content !== undefined ? (
+        <div
+          id={panelId(activeItem.id)}
           role="tabpanel"
-          aria-labelledby={`tab-${activeItem.id}`}
-          className="py-4"
+          aria-labelledby={tabId(activeItem.id)}
+          tabIndex={0}
+          className={cn("min-w-0 w-full pt-5", contentClassName)}
         >
           {activeItem.content}
         </div>

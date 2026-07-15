@@ -3,6 +3,7 @@ import { CalendarDays, Download, Filter, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DateRangePickerInput } from "@/components/ui/date-picker-input";
 import { Input, Select } from "@/components/ui/field";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import {
@@ -50,7 +51,9 @@ export default async function AppointmentSummaryPage({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="secondary">
-            <Link href="/relatorios">BI geral</Link>
+            <Link href="/relatorios/atendimentos">
+              Indicadores de atendimentos
+            </Link>
           </Button>
           {canExport ? (
             <Button asChild variant="secondary">
@@ -66,14 +69,15 @@ export default async function AppointmentSummaryPage({
       <Card>
         <CardContent>
           <form className="grid gap-3 lg:grid-cols-[10rem_10rem_minmax(12rem,1fr)_12rem_12rem_12rem_auto]">
-            <label className="grid gap-2 text-sm font-medium">
-              De
-              <Input name="from" type="date" defaultValue={filters.from} />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Ate
-              <Input name="to" type="date" defaultValue={filters.to} />
-            </label>
+            <div className="grid gap-2 text-sm font-medium lg:col-span-2">
+              Período
+              <DateRangePickerInput
+                fromName="from"
+                toName="to"
+                defaultFrom={filters.from}
+                defaultTo={filters.to}
+              />
+            </div>
             <label className="grid gap-2 text-sm font-medium">
               Paciente
               <Input

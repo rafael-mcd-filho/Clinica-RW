@@ -16,7 +16,7 @@ import type { OnlineBookingSlot } from "@/lib/online-booking/slots";
 
 type BookingStatus = "requested" | "confirmed" | "rejected" | "cancelled";
 
-type BookingDetails = {
+export type BookingDetails = {
   token: string;
   status: BookingStatus;
   patientName: string;
@@ -26,6 +26,7 @@ type BookingDetails = {
   professionalName: string;
   procedureName: string;
   unitName: string;
+  timezone: string;
   cancellationNoticeHours: number;
 };
 
@@ -37,63 +38,45 @@ const statusLabel: Record<BookingStatus, string> = {
   cancelled: "Cancelado",
 };
 
-export function ManageBookingPanel({
-  booking,
-  slots,
-}: {
-  booking: BookingDetails;
-  slots: OnlineBookingSlot[];
-}) {
-  const canReschedule = booking.status === "requested" && slots.length > 0;
-  const canCancel =
-    booking.status === "requested" || booking.status === "confirmed";
-
+export function ManageBookingPanel({ booking }: { booking: BookingDetails }) {
   return (
-    <div className="grid gap-5">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-xl font-semibold">Acompanhar agendamento</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {booking.clinicName}
-              </p>
-            </div>
-            <Badge
-              variant={
-                booking.status === "confirmed"
-                  ? "success"
-                  : booking.status === "requested"
-                    ? "warning"
-                    : "neutral"
-              }
-            >
-              {statusLabel[booking.status]}
-            </Badge>
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold">Acompanhar agendamento</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {booking.clinicName}
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="grid gap-3 text-sm md:grid-cols-2">
-          <Detail label="Paciente" value={booking.patientName} />
-          <Detail
-            label="Horario"
-            value={formatDateTime(booking.requestedStartAt)}
-          />
-          <Detail label="Procedimento" value={booking.procedureName} />
-          <Detail label="Profissional" value={booking.professionalName} />
-          <Detail label="Unidade" value={booking.unitName} />
-          <Detail
-            label="Cancelamento online"
-            value={`${booking.cancellationNoticeHours}h de antecedencia`}
-          />
-        </CardContent>
-      </Card>
-
-      {canReschedule ? (
-        <RescheduleCard token={booking.token} slots={slots} />
-      ) : null}
-
-      {canCancel ? <CancelCard token={booking.token} /> : null}
-    </div>
+          <Badge
+            variant={
+              booking.status === "confirmed"
+                ? "success"
+                : booking.status === "requested"
+                  ? "warning"
+                  : "neutral"
+            }
+          >
+            {statusLabel[booking.status]}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+        <Detail label="Paciente" value={booking.patientName} />
+        <Detail
+          label="Horario"
+          value={formatDateTime(booking.requestedStartAt, booking.timezone)}
+        />
+        <Detail label="Procedimento" value={booking.procedureName} />
+        <Detail label="Profissional" value={booking.professionalName} />
+        <Detail label="Unidade" value={booking.unitName} />
+        <Detail
+          label="Cancelamento online"
+          value={`${booking.cancellationNoticeHours}h de antecedencia`}
+        />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -106,7 +89,7 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RescheduleCard({
+export function RescheduleCard({
   token,
   slots,
 }: {
@@ -148,7 +131,7 @@ function RescheduleCard({
   );
 }
 
-function CancelCard({ token }: { token: string }) {
+export function CancelCard({ token }: { token: string }) {
   const actionForToken = cancelPublicBooking.bind(null, token);
   const [state, action, pending] = useActionState(actionForToken, initialState);
   useToastState(state);
@@ -184,10 +167,10 @@ function useToastState(state: BookingManageState) {
   }, [state]);
 }
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string, timezone: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
-    timeZone: "America/Fortaleza",
+    timeZone: timezone,
   }).format(new Date(value));
 }

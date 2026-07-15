@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState, useEffect, useId, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { createFunnel } from "./actions";
@@ -193,29 +192,23 @@ function blankStage(): StageDraft {
 }
 
 export function CreateFunnelDialog() {
-  const router = useRouter();
   const formId = useId();
   const [open, setOpen] = useState(false);
   const [stages, setStages] = useState<StageDraft[]>([
     { ...blankStage(), name: "Novo", stage_type: "initial" },
   ]);
   const [state, action, pending] = useActionState(createFunnel, {});
-  const [handledState, setHandledState] = useState(state);
-
-  if (state !== handledState) {
-    setHandledState(state);
-    if (state.success) {
-      setOpen(false);
-      setStages([{ ...blankStage(), name: "Novo", stage_type: "initial" }]);
-    }
-  }
 
   useEffect(() => {
     if (state.success) {
       toast.success(state.success);
-      router.refresh();
+      const timer = window.setTimeout(() => {
+        setOpen(false);
+        setStages([{ ...blankStage(), name: "Novo", stage_type: "initial" }]);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
-  }, [router, state]);
+  }, [state]);
 
   function applyTemplate(templateKey: string) {
     const template = templates.find((item) => item.key === templateKey);

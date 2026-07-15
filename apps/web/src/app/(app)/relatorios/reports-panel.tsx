@@ -1,8 +1,10 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowRight,
   Banknote,
   CalendarCheck,
   Clock3,
@@ -29,7 +31,6 @@ import {
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Tabs } from "@/components/ui/tabs";
 import type {
   OperationalProfessionalRow,
   ProfessionalReportRow,
@@ -41,6 +42,13 @@ import { cn } from "@/lib/utils";
 
 type MetricTone = "primary" | "success" | "warning" | "destructive" | "neutral";
 
+export type ReportsPanelView =
+  | "overview"
+  | "operational"
+  | "financial"
+  | "clinical"
+  | "professionals";
+
 const metricToneClass: Record<MetricTone, string> = {
   primary: "bg-primary-muted text-primary",
   success: "bg-success-muted text-success",
@@ -49,47 +57,156 @@ const metricToneClass: Record<MetricTone, string> = {
   neutral: "bg-muted text-muted-foreground",
 };
 
-export function ReportsPanel({ data }: { data: ReportData }) {
-  const items = [
+export function ReportsPanel({
+  data,
+  view,
+}: {
+  data: ReportData;
+  view: ReportsPanelView;
+}) {
+  if (view === "overview") return <OverviewSection data={data} />;
+  if (view === "operational") return <OperationalSection data={data} />;
+  if (view === "financial") return <FinancialSection data={data} />;
+  if (view === "clinical") return <ClinicalSection data={data} />;
+
+  return <ProfessionalsSection data={data} />;
+}
+
+function OverviewSection({ data }: { data: ReportData }) {
+  const cards = [
     data.operational
       ? {
-          id: "operacional",
-          label: "Operacional",
-          content: <OperationalSection data={data} />,
+          description:
+            "Agenda, comparecimento, ocupação e perfil dos pacientes.",
+          href: "/relatorios/atendimentos",
+          icon: CalendarCheck,
+          metrics: [
+            ["Agendamentos", String(data.operational.totalAppointments)],
+            ["Atendidos", String(data.operational.attended)],
+            ["No-show", `${data.operational.noShowRate}%`],
+          ] as Array<[string, string]>,
+          title: "Atendimentos",
         }
       : null,
     data.financial
       ? {
-          id: "financeiro",
-          label: "Financeiro",
-          content: <FinancialSection data={data} />,
+          description: "Recebimentos, contas em aberto, despesas e resultado.",
+          href: "/relatorios/financeiro",
+          icon: Banknote,
+          metrics: [
+            ["Recebido", formatCurrency(data.financial.revenue)],
+            ["A receber", formatCurrency(data.financial.openReceivable)],
+            ["Resultado", formatCurrency(data.financial.netResult)],
+          ] as Array<[string, string]>,
+          title: "Financeiro",
         }
       : null,
     data.clinical
       ? {
-          id: "clinico",
-          label: "Clinico",
-          content: <ClinicalSection data={data} />,
+          description:
+            "Produção assistencial, prontuários e registros clínicos.",
+          href: "/relatorios/clinico",
+          icon: Stethoscope,
+          metrics: [
+            ["Atendimentos", String(data.clinical.totalEncounters)],
+            ["Finalizados", String(data.clinical.finalizedEncounters)],
+            ["Rascunhos", String(data.clinical.draftEncounters)],
+          ] as Array<[string, string]>,
+          title: "Clínico",
         }
       : null,
-    {
-      id: "profissionais",
-      label: "Por profissional",
-      content: <ProfessionalsSection rows={data.professionals} />,
-    },
-  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
+  ].filter((card): card is NonNullable<typeof card> => Boolean(card));
 
-  if (!items.length) {
+  if (!cards.length) {
     return (
       <EmptyState
         icon={FileText}
-        title="Nenhum relatorio disponivel"
-        description="Revise as permissoes do usuario para liberar os relatorios."
+        title="Nenhum relatório disponível"
+        description="Revise as permissões do usuário para liberar os relatórios."
       />
     );
   }
 
-  return <Tabs defaultTab={items[0]?.id} items={items} />;
+  return (
+    <div className="grid gap-5">
+      <section className="grid gap-4 xl:grid-cols-3">
+        {cards.map((card) => (
+          <OverviewCard key={card.href} {...card} />
+        ))}
+      </section>
+
+      <Card>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div>
+            <h2 className="font-semibold">Desempenho por profissional</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Compare produção, agenda e resultados conforme suas permissões.
+            </p>
+          </div>
+          <Link
+            className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary hover:underline"
+            href="/relatorios/profissionais"
+          >
+            Ver detalhes
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        </CardHeader>
+        <CardContent>
+          <p className="text-3xl font-semibold tabular-nums">
+            {data.professionals.length}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            profissionais com indicadores no período selecionado
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OverviewCard({
+  description,
+  href,
+  icon: Icon,
+  metrics,
+  title,
+}: {
+  description: string;
+  href: string;
+  icon: LucideIcon;
+  metrics: Array<[string, string]>;
+  title: string;
+}) {
+  return (
+    <Card className="flex h-full flex-col">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
+            <Icon className="size-5" aria-hidden="true" />
+          </div>
+          <Link
+            className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+            href={href}
+          >
+            Abrir
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        </div>
+        <div>
+          <h2 className="font-semibold">{title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+      </CardHeader>
+      <CardContent className="mt-auto grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+        {metrics.map(([label, value]) => (
+          <div key={label}>
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="mt-1 font-semibold tabular-nums">{value}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
 }
 
 function OperationalSection({ data }: { data: ReportData }) {
@@ -273,9 +390,9 @@ function ClinicalSection({ data }: { data: ReportData }) {
   );
 }
 
-function ProfessionalsSection({ rows }: { rows: ProfessionalReportRow[] }) {
-  const columns = useMemo<ColumnDef<ProfessionalReportRow>[]>(
-    () => [
+function ProfessionalsSection({ data }: { data: ReportData }) {
+  const columns = useMemo<ColumnDef<ProfessionalReportRow>[]>(() => {
+    const availableColumns: ColumnDef<ProfessionalReportRow>[] = [
       {
         accessorKey: "professionalName",
         header: "Profissional",
@@ -283,34 +400,57 @@ function ProfessionalsSection({ rows }: { rows: ProfessionalReportRow[] }) {
           <span className="font-medium">{row.original.professionalName}</span>
         ),
       },
-      {
-        accessorKey: "appointments",
-        header: "Consultas",
-        cell: ({ row }) => row.original.appointments,
-      },
-      {
-        accessorKey: "attended",
-        header: "Atendidas",
-        cell: ({ row }) => row.original.attended,
-      },
-      {
-        accessorKey: "noShowRate",
-        header: "No-show",
-        cell: ({ row }) => `${row.original.noShowRate}%`,
-      },
-      {
-        accessorKey: "revenue",
-        header: "Faturamento",
-        cell: ({ row }) => formatCurrency(row.original.revenue),
-      },
-      {
+    ];
+
+    if (data.permissions.operational) {
+      availableColumns.push(
+        {
+          accessorKey: "appointments",
+          header: "Consultas",
+          cell: ({ row }) => row.original.appointments,
+        },
+        {
+          accessorKey: "attended",
+          header: "Atendidas",
+          cell: ({ row }) => row.original.attended,
+        },
+        {
+          accessorKey: "noShowRate",
+          header: "No-show",
+          cell: ({ row }) => `${row.original.noShowRate}%`,
+        },
+      );
+    }
+
+    if (data.permissions.financial) {
+      availableColumns.push(
+        {
+          accessorKey: "revenue",
+          header: "Faturamento",
+          cell: ({ row }) => formatCurrency(row.original.revenue),
+        },
+        {
+          accessorKey: "receivable",
+          header: "A receber",
+          cell: ({ row }) => formatCurrency(row.original.receivable),
+        },
+      );
+    }
+
+    if (data.permissions.clinical) {
+      availableColumns.push({
         accessorKey: "finalizedEncounters",
-        header: "Prontuarios",
+        header: "Prontuários",
         cell: ({ row }) => row.original.finalizedEncounters,
-      },
-    ],
-    [],
-  );
+      });
+    }
+
+    return availableColumns;
+  }, [
+    data.permissions.clinical,
+    data.permissions.financial,
+    data.permissions.operational,
+  ]);
 
   return (
     <section className="grid gap-3">
@@ -323,7 +463,7 @@ function ProfessionalsSection({ rows }: { rows: ProfessionalReportRow[] }) {
       </div>
       <DataTable
         columns={columns}
-        data={rows}
+        data={data.professionals}
         pageSize={8}
         emptyTitle="Nenhum dado por profissional"
         emptyDescription="Os indicadores aparecem quando ha dados nos relatorios liberados."

@@ -36,7 +36,9 @@
       "Bash(curl -s http://localhost:3000/login -o /dev/null -w \"HTTP %{http_code}\\\\n\")",
       "Bash(command -v psql)",
       "Bash(psql --version)",
-      "Bash(mkdir -p \"d:/Biblioteca/Documentos/Projetos/Clinica-RW/apps/web/src/app/\\(app\\)/funis/[id]\")"
+      "Bash(mkdir -p \"d:/Biblioteca/Documentos/Projetos/Clinica-RW/apps/web/src/app/\\(app\\)/funis/[id]\")",
+      "Bash(npm ls *)",
+      "Bash(break)"
     ],
     "additionalDirectories": [
       "d:\\Biblioteca\\Documentos\\Projetos\\Clinica-RW\\apps\\web\\src\\app\\(app)\\empresas\\[id]",

@@ -5,9 +5,14 @@ import {
   CalendarDays,
   Clock3,
   FileText,
+  History,
   Mail,
+  MessageSquare,
   Phone,
+  Settings2,
+  Stethoscope,
   UserRound,
+  WalletCards,
 } from "lucide-react";
 import {
   ClinicalSummaryForm,
@@ -338,10 +343,13 @@ export default async function PatientDetailsPage({
       </section>
 
       <Tabs
+        ariaLabel="Seções do paciente"
+        urlParam="section"
         items={[
           {
             id: "pessoais",
             label: "Dados pessoais",
+            icon: <UserRound />,
             content: canEdit ? (
               <PatientForm
                 patient={formPatient}
@@ -357,6 +365,7 @@ export default async function PatientDetailsPage({
           {
             id: "clinicos",
             label: "Dados clínicos",
+            icon: <Stethoscope />,
             content: canSeeSensitive ? (
               <ClinicalSummaryForm
                 patientId={id}
@@ -373,6 +382,7 @@ export default async function PatientDetailsPage({
           {
             id: "historico",
             label: "Histórico",
+            icon: <History />,
             content:
               canSeeAgenda || canSeeClinicalDocuments ? (
                 <PatientHistoryPanel
@@ -395,6 +405,7 @@ export default async function PatientDetailsPage({
           {
             id: "documentos",
             label: "Documentos",
+            icon: <FileText />,
             content: canSeeClinicalDocuments ? (
               <DocumentsHistoryPanel documents={documentsResult.data ?? []} />
             ) : (
@@ -407,6 +418,7 @@ export default async function PatientDetailsPage({
           {
             id: "financeiro",
             label: "Financeiro",
+            icon: <WalletCards />,
             content: canSeeFinance ? (
               <PatientFinancePanel receivables={receivablesResult.data ?? []} />
             ) : (
@@ -419,6 +431,7 @@ export default async function PatientDetailsPage({
           {
             id: "mensagens",
             label: "Mensagens",
+            icon: <MessageSquare />,
             content: (
               <FutureModulePanel
                 title="Mensagens"
@@ -429,6 +442,7 @@ export default async function PatientDetailsPage({
           {
             id: "configuracoes",
             label: "Configurações",
+            icon: <Settings2 />,
             content: (
               <div className="grid gap-5">
                 <ConsentsPanel
@@ -568,7 +582,9 @@ function PatientHistoryPanel({
                               : "Rascunho"}
                           </Badge>
                           <Button asChild variant="ghost" size="sm">
-                            <Link href={`/prontuario/${encounter.id}`}>
+                            <Link
+                              href={`/prontuario/${encounter.id}?from=paciente`}
+                            >
                               Ver detalhes
                             </Link>
                           </Button>

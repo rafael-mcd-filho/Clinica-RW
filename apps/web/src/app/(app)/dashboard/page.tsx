@@ -1,16 +1,20 @@
 import {
-  Archive,
   ArrowDown,
   ArrowUp,
   Building2,
+  CalendarCheck2,
+  CalendarClock,
+  CalendarPlus,
+  CheckCircle2,
   ClipboardCheck,
-  PhoneOff,
   ShieldAlert,
   TrendingUp,
   UserPlus,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
+import { formatInTimeZone } from "date-fns-tz";
+import { DashboardFilters } from "./dashboard-filters";
 import {
   CompanyOperationsPanel,
   type DashboardOnlineRequest,
@@ -21,16 +25,42 @@ import {
   type CompanyDashboardChartsData,
   type DashboardSlice,
 } from "./company-dashboard-charts";
-import { FadeInDiv } from "@/components/ui/animated";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
 import { SummaryBarChart } from "@/components/ui/summary-chart";
 import { getRequestContext } from "@/lib/auth/context";
 import { categoricalColors, chartSeries } from "@/lib/colors";
+import {
+  buildAppointmentStats,
+  buildCountTrend,
+  buildRateTrend,
+  type MetricTrend,
+} from "@/lib/dashboard/metrics";
+import {
+  parseDashboardAggregatePayload,
+  type DashboardAggregatePayload,
+} from "@/lib/dashboard/aggregates";
+import {
+  buildDashboardPeriodPoints,
+  containsInstant,
+  dashboardDateField,
+  defaultDashboardTimeZone,
+  formatDashboardRange,
+  isValidTimeZone,
+  resolveDashboardFilterSelection,
+  resolveDashboardPeriod,
+  type DashboardRange,
+  type DashboardView,
+} from "@/lib/dashboard/periods";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
 type OrganizationMetric = {
   status: string;
+};
+
+type DashboardPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 type PatientMetric = {
@@ -39,9 +69,7 @@ type PatientMetric = {
   social_name: string | null;
   birth_date: string | null;
   sex_at_birth: string | null;
-  phone: string | null;
-  whatsapp: string | null;
-  email: string | null;
+  status: string;
   deleted_at: string | null;
   created_at: string;
 };
@@ -54,12 +82,11 @@ type AppointmentMetric = {
   status: string;
   start_at: string;
   end_at: string;
-  cancellation_reason: string | null;
+  created_at: string;
 };
 
-type AppointmentStatusEventMetric = {
-  appointment_id: string;
-  actor_user_id: string | null;
+type OrganizationSettingsMetric = {
+  timezone: string;
 };
 
 type NamedMetric = {
@@ -67,9 +94,20 @@ type NamedMetric = {
   name: string;
 };
 
-type MetricTone = "primary" | "success" | "warning" | "destructive" | "neutral";
-type MetricTrend = { delta: number; label: string };
+type SupabaseServerClient = Awaited<
+  ReturnType<typeof createSupabaseServerClient>
+>;
 
+type DashboardRowsResult<T> = {
+  data: T[] | null;
+  error: unknown | null;
+};
+
+const dashboardQueryPageSize = 500;
+const dashboardAppointmentColumns =
+  "id, patient_id, procedure_id, health_insurance_id, status, start_at, end_at, created_at";
+
+type MetricTone = "primary" | "success" | "warning" | "destructive" | "neutral";
 const metricToneClass: Record<MetricTone, string> = {
   primary: "bg-primary-muted text-primary",
   success: "bg-success-muted text-success",
@@ -85,7 +123,6 @@ function DashboardMetricCard({
   status,
   tone,
   trend,
-  delay,
 }: {
   icon: LucideIcon;
   label: string;
@@ -93,14 +130,9 @@ function DashboardMetricCard({
   status: string;
   tone: MetricTone;
   trend?: MetricTrend;
-  delay: number;
 }) {
   return (
-    <FadeInDiv
-      delay={delay}
-      className="animate-panel-enter rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-border-strong hover:shadow-[var(--shadow-hover)]"
-      style={{ animationDelay: `${delay * 1000}ms` }}
-    >
+    <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-border-strong hover:shadow-[var(--shadow-hover)]">
       <div className="flex items-center justify-between gap-3">
         <div
           className={cn(
@@ -119,30 +151,57 @@ function DashboardMetricCard({
           <span
             className={cn(
               "inline-flex items-center gap-0.5 text-xs font-semibold",
-              trend.delta > 0
+              trend.sentiment === "positive"
                 ? "text-success-foreground"
-                : trend.delta < 0
+                : trend.sentiment === "negative"
                   ? "text-destructive-foreground"
                   : "text-muted-foreground",
             )}
           >
-            {trend.delta > 0 ? (
+            {trend.direction === "up" ? (
               <ArrowUp className="size-3" aria-hidden="true" />
-            ) : trend.delta < 0 ? (
+            ) : trend.direction === "down" ? (
               <ArrowDown className="size-3" aria-hidden="true" />
             ) : null}
-            {trend.delta > 0 ? `+${trend.delta}` : trend.delta}{" "}
+            {trend.value}{" "}
             <span className="font-normal text-muted-foreground">
               {trend.label}
             </span>
           </span>
         ) : null}
       </div>
-    </FadeInDiv>
+    </div>
   );
 }
 
-export default async function DashboardPage() {
+function DashboardUnavailable({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <section className="rounded-lg border border-border bg-card p-6 shadow-[var(--shadow-soft)]">
+      <div className="flex items-start gap-3">
+        <ShieldAlert
+          className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <div>
+          <h2 className="font-semibold">{title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: DashboardPageProps) {
+  const params = (await searchParams) ?? {};
+  const now = new Date();
   const context = await getRequestContext();
 
   if (!context.isSuperAdmin) {
@@ -159,6 +218,8 @@ export default async function DashboardPage() {
           context.permissionCodes.has("agenda.criar_agendamento") ||
           context.permissionCodes.has("agenda.editar_agendamento")
         }
+        searchParams={params}
+        now={now}
       />
     );
   }
@@ -241,7 +302,7 @@ export default async function DashboardPage() {
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-4">
-        {platformCards.map((card, index) => (
+        {platformCards.map((card) => (
           <DashboardMetricCard
             key={card.label}
             icon={card.icon}
@@ -249,7 +310,6 @@ export default async function DashboardPage() {
             value={card.value}
             status={card.status}
             tone={card.tone}
-            delay={index * 0.05}
           />
         ))}
       </section>
@@ -294,39 +354,52 @@ export default async function DashboardPage() {
 }
 
 function buildCompanyDashboardCharts({
+  view,
+  patientDataAvailable,
   patients,
   appointments,
-  cancellationEvents,
   procedures,
   insurances,
-  periodStart,
-  periodEnd,
+  period,
+  timeZone,
+  now,
 }: {
+  view: DashboardView;
+  patientDataAvailable: boolean;
   patients: PatientMetric[];
   appointments: AppointmentMetric[];
-  cancellationEvents: AppointmentStatusEventMetric[];
   procedures: Map<string, string>;
   insurances: Map<string, string>;
-  periodStart: Date;
-  periodEnd: Date;
+  period: DashboardRange;
+  timeZone: string;
+  now: Date;
 }): CompanyDashboardChartsData {
-  const activeAppointments = appointments.filter(
-    (appointment) => !["cancelled", "no_show"].includes(appointment.status),
+  const nonCancelledAppointments = appointments.filter(
+    (appointment) => appointment.status !== "cancelled",
   );
+  const mixAppointments =
+    view === "commercial" ? appointments : nonCancelledAppointments;
   const patientById = new Map(patients.map((patient) => [patient.id, patient]));
-  const newAppointmentCount = activeAppointments.filter((appointment) => {
+  const newAppointmentCount = mixAppointments.filter((appointment) => {
     const patient = patientById.get(appointment.patient_id);
-    return patient ? new Date(patient.created_at) >= periodStart : false;
+    return patient ? containsInstant(period, patient.created_at) : false;
   }).length;
-  const cancellationEventByAppointment = new Map(
-    cancellationEvents.map((event) => [event.appointment_id, event]),
+  const recurringAppointmentCount = mixAppointments.filter((appointment) => {
+    const patient = patientById.get(appointment.patient_id);
+    return patient ? !containsInstant(period, patient.created_at) : false;
+  }).length;
+  const cohortPatientIds = new Set(
+    mixAppointments.map((appointment) => appointment.patient_id),
+  );
+  const cohortPatients = patients.filter((patient) =>
+    cohortPatientIds.has(patient.id),
   );
   const procedureCounts = countBy(
-    activeAppointments,
+    mixAppointments,
     (appointment) =>
       procedures.get(appointment.procedure_id) ?? "Sem procedimento",
   );
-  const insuranceAppointments = activeAppointments.filter(
+  const insuranceAppointments = mixAppointments.filter(
     (appointment) => appointment.health_insurance_id,
   );
   const insuranceNameCounts = countBy(
@@ -335,7 +408,7 @@ function buildCompanyDashboardCharts({
       insurances.get(appointment.health_insurance_id ?? "") ?? "Convenio",
   );
   const insuranceStatusCounts = new Map<string, number>([
-    ["Sem convenio", activeAppointments.length - insuranceAppointments.length],
+    ["Sem convenio", mixAppointments.length - insuranceAppointments.length],
     ["Com convenio", insuranceAppointments.length],
   ]);
   const noShows = appointments.filter(
@@ -344,51 +417,45 @@ function buildCompanyDashboardCharts({
   const cancelledAppointments = appointments.filter(
     (appointment) => appointment.status === "cancelled",
   );
-  const patientCancellations = cancelledAppointments.filter((appointment) => {
-    const reason = appointment.cancellation_reason?.toLowerCase() ?? "";
-    const event = cancellationEventByAppointment.get(appointment.id);
-    return (
-      !event?.actor_user_id ||
-      reason.includes("paciente") ||
-      reason.includes("online")
-    );
-  }).length;
-  const clinicCancellations = Math.max(
-    0,
-    cancelledAppointments.length - patientCancellations,
-  );
+  const completedForAttendanceRate = appointments.filter((appointment) =>
+    ["attended", "no_show"].includes(appointment.status),
+  ).length;
 
-  const durationValues = activeAppointments
-    .map((appointment) => appointmentDurationMinutes(appointment))
-    .filter((value): value is number => value != null && value > 0);
-  const particularDurations = activeAppointments
+  const timingAppointments =
+    view === "commercial" ? appointments : nonCancelledAppointments;
+  const timingValues = timingAppointments
+    .map((appointment) => appointmentTimingValue(appointment, view))
+    .filter((value): value is number => value != null && value >= 0);
+  const particularTiming = timingAppointments
     .filter((appointment) => !appointment.health_insurance_id)
-    .map((appointment) => appointmentDurationMinutes(appointment))
-    .filter((value): value is number => value != null && value > 0);
-  const insuranceDurations = activeAppointments
+    .map((appointment) => appointmentTimingValue(appointment, view))
+    .filter((value): value is number => value != null && value >= 0);
+  const insuranceTiming = timingAppointments
     .filter((appointment) => appointment.health_insurance_id)
-    .map((appointment) => appointmentDurationMinutes(appointment))
-    .filter((value): value is number => value != null && value > 0);
+    .map((appointment) => appointmentTimingValue(appointment, view))
+    .filter((value): value is number => value != null && value >= 0);
+  const referenceDateKey = formatInTimeZone(now, timeZone, "yyyy-MM-dd");
+  const dateField = dashboardDateField(view);
 
   return {
+    view,
+    patientDataAvailable,
     patients: {
       newCount: newAppointmentCount,
-      recurringCount: Math.max(
-        0,
-        activeAppointments.length - newAppointmentCount,
-      ),
-      maleCount: patients.filter((patient) => patient.sex_at_birth === "male")
-        .length,
-      femaleCount: patients.filter(
+      recurringCount: recurringAppointmentCount,
+      maleCount: cohortPatients.filter(
+        (patient) => patient.sex_at_birth === "male",
+      ).length,
+      femaleCount: cohortPatients.filter(
         (patient) => patient.sex_at_birth === "female",
       ).length,
     },
     procedures: {
-      total: activeAppointments.length,
+      total: mixAppointments.length,
       slices: toSlices(procedureCounts, chartSeries),
     },
     insurances: {
-      total: activeAppointments.length,
+      total: mixAppointments.length,
       slices: toSlices(insuranceStatusCounts, chartSeries),
       breakdown: toPercentageSlices(
         insuranceNameCounts,
@@ -396,37 +463,52 @@ function buildCompanyDashboardCharts({
         chartSeries,
       ),
     },
-    duration: {
-      averageMinutes: average(durationValues),
+    timing: {
+      averageValue: average(timingValues),
       byType: [
         {
           label: "Particular",
-          value: Math.round(average(particularDurations) ?? 0),
+          value: Math.round(average(particularTiming) ?? 0),
         },
         {
           label: "Convênio",
-          value: Math.round(average(insuranceDurations) ?? 0),
+          value: Math.round(average(insuranceTiming) ?? 0),
         },
       ],
     },
     cancellations: {
       noShows,
-      clinicCancellations,
-      patientCancellations,
-      noShowRate: percent(noShows, appointments.length),
-      clinicCancellationRate: percent(clinicCancellations, appointments.length),
-      patientCancellationRate: percent(
-        patientCancellations,
-        appointments.length,
-      ),
+      cancellations: cancelledAppointments.length,
+      noShowRate: completedForAttendanceRate
+        ? percent(noShows, completedForAttendanceRate)
+        : null,
+      cancellationRate: appointments.length
+        ? percent(cancelledAppointments.length, appointments.length)
+        : null,
     },
-    periodAttendances: buildPeriodPoints(
-      periodStart,
-      periodEnd,
-      activeAppointments.map((appointment) => appointment.start_at),
+    periodAttendances: buildDashboardPeriodPoints(
+      period,
+      appointments.map((appointment) => appointment[dateField]),
+      timeZone,
     ),
-    ageDistribution: buildAgeDistribution(patients, periodEnd),
-    birthdays: buildBirthdays(patients, periodEnd),
+    ageDistribution: buildAgeDistribution(cohortPatients, referenceDateKey),
+    birthdays: buildBirthdays(patients, referenceDateKey),
+    commercialSummary: {
+      future: appointments.filter(
+        (appointment) =>
+          !["attended", "cancelled", "no_show"].includes(appointment.status) &&
+          new Date(appointment.start_at) > now,
+      ).length,
+      attended: appointments.filter(
+        (appointment) => appointment.status === "attended",
+      ).length,
+      open: appointments.filter(
+        (appointment) =>
+          !["attended", "cancelled", "no_show"].includes(appointment.status) &&
+          new Date(appointment.start_at) <= now,
+      ).length,
+      losses: noShows + cancelledAppointments.length,
+    },
   };
 }
 
@@ -475,15 +557,23 @@ function percent(value: number, total: number) {
   return Math.round((value / total) * 100);
 }
 
-function appointmentDurationMinutes(appointment: AppointmentMetric) {
+function appointmentTimingValue(
+  appointment: AppointmentMetric,
+  view: DashboardView,
+) {
   const start = new Date(appointment.start_at).getTime();
-  const end = new Date(appointment.end_at).getTime();
+  const reference = new Date(
+    view === "commercial" ? appointment.created_at : appointment.end_at,
+  ).getTime();
 
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+  if (!Number.isFinite(start) || !Number.isFinite(reference)) {
     return null;
   }
 
-  return Math.round((end - start) / 60000);
+  const difference =
+    view === "commercial" ? start - reference : reference - start;
+  if (difference < 0) return null;
+  return difference / (view === "commercial" ? 86_400_000 : 60_000);
 }
 
 function average(values: number[]) {
@@ -491,38 +581,17 @@ function average(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function buildPeriodPoints(
-  periodStart: Date,
-  periodEnd: Date,
-  dates: string[],
-) {
-  const counts = new Map<string, number>();
-
-  for (const value of dates) {
-    const key = dateKey(new Date(value));
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-
-  const points = [];
-  const cursor = new Date(periodStart);
-
-  while (cursor <= periodEnd) {
-    const key = dateKey(cursor);
-    points.push({
-      label: formatShortDate(cursor),
-      value: counts.get(key) ?? 0,
-    });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return points;
+function formatAverageDays(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const rounded = Math.round(value);
+  return `${rounded} ${rounded === 1 ? "dia" : "dias"}`;
 }
 
-function buildAgeDistribution(patients: PatientMetric[], today: Date) {
+function buildAgeDistribution(patients: PatientMetric[], todayKey: string) {
   const counts = new Map<string, number>();
 
   for (const patient of patients) {
-    const age = calculateAge(patient.birth_date, today);
+    const age = calculateAge(patient.birth_date, todayKey);
     if (age == null) continue;
     counts.set(String(age), (counts.get(String(age)) ?? 0) + 1);
   }
@@ -532,12 +601,12 @@ function buildAgeDistribution(patients: PatientMetric[], today: Date) {
     .map(([label, value]) => ({ label, value }));
 }
 
-function buildBirthdays(patients: PatientMetric[], today: Date) {
-  const month = today.getMonth() + 1;
-  const day = today.getDate();
+function buildBirthdays(patients: PatientMetric[], todayKey: string) {
+  const [, month, day] = todayKey.split("-").map(Number);
 
   return patients
     .filter((patient) => {
+      if (patient.deleted_at || patient.status !== "active") return false;
       if (!patient.birth_date) return false;
       const [, birthMonth, birthDay] = patient.birth_date
         .split("-")
@@ -547,34 +616,200 @@ function buildBirthdays(patients: PatientMetric[], today: Date) {
     .map((patient) => ({
       id: patient.id,
       name: patient.social_name || patient.full_name,
-      age: calculateAge(patient.birth_date, today),
+      age: calculateAge(patient.birth_date, todayKey),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
-function calculateAge(birthDate: string | null, today: Date) {
+function calculateAge(birthDate: string | null, todayKey: string) {
   if (!birthDate) return null;
   const [year, month, day] = birthDate.split("-").map(Number);
+  const [todayYear, todayMonth, todayDay] = todayKey.split("-").map(Number);
   if (!year || !month || !day) return null;
 
-  let age = today.getFullYear() - year;
+  let age = todayYear - year;
   const hadBirthday =
-    today.getMonth() + 1 > month ||
-    (today.getMonth() + 1 === month && today.getDate() >= day);
+    todayMonth > month || (todayMonth === month && todayDay >= day);
   if (!hadBirthday) age -= 1;
 
   return age;
 }
 
-function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+async function fetchDashboardAggregates(
+  supabase: SupabaseServerClient,
+  organizationId: string,
+  view: DashboardView,
+  current: DashboardRange,
+  comparison: DashboardRange,
+  timeZone: string,
+  now: Date,
+  includePatientData: boolean,
+) {
+  const result = await supabase.rpc("dashboard_company_aggregates", {
+    p_organization_id: organizationId,
+    p_view: view,
+    p_current_start: current.startInclusive.toISOString(),
+    p_current_end: current.endExclusive.toISOString(),
+    p_comparison_start: comparison.startInclusive.toISOString(),
+    p_comparison_end: comparison.endExclusive.toISOString(),
+    p_timezone: timeZone,
+    p_now: now.toISOString(),
+    p_include_patient_data: includePatientData,
+  });
+
+  if (result.error) return null;
+  return parseDashboardAggregatePayload(result.data);
 }
 
-function formatShortDate(date: Date) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-  }).format(date);
+function buildCompanyDashboardChartsFromAggregate(
+  aggregate: DashboardAggregatePayload,
+  view: DashboardView,
+): CompanyDashboardChartsData {
+  const insuranceTotal =
+    aggregate.charts.insurance_status.with_insurance +
+    aggregate.charts.insurance_status.without_insurance;
+  const insuranceStatusCounts = new Map<string, number>([
+    ["Sem convenio", aggregate.charts.insurance_status.without_insurance],
+    ["Com convenio", aggregate.charts.insurance_status.with_insurance],
+  ]);
+
+  return {
+    view,
+    patientDataAvailable: aggregate.patient_data_available,
+    patients: {
+      newCount: aggregate.charts.patients.new_count,
+      recurringCount: aggregate.charts.patients.recurring_count,
+      maleCount: aggregate.charts.patients.male_count,
+      femaleCount: aggregate.charts.patients.female_count,
+    },
+    procedures: {
+      total: insuranceTotal,
+      slices: aggregate.charts.procedures.map((slice, index) => ({
+        ...slice,
+        color:
+          chartSeries[index % chartSeries.length] ?? categoricalColors.blue,
+      })),
+    },
+    insurances: {
+      total: insuranceTotal,
+      slices: toSlices(insuranceStatusCounts, chartSeries),
+      breakdown: aggregate.charts.insurance_breakdown.map((slice, index) => ({
+        label: slice.label,
+        value: percent(
+          slice.value,
+          Math.max(1, aggregate.charts.insurance_status.with_insurance),
+        ),
+        color:
+          chartSeries[index % chartSeries.length] ?? categoricalColors.blue,
+      })),
+    },
+    timing: {
+      averageValue: aggregate.charts.timing.average_value,
+      byType: [
+        {
+          label: "Particular",
+          value: Math.round(aggregate.charts.timing.particular_value ?? 0),
+        },
+        {
+          label: "Convênio",
+          value: Math.round(aggregate.charts.timing.insurance_value ?? 0),
+        },
+      ],
+    },
+    cancellations: {
+      noShows: aggregate.charts.cancellations.no_shows,
+      cancellations: aggregate.charts.cancellations.cancellations,
+      noShowRate: aggregate.charts.cancellations.no_show_rate,
+      cancellationRate: aggregate.charts.cancellations.cancellation_rate,
+    },
+    periodAttendances: aggregate.charts.period_points.map((point) => ({
+      label: formatAggregateDate(point.date),
+      value: point.value,
+    })),
+    ageDistribution: aggregate.charts.age_distribution.map((point) => ({
+      label: String(point.age),
+      value: point.value,
+    })),
+    birthdays: aggregate.charts.birthdays,
+    commercialSummary: aggregate.charts.commercial_summary,
+  };
+}
+
+function appointmentStatsFromAggregate(
+  stats: DashboardAggregatePayload["current_stats"],
+) {
+  return {
+    total: stats.total,
+    valid: stats.valid,
+    attended: stats.attended,
+    uniquePatients: stats.unique_patients,
+    noShowRate: stats.no_show_rate,
+    cancellationRate: stats.cancellation_rate,
+  };
+}
+
+function formatAggregateDate(value: string) {
+  const [, month, day] = value.split("-");
+  return `${day}/${month}`;
+}
+
+async function fetchAllDashboardPatients(
+  supabase: SupabaseServerClient,
+  organizationId: string,
+): Promise<DashboardRowsResult<PatientMetric>> {
+  const data: PatientMetric[] = [];
+
+  for (let offset = 0; ; offset += dashboardQueryPageSize) {
+    const result = await supabase
+      .from("patients")
+      .select(
+        "id, full_name, social_name, birth_date, sex_at_birth, status, deleted_at, created_at",
+      )
+      .eq("organization_id", organizationId)
+      .order("id")
+      .range(offset, offset + dashboardQueryPageSize - 1)
+      .returns<PatientMetric[]>();
+
+    if (result.error) return { data, error: result.error };
+    const page = result.data ?? [];
+    data.push(...page);
+    if (page.length < dashboardQueryPageSize) break;
+  }
+
+  return { data, error: null };
+}
+
+async function fetchAllDashboardAppointments(
+  supabase: SupabaseServerClient,
+  organizationId: string,
+  dateField: "start_at" | "created_at",
+  range: DashboardRange,
+): Promise<DashboardRowsResult<AppointmentMetric>> {
+  const data: AppointmentMetric[] = [];
+
+  for (let offset = 0; ; offset += dashboardQueryPageSize) {
+    const result = await supabase
+      .from("appointments")
+      .select(dashboardAppointmentColumns)
+      .eq("organization_id", organizationId)
+      .gte(dateField, range.startInclusive.toISOString())
+      .lt(dateField, range.endExclusive.toISOString())
+      .order(dateField)
+      .order("id")
+      .range(offset, offset + dashboardQueryPageSize - 1)
+      .returns<AppointmentMetric[]>();
+
+    if (result.error) return { data, error: result.error };
+    const page = result.data ?? [];
+    data.push(...page);
+    if (page.length < dashboardQueryPageSize) break;
+  }
+
+  return { data, error: null };
+}
+
+function emptyDashboardRows<T>(): DashboardRowsResult<T> {
+  return { data: [], error: null };
 }
 
 async function CompanyDashboard({
@@ -583,132 +818,190 @@ async function CompanyDashboard({
   canViewAgenda,
   canManageOnlineRequests,
   canRejectOnlineRequests,
+  searchParams,
+  now,
 }: {
   organization: { id: string; name: string } | null;
   canViewPatients: boolean;
   canViewAgenda: boolean;
   canManageOnlineRequests: boolean;
   canRejectOnlineRequests: boolean;
+  searchParams: Record<string, string | string[] | undefined>;
+  now: Date;
 }) {
   const supabase = await createSupabaseServerClient();
-  const periodEnd = new Date();
-  const periodStart = new Date(periodEnd);
-  periodStart.setDate(periodStart.getDate() - 30);
-  periodStart.setHours(0, 0, 0, 0);
-  const [
-    patientsResult,
-    onlineRequestsResult,
-    waitlistResult,
-    appointmentsResult,
-    proceduresResult,
-    insurancesResult,
-  ] = organization
-    ? await Promise.all([
-        canViewPatients
-          ? supabase
-              .from("patients")
-              .select(
-                "id, full_name, social_name, birth_date, sex_at_birth, phone, whatsapp, email, deleted_at, created_at",
+  const settingsResult = organization
+    ? await supabase
+        .from("organization_settings")
+        .select("timezone")
+        .eq("organization_id", organization.id)
+        .maybeSingle<OrganizationSettingsMetric>()
+    : { data: null as OrganizationSettingsMetric | null, error: null };
+  const configuredTimeZone = settingsResult.data?.timezone;
+  const timeZone = isValidTimeZone(configuredTimeZone)
+    ? configuredTimeZone!
+    : defaultDashboardTimeZone;
+  const selection = resolveDashboardFilterSelection(searchParams, {
+    now,
+    timeZone,
+  });
+  const dashboardPeriod = resolveDashboardPeriod(selection, {
+    now,
+    timeZone,
+  });
+  const dateField = dashboardDateField(selection.view);
+  const [dashboardAggregate, onlineRequestsResult, waitlistResult] =
+    organization
+      ? await Promise.all([
+          canViewAgenda
+            ? fetchDashboardAggregates(
+                supabase,
+                organization.id,
+                selection.view,
+                dashboardPeriod.current,
+                dashboardPeriod.comparison,
+                timeZone,
+                now,
+                canViewPatients,
               )
-              .eq("organization_id", organization.id)
-              .returns<PatientMetric[]>()
-          : Promise.resolve({ data: [] as PatientMetric[] }),
-        canViewAgenda
-          ? supabase
-              .from("online_booking_requests")
-              .select(
-                "id, requested_start_at, requested_end_at, patient_name, patient_email, patient_phone, patient_notes, procedures(name), professionals(name), units(name), health_insurances(name)",
-              )
-              .eq("organization_id", organization.id)
-              .eq("status", "requested")
-              .order("requested_start_at")
-              .returns<DashboardOnlineRequest[]>()
-          : Promise.resolve({ data: [] as DashboardOnlineRequest[] }),
-        canViewAgenda
-          ? supabase
-              .from("waitlist_entries")
-              .select(
-                "id, preferred_period, notes, created_at, patients(full_name, social_name), procedures(name), professionals(name)",
-              )
-              .eq("organization_id", organization.id)
-              .in("status", ["waiting", "contacted"])
-              .order("created_at")
-              .returns<DashboardWaitlistEntry[]>()
-          : Promise.resolve({ data: [] as DashboardWaitlistEntry[] }),
-        canViewAgenda
-          ? supabase
-              .from("appointments")
-              .select(
-                "id, patient_id, procedure_id, health_insurance_id, status, start_at, end_at, cancellation_reason",
-              )
-              .eq("organization_id", organization.id)
-              .gte("start_at", periodStart.toISOString())
-              .lte("start_at", periodEnd.toISOString())
-              .order("start_at")
-              .returns<AppointmentMetric[]>()
-          : Promise.resolve({ data: [] as AppointmentMetric[] }),
-        canViewAgenda
-          ? supabase
-              .from("procedures")
-              .select("id, name")
-              .eq("organization_id", organization.id)
-              .returns<NamedMetric[]>()
-          : Promise.resolve({ data: [] as NamedMetric[] }),
-        canViewAgenda
-          ? supabase
-              .from("health_insurances")
-              .select("id, name")
-              .eq("organization_id", organization.id)
-              .returns<NamedMetric[]>()
-          : Promise.resolve({ data: [] as NamedMetric[] }),
-      ])
-    : [
-        { data: [] as PatientMetric[] },
-        { data: [] as DashboardOnlineRequest[] },
-        { data: [] as DashboardWaitlistEntry[] },
-        { data: [] as AppointmentMetric[] },
-        { data: [] as NamedMetric[] },
-        { data: [] as NamedMetric[] },
-      ];
+            : Promise.resolve(null),
+          canViewAgenda && selection.view === "operational"
+            ? supabase
+                .from("online_booking_requests")
+                .select(
+                  "id, requested_start_at, requested_end_at, patient_name, patient_email, patient_phone, patient_notes, procedures(name), professionals(name), units(name), health_insurances(name)",
+                )
+                .eq("organization_id", organization.id)
+                .eq("status", "requested")
+                .order("requested_start_at")
+                .returns<DashboardOnlineRequest[]>()
+            : Promise.resolve(emptyDashboardRows<DashboardOnlineRequest>()),
+          canViewAgenda && selection.view === "operational"
+            ? supabase
+                .from("waitlist_entries")
+                .select(
+                  "id, preferred_period, notes, created_at, patients(full_name, social_name), procedures(name), professionals(name)",
+                )
+                .eq("organization_id", organization.id)
+                .in("status", ["waiting", "contacted"])
+                .order("created_at")
+                .returns<DashboardWaitlistEntry[]>()
+            : Promise.resolve(emptyDashboardRows<DashboardWaitlistEntry>()),
+        ])
+      : [
+          null,
+          emptyDashboardRows<DashboardOnlineRequest>(),
+          emptyDashboardRows<DashboardWaitlistEntry>(),
+        ];
+
+  let patientsResult: DashboardRowsResult<PatientMetric> = emptyDashboardRows();
+  let currentAppointmentsResult: DashboardRowsResult<AppointmentMetric> =
+    emptyDashboardRows();
+  let comparisonAppointmentsResult: DashboardRowsResult<AppointmentMetric> =
+    emptyDashboardRows();
+  let proceduresResult: DashboardRowsResult<NamedMetric> = emptyDashboardRows();
+  let insurancesResult: DashboardRowsResult<NamedMetric> = emptyDashboardRows();
+
+  if (organization && canViewAgenda && !dashboardAggregate) {
+    [
+      patientsResult,
+      currentAppointmentsResult,
+      comparisonAppointmentsResult,
+      proceduresResult,
+      insurancesResult,
+    ] = await Promise.all([
+      canViewPatients
+        ? fetchAllDashboardPatients(supabase, organization.id)
+        : Promise.resolve(emptyDashboardRows<PatientMetric>()),
+      fetchAllDashboardAppointments(
+        supabase,
+        organization.id,
+        dateField,
+        dashboardPeriod.current,
+      ),
+      fetchAllDashboardAppointments(
+        supabase,
+        organization.id,
+        dateField,
+        dashboardPeriod.comparison,
+      ),
+      supabase
+        .from("procedures")
+        .select("id, name")
+        .eq("organization_id", organization.id)
+        .returns<NamedMetric[]>(),
+      supabase
+        .from("health_insurances")
+        .select("id, name")
+        .eq("organization_id", organization.id)
+        .returns<NamedMetric[]>(),
+    ]);
+  }
+
+  const dashboardDataError = Boolean(
+    settingsResult.error ||
+    (!dashboardAggregate &&
+      (currentAppointmentsResult.error ||
+        comparisonAppointmentsResult.error ||
+        proceduresResult.error ||
+        insurancesResult.error)),
+  );
+  const patientDataAvailable = dashboardAggregate
+    ? dashboardAggregate.patient_data_available
+    : canViewPatients && !Boolean(patientsResult.error);
+  const operationsDataError = Boolean(
+    onlineRequestsResult.error || waitlistResult.error,
+  );
   const patients = patientsResult.data ?? [];
-  const activePatients = patients.filter((patient) => !patient.deleted_at);
-  const appointments = appointmentsResult.data ?? [];
+  const currentAppointments = currentAppointmentsResult.data ?? [];
+  const comparisonAppointments = comparisonAppointmentsResult.data ?? [];
   const procedures = new Map(
     (proceduresResult.data ?? []).map((item) => [item.id, item.name]),
   );
   const insurances = new Map(
     (insurancesResult.data ?? []).map((item) => [item.id, item.name]),
   );
-  const appointmentIds = appointments.map((appointment) => appointment.id);
-  const cancellationEventsResult =
-    canViewAgenda && organization && appointmentIds.length
-      ? await supabase
-          .from("appointment_status_events")
-          .select("appointment_id, actor_user_id")
-          .eq("organization_id", organization.id)
-          .eq("to_status", "cancelled")
-          .in("appointment_id", appointmentIds)
-          .order("created_at", { ascending: true })
-          .returns<AppointmentStatusEventMetric[]>()
-      : { data: [] as AppointmentStatusEventMetric[] };
-  const dashboardCharts = buildCompanyDashboardCharts({
-    patients: activePatients,
-    appointments,
-    cancellationEvents: cancellationEventsResult.data ?? [],
-    procedures,
-    insurances,
-    periodStart,
-    periodEnd,
-  });
-  const previousPeriodStart = new Date(periodStart);
-  previousPeriodStart.setDate(previousPeriodStart.getDate() - 30);
-  const newPatientsCount = activePatients.filter(
-    (patient) => new Date(patient.created_at) >= periodStart,
-  ).length;
-  const previousNewPatientsCount = activePatients.filter((patient) => {
-    const createdAt = new Date(patient.created_at);
-    return createdAt >= previousPeriodStart && createdAt < periodStart;
-  }).length;
+  const dashboardCharts = dashboardAggregate
+    ? buildCompanyDashboardChartsFromAggregate(
+        dashboardAggregate,
+        selection.view,
+      )
+    : buildCompanyDashboardCharts({
+        view: selection.view,
+        patientDataAvailable,
+        patients,
+        appointments: currentAppointments,
+        procedures,
+        insurances,
+        period: dashboardPeriod.current,
+        timeZone,
+        now,
+      });
+  const currentStats = dashboardAggregate
+    ? appointmentStatsFromAggregate(dashboardAggregate.current_stats)
+    : buildAppointmentStats(currentAppointments);
+  const comparisonStats = dashboardAggregate
+    ? appointmentStatsFromAggregate(dashboardAggregate.comparison_stats)
+    : buildAppointmentStats(comparisonAppointments);
+  const currentNewPatients = dashboardAggregate
+    ? dashboardAggregate.current_new_patients
+    : patients.filter((patient) =>
+        containsInstant(dashboardPeriod.current, patient.created_at),
+      ).length;
+  const comparisonNewPatients = dashboardAggregate
+    ? dashboardAggregate.comparison_new_patients
+    : patients.filter((patient) =>
+        containsInstant(dashboardPeriod.comparison, patient.created_at),
+      ).length;
+  const currentAverageLeadDays = dashboardAggregate
+    ? dashboardAggregate.average_lead_days
+    : average(
+        currentAppointments
+          .map((appointment) =>
+            appointmentTimingValue(appointment, "commercial"),
+          )
+          .filter((value): value is number => value != null && value >= 0),
+      );
 
   const cards: Array<{
     label: string;
@@ -717,79 +1010,186 @@ async function CompanyDashboard({
     status: string;
     tone: MetricTone;
     trend?: MetricTrend;
-  }> = [
-    {
-      label: "Pacientes ativos",
-      value: String(activePatients.length),
-      icon: UsersRound,
-      status: "cadastro",
-      tone: "primary",
-    },
-    {
-      label: "Novos em 30 dias",
-      value: String(newPatientsCount),
-      icon: UserPlus,
-      status: "crescimento",
-      tone: "success",
-      trend: {
-        delta: newPatientsCount - previousNewPatientsCount,
-        label: "vs. período anterior",
-      },
-    },
-    {
-      label: "Sem contato",
-      value: String(
-        activePatients.filter(
-          (patient) => !patient.phone && !patient.whatsapp && !patient.email,
-        ).length,
-      ),
-      icon: PhoneOff,
-      status: "atenção",
-      tone: "warning",
-    },
-    {
-      label: "Arquivados",
-      value: String(patients.length - activePatients.length),
-      icon: Archive,
-      status: "histórico",
-      tone: "neutral",
-    },
-  ];
+  }> =
+    selection.view === "commercial"
+      ? [
+          {
+            label: "Agendamentos gerados",
+            value: String(currentStats.total),
+            icon: CalendarPlus,
+            status: "comercial",
+            tone: "primary",
+            trend: buildCountTrend(currentStats.total, comparisonStats.total),
+          },
+          patientDataAvailable
+            ? {
+                label: "Novos pacientes",
+                value: String(currentNewPatients),
+                icon: UserPlus,
+                status: "aquisição",
+                tone: "success",
+                trend: buildCountTrend(
+                  currentNewPatients,
+                  comparisonNewPatients,
+                ),
+              }
+            : {
+                label: "Agendamentos válidos",
+                value: String(currentStats.valid),
+                icon: CalendarCheck2,
+                status: "carteira",
+                tone: "success",
+                trend: buildCountTrend(
+                  currentStats.valid,
+                  comparisonStats.valid,
+                ),
+              },
+          {
+            label: "Pacientes agendados",
+            value: String(currentStats.uniquePatients),
+            icon: UsersRound,
+            status: "alcance",
+            tone: "neutral",
+            trend: buildCountTrend(
+              currentStats.uniquePatients,
+              comparisonStats.uniquePatients,
+            ),
+          },
+          {
+            label: "Antecedência média",
+            value: formatAverageDays(currentAverageLeadDays),
+            icon: CalendarClock,
+            status: "planejamento",
+            tone: "neutral",
+          },
+        ]
+      : [
+          {
+            label: "Agendamentos do período",
+            value: String(currentStats.total),
+            icon: CalendarCheck2,
+            status: "agenda",
+            tone: "primary",
+            trend: buildCountTrend(currentStats.total, comparisonStats.total),
+          },
+          {
+            label: "Atendimentos realizados",
+            value: String(currentStats.attended),
+            icon: CheckCircle2,
+            status: "produção",
+            tone: "success",
+            trend: buildCountTrend(
+              currentStats.attended,
+              comparisonStats.attended,
+            ),
+          },
+          {
+            label: "Taxa de faltas",
+            value:
+              currentStats.noShowRate == null
+                ? "—"
+                : `${currentStats.noShowRate}%`,
+            icon: UsersRound,
+            status: "comparecimento",
+            tone: "warning",
+            trend:
+              currentStats.noShowRate != null &&
+              comparisonStats.noShowRate != null
+                ? buildRateTrend(
+                    currentStats.noShowRate,
+                    comparisonStats.noShowRate,
+                    "lower",
+                  )
+                : undefined,
+          },
+          {
+            label: "Taxa de cancelamento",
+            value:
+              currentStats.cancellationRate == null
+                ? "—"
+                : `${currentStats.cancellationRate}%`,
+            icon: ShieldAlert,
+            status: "perdas",
+            tone: "destructive",
+            trend:
+              currentStats.cancellationRate != null &&
+              comparisonStats.cancellationRate != null
+                ? buildRateTrend(
+                    currentStats.cancellationRate,
+                    comparisonStats.cancellationRate,
+                    "lower",
+                  )
+                : undefined,
+          },
+        ];
+  const viewLabel =
+    selection.view === "commercial" ? "comercial" : "operacional";
 
   return (
     <div className="grid gap-6">
-      <section>
-        <h1 className="text-xl font-semibold">Painel</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Visão inicial da operação de {organization?.name ?? "sua empresa"}.
-        </p>
-      </section>
+      <PageHeader
+        title="Painel"
+        description={`Visão ${viewLabel} de ${organization?.name ?? "sua empresa"}.`}
+      />
 
-      <section className="grid gap-4 md:grid-cols-4">
-        {cards.map((card, index) => (
-          <DashboardMetricCard
-            key={card.label}
-            icon={card.icon}
-            label={card.label}
-            value={card.value}
-            status={card.status}
-            tone={card.tone}
-            trend={card.trend}
-            delay={index * 0.05}
-          />
-        ))}
-      </section>
-
-      <CompanyDashboardCharts data={dashboardCharts} />
+      <DashboardFilters
+        key={`${selection.view}:${selection.period}:${selection.from ?? ""}:${selection.to ?? ""}`}
+        selection={selection}
+        currentRangeLabel={formatDashboardRange(dashboardPeriod.current)}
+        comparisonRangeLabel={formatDashboardRange(
+          dashboardPeriod.comparison,
+          "até o mesmo horário",
+        )}
+        today={formatInTimeZone(now, timeZone, "yyyy-MM-dd")}
+      />
 
       {canViewAgenda ? (
-        <CompanyOperationsPanel
-          onlineRequests={onlineRequestsResult.data ?? []}
-          waitlist={waitlistResult.data ?? []}
-          canConfirmOnlineRequests={canManageOnlineRequests}
-          canRejectOnlineRequests={canRejectOnlineRequests}
+        dashboardDataError ? (
+          <DashboardUnavailable
+            title="Não foi possível carregar os indicadores"
+            description="Os dados não foram substituídos por zeros. Tente atualizar a página em alguns instantes."
+          />
+        ) : (
+          <>
+            <section className="grid gap-4 md:grid-cols-4">
+              {cards.map((card) => (
+                <DashboardMetricCard
+                  key={card.label}
+                  icon={card.icon}
+                  label={card.label}
+                  value={card.value}
+                  status={card.status}
+                  tone={card.tone}
+                  trend={card.trend}
+                />
+              ))}
+            </section>
+
+            <CompanyDashboardCharts data={dashboardCharts} />
+
+            {selection.view === "operational" ? (
+              operationsDataError ? (
+                <DashboardUnavailable
+                  title="Operação em tempo real indisponível"
+                  description="Não foi possível carregar solicitações online e fila de espera agora."
+                />
+              ) : (
+                <CompanyOperationsPanel
+                  onlineRequests={onlineRequestsResult.data ?? []}
+                  waitlist={waitlistResult.data ?? []}
+                  canConfirmOnlineRequests={canManageOnlineRequests}
+                  canRejectOnlineRequests={canRejectOnlineRequests}
+                />
+              )
+            ) : null}
+          </>
+        )
+      ) : (
+        <DashboardUnavailable
+          title="Indicadores indisponíveis"
+          description="Seu perfil não possui permissão para visualizar os dados da agenda."
         />
-      ) : null}
+      )}
     </div>
   );
 }

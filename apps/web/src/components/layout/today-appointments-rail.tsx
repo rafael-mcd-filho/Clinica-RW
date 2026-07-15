@@ -9,16 +9,18 @@ import {
   PanelRightOpen,
   Pin,
   PinOff,
+  RefreshCw,
   X,
 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/loader";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { TodayAppointmentItem } from "@/lib/clinic/today-appointments";
 import { cn } from "@/lib/utils";
 
 type TodayAppointmentsRailProps = {
-  appointments: TodayAppointmentItem[];
   open: boolean;
   pinned: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,12 +40,74 @@ const statusLabels: Record<string, string> = {
 const completedStatuses = new Set(["confirmed", "in_progress", "attended"]);
 
 export function TodayAppointmentsRail({
-  appointments,
   open,
   pinned,
   onOpenChange,
   onPinnedChange,
 }: TodayAppointmentsRailProps) {
+  const [appointments, setAppointments] = useState<TodayAppointmentItem[]>([]);
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">(
+    "idle",
+  );
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const loadedRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
+
+  const loadAppointments = useCallback(async (force = false) => {
+    if (
+      !force &&
+      loadedRef.current &&
+      Date.now() - lastLoadedAtRef.current < 30_000
+    ) {
+      return;
+    }
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStatus("loading");
+
+    try {
+      const response = await fetch("/api/today-appointments", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const payload = (await response.json()) as {
+        appointments?: TodayAppointmentItem[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Falha ao carregar pacientes do dia.");
+      }
+
+      setAppointments(
+        Array.isArray(payload.appointments) ? payload.appointments : [],
+      );
+      loadedRef.current = true;
+      lastLoadedAtRef.current = Date.now();
+      setHasLoaded(true);
+      setStatus("ready");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => void loadAppointments(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadAppointments, open]);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
+
   return (
     <>
       {!open ? (
@@ -76,14 +140,19 @@ export function TodayAppointmentsRail({
           open ? "translate-x-0" : "translate-x-full",
         )}
         aria-label="Pacientes do dia"
+        aria-busy={status === "loading"}
       >
         <header className="flex h-16 items-center justify-between gap-3 border-b border-border px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <CalendarCheck2 className="size-4 text-primary" aria-hidden />
               <h2 className="truncate font-semibold">Pacientes do dia</h2>
-              <Badge variant={appointments.length ? "primary" : "neutral"}>
-                {appointments.length}
+              <Badge
+                variant={
+                  hasLoaded && appointments.length ? "primary" : "neutral"
+                }
+              >
+                {hasLoaded ? appointments.length : "…"}
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -92,6 +161,24 @@ export function TodayAppointmentsRail({
           </div>
 
           <div className="flex items-center gap-1">
+            <Tooltip content="Atualizar pacientes" side="bottom">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Atualizar pacientes do dia"
+                disabled={status === "loading"}
+                onClick={() => void loadAppointments(true)}
+              >
+                <RefreshCw
+                  className={cn(
+                    "size-4",
+                    status === "loading" ? "animate-spin" : "",
+                  )}
+                  aria-hidden
+                />
+              </Button>
+            </Tooltip>
             <Tooltip
               content={pinned ? "Desfixar painel" : "Fixar painel"}
               side="bottom"
@@ -127,8 +214,27 @@ export function TodayAppointmentsRail({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {appointments.length ? (
+        <div className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
+          {status === "idle" || (status === "loading" && !hasLoaded) ? (
+            <TodayAppointmentsSkeleton />
+          ) : status === "error" ? (
+            <div className="p-5">
+              <div className="rounded-lg border border-dashed border-destructive/40 bg-destructive-muted/40 px-4 py-8 text-center">
+                <p className="text-sm font-medium text-destructive-foreground">
+                  Não foi possível carregar os pacientes do dia.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="mt-4"
+                  onClick={() => void loadAppointments(true)}
+                >
+                  Tentar novamente
+                </Button>
+              </div>
+            </div>
+          ) : appointments.length ? (
             <div className="divide-y divide-border">
               {appointments.map((appointment) => (
                 <TodayAppointmentRow
@@ -147,6 +253,27 @@ export function TodayAppointmentsRail({
         </div>
       </aside>
     </>
+  );
+}
+
+function TodayAppointmentsSkeleton() {
+  return (
+    <div className="divide-y divide-border" role="status">
+      <span className="sr-only">Carregando pacientes do dia</span>
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="flex gap-3 px-5 py-4">
+          <div className="grid w-12 shrink-0 content-start gap-2">
+            <Skeleton className="h-4 w-10" />
+            <Skeleton className="h-3 w-8" />
+          </div>
+          <div className="grid flex-1 gap-2">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-4/5" />
+            <Skeleton className="h-3 w-3/5" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

@@ -1,31 +1,36 @@
 "use client";
 
+import { FileText, Printer } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useEffect, useMemo, useState } from "react";
-import { FileText, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { issueClinicalDocument, type ClinicalActionState } from "../actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input, Select } from "@/components/ui/field";
-import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { Input, Select, Textarea } from "@/components/ui/field";
+import { FormError } from "@/components/ui/form-error";
+import {
+  type ClinicalDocumentType,
+  type DocumentVariableValues,
+  inspectDocumentTemplateVariables,
+  resolveDocumentTemplate,
+} from "@/lib/clinical/document-templates";
 
 export type ClinicalDocumentTemplate = {
   id: string;
-  document_type:
-    | "prescription"
-    | "exam_request"
-    | "medical_certificate"
-    | "attendance_declaration";
+  template_version_id: string;
+  version_number: number;
+  document_type: ClinicalDocumentType;
   name: string;
   title_template: string;
   body_template: string;
+  layout_schema: unknown;
 };
 
 export type ClinicalDocument = {
   id: string;
-  document_type: ClinicalDocumentTemplate["document_type"];
+  document_type: ClinicalDocumentType;
   title: string;
   issued_at: string;
 };
@@ -36,16 +41,14 @@ type IssuePermissions = {
   certificate: boolean;
 };
 
-const documentLabels: Record<
-  ClinicalDocumentTemplate["document_type"],
-  string
-> = {
+const documentLabels: Record<ClinicalDocumentType, string> = {
   prescription: "Prescrição",
   exam_request: "Solicitação de exame",
   medical_certificate: "Atestado",
   attendance_declaration: "Declaração de comparecimento",
 };
 
+const documentTypes = Object.keys(documentLabels) as ClinicalDocumentType[];
 const initialState: ClinicalActionState = {};
 
 export function DocumentPanel({
@@ -53,57 +56,63 @@ export function DocumentPanel({
   templates,
   documents,
   canIssue,
+  variables,
 }: {
   encounterId: string;
   templates: ClinicalDocumentTemplate[];
   documents: ClinicalDocument[];
   canIssue: IssuePermissions;
+  variables: DocumentVariableValues;
 }) {
   const allowedTypes = useMemo(
     () =>
-      (
-        [
-          "prescription",
-          "exam_request",
-          "medical_certificate",
-          "attendance_declaration",
-        ] as ClinicalDocumentTemplate["document_type"][]
-      ).filter((type) => {
+      documentTypes.filter((type) => {
         if (type === "prescription") return canIssue.prescription;
         if (type === "exam_request") return canIssue.examRequest;
         return canIssue.certificate;
       }),
-    [canIssue],
+    [canIssue.certificate, canIssue.examRequest, canIssue.prescription],
   );
   const initialDocumentType = allowedTypes[0] ?? "prescription";
   const initialTemplate = templates.find(
     (template) => template.document_type === initialDocumentType,
   );
+  const initialContent = resolveTemplateContent(initialTemplate, variables);
   const [documentType, setDocumentType] =
-    useState<ClinicalDocumentTemplate["document_type"]>(initialDocumentType);
+    useState<ClinicalDocumentType>(initialDocumentType);
+  const [templateId, setTemplateId] = useState(initialTemplate?.id ?? "");
+  const [templateVersionId, setTemplateVersionId] = useState(
+    initialTemplate?.template_version_id ?? "",
+  );
+  const [title, setTitle] = useState(
+    initialContent.title || documentLabels[initialDocumentType],
+  );
+  const [body, setBody] = useState(initialContent.body);
   const typeTemplates = templates.filter(
     (template) => template.document_type === documentType,
   );
-  const [templateId, setTemplateId] = useState(initialTemplate?.id ?? "");
-  const [title, setTitle] = useState(initialTemplate?.title_template ?? "");
-  const [body, setBody] = useState(initialTemplate?.body_template ?? "");
+  const unresolved = useMemo(
+    () => inspectDocumentTemplateVariables(title, body),
+    [body, title],
+  );
   const issueAction = issueClinicalDocument.bind(null, encounterId);
   const [state, submit, issuing] = useActionState(issueAction, initialState);
 
   useEffect(() => {
     if (state.success) toast.success(state.success);
-  }, [state]);
+  }, [state.success]);
 
-  function applyDocumentType(
-    nextType: ClinicalDocumentTemplate["document_type"],
-  ) {
+  function applyDocumentType(nextType: ClinicalDocumentType) {
     setDocumentType(nextType);
     const nextTemplate = templates.find(
       (template) => template.document_type === nextType,
     );
+    const nextContent = resolveTemplateContent(nextTemplate, variables);
+
     setTemplateId(nextTemplate?.id ?? "");
-    setTitle(nextTemplate?.title_template ?? documentLabels[nextType]);
-    setBody(nextTemplate?.body_template ?? "");
+    setTemplateVersionId(nextTemplate?.template_version_id ?? "");
+    setTitle(nextContent.title || documentLabels[nextType]);
+    setBody(nextContent.body);
   }
 
   function applyTemplate(nextTemplateId: string) {
@@ -111,10 +120,15 @@ export function DocumentPanel({
     const nextTemplate = templates.find(
       (template) => template.id === nextTemplateId,
     );
-    if (!nextTemplate) return;
-    setTitle(nextTemplate.title_template);
-    setBody(nextTemplate.body_template);
+    const nextContent = resolveTemplateContent(nextTemplate, variables);
+
+    setTemplateVersionId(nextTemplate?.template_version_id ?? "");
+    setTitle(nextContent.title || documentLabels[documentType]);
+    setBody(nextContent.body);
   }
+
+  const hasUnresolvedVariables =
+    unresolved.variables.length > 0 || unresolved.unknownVariables.length > 0;
 
   return (
     <Card>
@@ -135,15 +149,18 @@ export function DocumentPanel({
           <form action={submit} className="grid gap-4 rounded-md border p-4">
             <input type="hidden" name="document_type" value={documentType} />
             <input type="hidden" name="template_id" value={templateId} />
+            <input
+              type="hidden"
+              name="template_version_id"
+              value={templateVersionId}
+            />
             <div className="grid gap-4 md:grid-cols-2">
               <label className="grid gap-2 text-sm font-medium">
                 Tipo
                 <Select
                   value={documentType}
                   onValueChange={(nextValue) =>
-                    applyDocumentType(
-                      nextValue as ClinicalDocumentTemplate["document_type"],
-                    )
+                    applyDocumentType(nextValue as ClinicalDocumentType)
                   }
                 >
                   {allowedTypes.map((type) => (
@@ -160,14 +177,12 @@ export function DocumentPanel({
                   onValueChange={applyTemplate}
                   allowEmptyOption
                 >
+                  <option value="">Sem modelo</option>
                   {typeTemplates.map((template) => (
                     <option key={template.id} value={template.id}>
-                      {template.name}
+                      {template.name} · v{template.version_number}
                     </option>
                   ))}
-                  {!typeTemplates.length ? (
-                    <option value="">Sem modelo</option>
-                  ) : null}
                 </Select>
               </label>
             </div>
@@ -176,25 +191,38 @@ export function DocumentPanel({
               <Input
                 name="title"
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                maxLength={300}
                 required
+                aria-invalid={hasUnresolvedVariables}
+                onChange={(event) => setTitle(event.target.value)}
               />
             </label>
             <label className="grid gap-2 text-sm font-medium">
               Conteúdo
-              <RichTextEditor
-                key={`${documentType}-${templateId}`}
+              <Textarea
                 name="body"
-                defaultValue={body}
-                minHeightClassName="min-h-40"
+                value={body}
+                maxLength={30_000}
                 required
+                className="min-h-48 resize-y leading-6"
+                aria-invalid={hasUnresolvedVariables}
+                onChange={(event) => setBody(event.target.value)}
               />
             </label>
-            {state.error ? (
-              <p className="text-sm text-destructive">{state.error}</p>
+            {hasUnresolvedVariables ? (
+              <FormError
+                message={`Substitua ou remova as variáveis sem dados antes de emitir: ${[
+                  ...unresolved.variables.map((key) => `{{${key}}}`),
+                  ...unresolved.unknownVariables.map((key) => `{{${key}}}`),
+                ].join(", ")}.`}
+              />
             ) : null}
+            <FormError message={state.error} />
             <div className="flex justify-end">
-              <Button type="submit" disabled={issuing}>
+              <Button
+                type="submit"
+                disabled={issuing || hasUnresolvedVariables}
+              >
                 <FileText className="size-4" />
                 {issuing ? "Emitindo..." : "Emitir documento"}
               </Button>
@@ -240,6 +268,18 @@ export function DocumentPanel({
       </CardContent>
     </Card>
   );
+}
+
+function resolveTemplateContent(
+  template: ClinicalDocumentTemplate | undefined,
+  variables: DocumentVariableValues,
+) {
+  if (!template) return { title: "", body: "" };
+
+  return {
+    title: resolveDocumentTemplate(template.title_template, variables).value,
+    body: resolveDocumentTemplate(template.body_template, variables).value,
+  };
 }
 
 function formatDateTime(value: string) {

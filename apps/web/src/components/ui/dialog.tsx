@@ -45,7 +45,7 @@ export function FormDialog({
       title={title}
       description={description}
     >
-      <form action={formAction} className="grid gap-4">
+      <form action={formAction} className="grid min-w-0 gap-4">
         {children}
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -90,7 +90,7 @@ export function ConfirmDialog({
       title={title}
       description={description}
     >
-      <form action={formAction} className="grid gap-4">
+      <form action={formAction} className="grid min-w-0 gap-4">
         {children}
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}

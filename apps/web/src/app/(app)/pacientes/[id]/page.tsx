@@ -317,7 +317,7 @@ export default async function PatientDetailsPage({
 
   return (
     <div className="grid gap-6">
-      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+      <section className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div className="flex min-w-0 items-center gap-3">
           <Button asChild variant="secondary" size="icon">
             <Link href="/pacientes" aria-label="Voltar para pacientes">
@@ -337,7 +337,7 @@ export default async function PatientDetailsPage({
           </div>
         </div>
         {canEdit ? (
-          <Button asChild>
+          <Button asChild className="w-full sm:w-auto">
             <Link href={`/pacientes/${patient.id}/editar`}>
               <Edit3 className="size-4" aria-hidden="true" />
               Editar paciente
@@ -346,9 +346,9 @@ export default async function PatientDetailsPage({
         ) : null}
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-[19rem_minmax(0,1fr)]">
-        <aside className="grid self-start overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)] lg:sticky lg:top-24">
-          <div className="grid justify-items-center gap-3 bg-gradient-to-b from-primary-muted to-transparent px-5 pb-5 pt-6">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[19rem_minmax(0,1fr)]">
+        <aside className="grid min-w-0 self-start overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)] lg:sticky lg:top-24">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 bg-gradient-to-b from-primary-muted to-transparent px-4 py-5 lg:grid-cols-1 lg:justify-items-center lg:gap-3 lg:px-5 lg:pb-5 lg:pt-6">
             <PatientPhotoForm
               patientId={patient.id}
               photoUrl={photoUrl}
@@ -356,8 +356,8 @@ export default async function PatientDetailsPage({
               canEdit={canEdit}
             />
 
-            <div className="text-center">
-              <h2 className="font-semibold">{displayName}</h2>
+            <div className="min-w-0 text-left lg:text-center">
+              <h2 className="truncate font-semibold">{displayName}</h2>
               <p className="mt-1 font-mono text-xs font-semibold uppercase tracking-wide text-primary">
                 Prontuário #{patient.id.slice(0, 8).toUpperCase()}
               </p>
@@ -369,10 +369,10 @@ export default async function PatientDetailsPage({
             </div>
           </div>
 
-          <div className="grid gap-4 px-5 pb-5">
+          <div className="grid min-w-0 gap-4 px-4 pb-5 sm:px-5">
             <div className="h-px bg-border" />
 
-            <div className="grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
               <SidebarInfo
                 icon={CalendarDays}
                 label="Nascimento"
@@ -596,7 +596,7 @@ function EncounterTimeline({
                       : ""}
                   </p>
                   <Button asChild variant="ghost" size="sm">
-                    <Link href={`/prontuario/${encounter.id}`}>
+                    <Link href={`/prontuario/${encounter.id}?from=paciente`}>
                       Ver detalhes
                     </Link>
                   </Button>

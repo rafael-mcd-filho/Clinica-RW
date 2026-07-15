@@ -113,6 +113,25 @@ set enabled = true,
     max_days_ahead = 60
 where organization_id = 'b1000000-0000-0000-0000-000000000010';
 
+update public.schedule_online_booking_settings
+set enabled = true,
+    min_notice_hours = 0,
+    max_days_ahead = 60,
+    cancellation_notice_hours = 24
+where organization_id = 'b1000000-0000-0000-0000-000000000010'
+  and schedule_id = 'b1000000-0000-0000-0000-000000000070';
+
+insert into public.schedule_online_booking_procedures (
+  organization_id,
+  schedule_id,
+  procedure_id
+)
+values (
+  'b1000000-0000-0000-0000-000000000010',
+  'b1000000-0000-0000-0000-000000000070',
+  'b1000000-0000-0000-0000-000000000060'
+);
+
 set local role anon;
 select set_config('request.jwt.claim.sub', '', true);
 

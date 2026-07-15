@@ -89,7 +89,7 @@ export async function updatePlatformSettings(
   });
 
   revalidatePath("/", "layout");
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
 
   return { success: "Configurações salvas." };
 }

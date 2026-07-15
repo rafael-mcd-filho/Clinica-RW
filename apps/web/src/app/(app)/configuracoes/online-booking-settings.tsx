@@ -1,7 +1,17 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
-import { ExternalLink, Globe2, MessageSquare, Star } from "lucide-react";
+import { useActionState, useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  CalendarDays,
+  Check,
+  Copy,
+  ExternalLink,
+  Globe2,
+  Link2,
+  MessageSquare,
+  Star,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   createOnlineBookingReview,
@@ -13,7 +23,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DatePickerInput } from "@/components/ui/date-picker-input";
 import { Input, Textarea } from "@/components/ui/field";
+import { FormError } from "@/components/ui/form-error";
+import { HelpTooltip } from "@/components/ui/help-tooltip";
 
 export type OnlineBookingSettingsData = {
   id: string;
@@ -62,6 +75,13 @@ export type OnlineBookingProfileData = {
   }>;
 };
 
+export type OnlineBookingScheduleSummary = {
+  id: string;
+  name: string;
+  active: boolean;
+  onlineEnabled: boolean;
+};
+
 const initialState: AgendaActionState = {};
 
 export function OnlineBookingSettings({
@@ -69,11 +89,13 @@ export function OnlineBookingSettings({
   healthInsurances,
   paymentMethods,
   reviews,
+  schedules,
 }: {
   settings: OnlineBookingSettingsData | null;
   healthInsurances: OnlineBookingProfileData["healthInsurances"];
   paymentMethods: OnlineBookingProfileData["paymentMethods"];
   reviews: OnlineBookingProfileData["reviews"];
+  schedules: OnlineBookingScheduleSummary[];
 }) {
   const [state, action, pending] = useActionState(
     updateOnlineBookingSettings,
@@ -99,27 +121,27 @@ export function OnlineBookingSettings({
 
   return (
     <div className="grid gap-5">
+      <PublicBookingAccessCard
+        publicPath={publicPath}
+        enabled={settings.enabled}
+      />
+
+      <SchedulePublicationSummary schedules={schedules} />
+
       <Card>
         <CardHeader>
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <Globe2 className="size-4 text-primary" aria-hidden="true" />
-                <h2 className="font-semibold">Agendamento online</h2>
-                <Badge variant={settings.enabled ? "success" : "neutral"}>
-                  {settings.enabled ? "Ativo" : "Inativo"}
-                </Badge>
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Link publico, politicas e limites para solicitacoes externas.
-              </p>
+          <div>
+            <div className="flex items-center gap-2">
+              <Globe2 className="size-4 text-primary" aria-hidden="true" />
+              <h2 className="font-semibold">Configurações comuns do portal</h2>
+              <HelpTooltip label="Como funciona o agendamento online">
+                As solicitações entram para revisão da equipe e só ocupam a
+                agenda depois de confirmadas.
+              </HelpTooltip>
             </div>
-            <Button asChild variant="secondary" size="sm">
-              <a href={publicPath} target="_blank" rel="noreferrer">
-                <ExternalLink className="size-4" />
-                Abrir link
-              </a>
-            </Button>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Publicação, segurança e conteúdo exibido em todas as agendas.
+            </p>
           </div>
         </CardHeader>
         <CardContent>
@@ -128,18 +150,24 @@ export function OnlineBookingSettings({
               <Checkbox
                 name="enabled"
                 defaultChecked={settings.enabled}
-                label="Permitir solicitacoes pelo link publico"
+                label="Permitir solicitações pelo link público"
               />
             </div>
             <div className="md:col-span-3">
               <Checkbox
                 name="require_contact_verification"
                 defaultChecked={settings.require_contact_verification}
-                label="Exigir codigo de verificacao por e-mail ou telefone"
+                label="Exigir código de verificação por e-mail ou telefone"
               />
             </div>
             <label className="grid gap-2 text-sm font-medium">
-              Link publico
+              <span className="inline-flex items-center gap-1">
+                Link público
+                <HelpTooltip>
+                  Endereço curto compartilhado com pacientes. Alterá-lo invalida
+                  o link anterior.
+                </HelpTooltip>
+              </span>
               <div className="flex items-center rounded-md border border-border bg-card shadow-[var(--shadow-soft)]">
                 <span className="px-3 text-sm text-muted-foreground">
                   /agendar/
@@ -153,40 +181,13 @@ export function OnlineBookingSettings({
               </div>
             </label>
             <label className="grid gap-2 text-sm font-medium">
-              Antecedencia minima (h)
-              <Input
-                name="min_notice_hours"
-                type="number"
-                min="0"
-                max="720"
-                defaultValue={settings.min_notice_hours}
-                required
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Janela maxima (dias)
-              <Input
-                name="max_days_ahead"
-                type="number"
-                min="1"
-                max="365"
-                defaultValue={settings.max_days_ahead}
-                required
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Aviso para cancelar (h)
-              <Input
-                name="cancellation_notice_hours"
-                type="number"
-                min="0"
-                max="720"
-                defaultValue={settings.cancellation_notice_hours}
-                required
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Solicitacoes por contato/dia
+              <span className="inline-flex items-center gap-1">
+                Solicitações por contato/dia
+                <HelpTooltip>
+                  Protege a agenda contra repetição excessiva de solicitações
+                  pelo mesmo contato.
+                </HelpTooltip>
+              </span>
               <Input
                 name="max_requests_per_contact_day"
                 type="number"
@@ -197,7 +198,13 @@ export function OnlineBookingSettings({
               />
             </label>
             <label className="grid gap-2 text-sm font-medium">
-              Bloquear apos faltas
+              <span className="inline-flex items-center gap-1">
+                Bloquear após faltas
+                <HelpTooltip>
+                  Quantidade de faltas nos últimos 180 dias que impede novas
+                  solicitações online. Use zero para não aplicar o bloqueio.
+                </HelpTooltip>
+              </span>
               <Input
                 name="max_no_shows_180_days"
                 type="number"
@@ -208,7 +215,13 @@ export function OnlineBookingSettings({
               />
             </label>
             <label className="grid gap-2 text-sm font-medium">
-              Validade do codigo (min)
+              <span className="inline-flex items-center gap-1">
+                Validade do código (min)
+                <HelpTooltip>
+                  Tempo disponível para o paciente concluir a verificação do
+                  contato.
+                </HelpTooltip>
+              </span>
               <Input
                 name="contact_verification_ttl_minutes"
                 type="number"
@@ -219,14 +232,14 @@ export function OnlineBookingSettings({
               />
             </label>
             <label className="grid gap-2 text-sm font-medium md:col-span-3">
-              Instrucoes publicas
+              Instruções públicas
               <Textarea
                 name="public_instructions"
                 defaultValue={settings.public_instructions ?? ""}
               />
             </label>
             <label className="grid gap-2 text-sm font-medium md:col-span-3">
-              Politica de cancelamento
+              Política de cancelamento
               <Textarea
                 name="cancellation_policy"
                 defaultValue={settings.cancellation_policy ?? ""}
@@ -235,8 +248,8 @@ export function OnlineBookingSettings({
 
             <div className="md:col-span-3">
               <SectionTitle
-                title="Perfil publico"
-                description="Dados exibidos na pagina de agendamento online."
+                title="Perfil público"
+                description="Dados exibidos na página de agendamento online."
               />
             </div>
             <label className="grid gap-2 text-sm font-medium">
@@ -351,11 +364,7 @@ export function OnlineBookingSettings({
               options={paymentMethods}
               selected={settings.accepted_payment_method_ids ?? []}
             />
-            {state.error ? (
-              <p className="text-sm text-destructive md:col-span-3">
-                {state.error}
-              </p>
-            ) : null}
+            <FormError message={state.error} className="md:col-span-3" />
             <div className="flex justify-end md:col-span-3">
               <Button type="submit" disabled={pending}>
                 {pending ? "Salvando..." : "Salvar agendamento online"}
@@ -368,6 +377,168 @@ export function OnlineBookingSettings({
       <ReviewsSettings reviews={reviews} />
     </div>
   );
+}
+
+function SchedulePublicationSummary({
+  schedules,
+}: {
+  schedules: OnlineBookingScheduleSummary[];
+}) {
+  const activeSchedules = schedules.filter((schedule) => schedule.active);
+  const enabledCount = activeSchedules.filter(
+    (schedule) => schedule.onlineEnabled,
+  ).length;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <CalendarDays className="size-5 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0">
+            <h2 className="font-semibold">Agendas publicadas</h2>
+            <p className="text-sm text-muted-foreground">
+              Disponibilidade, serviços e prazos são definidos em cada agenda.
+            </p>
+          </div>
+        </div>
+        <Badge variant={enabledCount ? "success" : "neutral"}>
+          {enabledCount} de {activeSchedules.length}
+        </Badge>
+      </CardHeader>
+      <CardContent className="py-4">
+        {activeSchedules.length ? (
+          <div className="divide-y divide-border rounded-lg border border-border">
+            {activeSchedules.map((schedule) => (
+              <div
+                key={schedule.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {schedule.name}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {schedule.onlineEnabled
+                      ? "Disponível no portal público"
+                      : "Não publicada no portal"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={schedule.onlineEnabled ? "success" : "neutral"}
+                  >
+                    {schedule.onlineEnabled ? "Publicada" : "Desativada"}
+                  </Badge>
+                  <Button asChild variant="secondary" size="sm">
+                    <Link href={`/configuracoes/agenda?agenda=${schedule.id}`}>
+                      Configurar
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-md border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+            Nenhuma agenda ativa foi cadastrada.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PublicBookingAccessCard({
+  publicPath,
+  enabled,
+}: {
+  publicPath: string;
+  enabled: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyPublicLink() {
+    const absoluteUrl = new URL(publicPath, window.location.origin).toString();
+    try {
+      await copyText(absoluteUrl);
+      setCopied(true);
+      toast.success("Link público copiado.");
+      window.setTimeout(() => setCopied(false), 2_000);
+    } catch {
+      toast.error("Não foi possível copiar o link neste navegador.");
+    }
+  }
+
+  return (
+    <Card className="border-primary/25 bg-primary-muted/30">
+      <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground shadow-[var(--shadow-soft)]">
+            <Link2 className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold">Página pública de agendamento</h2>
+              <Badge variant={enabled ? "success" : "neutral"}>
+                {enabled ? "Publicada" : "Desativada"}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Compartilhe este endereço para pacientes solicitarem horários.
+            </p>
+            <code className="mt-2 block max-w-full break-all rounded-md border border-border bg-card px-3 py-2 text-sm text-secondary-foreground">
+              {publicPath}
+            </code>
+            {!enabled ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Ative e salve o agendamento online antes de compartilhar o link.
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2 sm:pl-[3.25rem] lg:pl-0">
+          <Button type="button" variant="secondary" onClick={copyPublicLink}>
+            {copied ? (
+              <Check className="size-4" aria-hidden="true" />
+            ) : (
+              <Copy className="size-4" aria-hidden="true" />
+            )}
+            {copied ? "Copiado" : "Copiar link"}
+          </Button>
+          {enabled ? (
+            <Button asChild>
+              <a href={publicPath} target="_blank" rel="noreferrer">
+                <ExternalLink className="size-4" aria-hidden="true" />
+                Abrir página
+              </a>
+            </Button>
+          ) : (
+            <Button type="button" disabled>
+              <ExternalLink className="size-4" aria-hidden="true" />
+              Abrir página
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("copy_failed");
 }
 
 function SectionTitle({
@@ -487,10 +658,11 @@ function CreateReviewForm() {
       </label>
       <label className="grid gap-2 text-sm font-medium">
         Data
-        <Input
+        <DatePickerInput
           name="review_date"
-          type="date"
           defaultValue={new Date().toISOString().slice(0, 10)}
+          ariaLabel="Data da avaliação"
+          panelAlign="end"
           required
         />
       </label>

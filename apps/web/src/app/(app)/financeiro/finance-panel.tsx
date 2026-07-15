@@ -2,20 +2,25 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  useActionState,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import {
   Banknote,
   CircleDollarSign,
   CreditCard,
   FileText,
-  Plus,
   ReceiptText,
   WalletCards,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   createAccountPayable,
-  createPaymentMethod,
   payAccountPayable,
   payProfessionalPayout,
   receivePayment,
@@ -28,6 +33,8 @@ import { DataTable } from "@/components/ui/data-table";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
 import { ConfirmDialog, FormDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
+import { PageHeader } from "@/components/ui/page-header";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 export type PaymentMethodRow = {
@@ -86,11 +93,30 @@ export type FinanceSummary = {
   pendingPayout: number;
 };
 
+export type FinanceListPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
+type FinancePagination = {
+  receivables: FinanceListPagination;
+  payments: FinanceListPagination;
+  payables: FinanceListPagination;
+  payouts: FinanceListPagination;
+};
+
+type FinanceSectionPaginationProps = {
+  pagination: FinanceListPagination;
+  pending: boolean;
+  onPageChange: (page: number) => void;
+};
+
 type Permissions = {
   canReceive: boolean;
   canManagePayables: boolean;
-  canManagePaymentMethods: boolean;
   canViewCash: boolean;
+  canViewPayables: boolean;
   canViewPayouts: boolean;
 };
 
@@ -104,6 +130,7 @@ export function FinancePanel({
   payouts,
   paymentMethods,
   categories,
+  pagination,
   permissions,
 }: {
   summary: FinanceSummary;
@@ -113,184 +140,175 @@ export function FinancePanel({
   payouts: PayoutRow[];
   paymentMethods: PaymentMethodRow[];
   categories: FinancialCategoryRow[];
+  pagination: FinancePagination;
   permissions: Permissions;
 }) {
-  return (
-    <div className="grid gap-6">
-      <section>
-        <h1 className="text-xl font-semibold">Financeiro</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Recebimentos, contas a pagar, recibos e repasses profissionais.
-        </p>
-      </section>
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [navigationPending, startNavigation] = useTransition();
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <MetricCard
-          icon={CircleDollarSign}
-          label="A receber"
-          value={formatCurrency(summary.openReceivable)}
-          tone="success"
-        />
-        <MetricCard
-          icon={WalletCards}
-          label="Recebido no mês"
-          value={formatCurrency(summary.receivedMonth)}
-          tone="success"
-        />
-        <MetricCard
-          icon={ReceiptText}
-          label="A pagar"
-          value={formatCurrency(summary.openPayable)}
-          tone="destructive"
-        />
-        <MetricCard
-          icon={Banknote}
-          label="Repasses pendentes"
-          value={formatCurrency(summary.pendingPayout)}
-          tone="destructive"
-        />
-      </section>
+  function changePage(queryKey: string, section: string, nextPage: number) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("section", section);
+    if (nextPage <= 1) nextParams.delete(queryKey);
+    else nextParams.set(queryKey, String(nextPage));
 
-      {permissions.canViewCash || permissions.canManagePaymentMethods ? (
-        <PaymentMethodsSection
-          paymentMethods={paymentMethods}
-          canManage={permissions.canManagePaymentMethods}
-        />
-      ) : null}
+    startNavigation(() => {
+      router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+    });
+  }
 
-      {permissions.canViewCash ? (
-        <ReceivablesSection
-          receivables={receivables}
-          paymentMethods={paymentMethods}
-          canReceive={permissions.canReceive}
-        />
-      ) : null}
+  const tabs: TabItem[] = [
+    {
+      id: "visao-geral",
+      label: "Visão geral",
+      icon: <WalletCards />,
+      content: (
+        <div className="grid min-w-0 gap-6">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {permissions.canViewCash ? (
+              <>
+                <MetricCard
+                  icon={CircleDollarSign}
+                  label="A receber"
+                  value={formatCurrency(summary.openReceivable)}
+                  tone="success"
+                />
+                <MetricCard
+                  icon={WalletCards}
+                  label="Recebido no mês"
+                  value={formatCurrency(summary.receivedMonth)}
+                  tone="success"
+                />
+              </>
+            ) : null}
+            {permissions.canViewPayables ? (
+              <MetricCard
+                icon={ReceiptText}
+                label="A pagar"
+                value={formatCurrency(summary.openPayable)}
+                tone="destructive"
+              />
+            ) : null}
+            {permissions.canViewPayouts ? (
+              <MetricCard
+                icon={Banknote}
+                label="Repasses pendentes"
+                value={formatCurrency(summary.pendingPayout)}
+                tone="destructive"
+              />
+            ) : null}
+          </section>
+        </div>
+      ),
+    },
+  ];
 
-      {permissions.canViewCash ? <PaymentsSection payments={payments} /> : null}
+  if (permissions.canViewCash) {
+    tabs.push(
+      {
+        id: "a-receber",
+        label: "A receber",
+        icon: <CircleDollarSign />,
+        content: (
+          <ReceivablesSection
+            receivables={receivables}
+            paymentMethods={paymentMethods}
+            canReceive={permissions.canReceive}
+            pagination={pagination.receivables}
+            pending={navigationPending}
+            onPageChange={(page) =>
+              changePage("receivables_page", "a-receber", page)
+            }
+          />
+        ),
+      },
+      {
+        id: "pagamentos",
+        label: "Pagamentos",
+        icon: <CreditCard />,
+        content: (
+          <PaymentsSection
+            payments={payments}
+            pagination={pagination.payments}
+            pending={navigationPending}
+            onPageChange={(page) =>
+              changePage("payments_page", "pagamentos", page)
+            }
+          />
+        ),
+      },
+    );
+  }
 
-      {permissions.canManagePayables ? (
-        <Card>
-          <CardHeader>
-            <h2 className="font-semibold">Nova conta a pagar</h2>
-          </CardHeader>
-          <CardContent>
-            <CreatePayableForm categories={categories} />
-          </CardContent>
-        </Card>
-      ) : null}
+  if (permissions.canViewPayables) {
+    tabs.push({
+      id: "a-pagar",
+      label: "A pagar",
+      icon: <ReceiptText />,
+      content: (
+        <div className="grid min-w-0 gap-6">
+          {permissions.canManagePayables ? (
+            <Card>
+              <CardHeader>
+                <h2 className="font-semibold">Nova conta a pagar</h2>
+              </CardHeader>
+              <CardContent>
+                <CreatePayableForm categories={categories} />
+              </CardContent>
+            </Card>
+          ) : null}
+          <PayablesSection
+            payables={payables}
+            paymentMethods={paymentMethods}
+            canManage={permissions.canManagePayables}
+            pagination={pagination.payables}
+            pending={navigationPending}
+            onPageChange={(page) =>
+              changePage("payables_page", "a-pagar", page)
+            }
+          />
+        </div>
+      ),
+    });
+  }
 
-      {permissions.canManagePayables || permissions.canViewCash ? (
-        <PayablesSection
-          payables={payables}
-          paymentMethods={paymentMethods}
-          canManage={permissions.canManagePayables}
-        />
-      ) : null}
-
-      {permissions.canViewPayouts ? (
+  if (permissions.canViewPayouts) {
+    tabs.push({
+      id: "repasses",
+      label: "Repasses",
+      icon: <Banknote />,
+      content: (
         <PayoutsSection
           payouts={payouts}
           canManage={permissions.canManagePayables}
+          pagination={pagination.payouts}
+          pending={navigationPending}
+          onPageChange={(page) => changePage("payouts_page", "repasses", page)}
         />
-      ) : null}
-    </div>
-  );
-}
-
-function PaymentMethodsSection({
-  paymentMethods,
-  canManage,
-}: {
-  paymentMethods: PaymentMethodRow[];
-  canManage: boolean;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-        <div>
-          <h2 className="font-semibold">Formas de pagamento</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Cadastre as formas usadas na agenda, recebimentos e custos.
-          </p>
-        </div>
-        <Badge variant="primary">{paymentMethods.length} ativas</Badge>
-      </CardHeader>
-      <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="grid gap-2">
-          {paymentMethods.length ? (
-            paymentMethods.map((method) => (
-              <div
-                key={method.id}
-                className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">
-                    {method.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {paymentMethodTypeLabel(method.method_type)}
-                  </p>
-                </div>
-                <CreditCard
-                  className="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              </div>
-            ))
-          ) : (
-            <div className="rounded-md border border-dashed border-border bg-background p-4 text-sm text-muted-foreground">
-              Nenhuma forma de pagamento cadastrada.
-            </div>
-          )}
-        </div>
-        {canManage ? <CreatePaymentMethodForm /> : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function CreatePaymentMethodForm() {
-  const [state, action, pending] = useActionState(
-    createPaymentMethod,
-    initialState,
-  );
-
-  useEffect(() => {
-    if (state.success) toast.success(state.success);
-    if (state.error) toast.error(state.error);
-  }, [state]);
+      ),
+    });
+  }
 
   return (
-    <form
-      action={action}
-      className="grid gap-3 rounded-md border border-border bg-muted/20 p-4"
+    <div
+      className="grid min-w-0 gap-6"
+      aria-busy={navigationPending || undefined}
     >
-      <div>
-        <h3 className="text-sm font-semibold">Nova forma</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          A forma fica disponivel no agendamento.
-        </p>
-      </div>
-      <label className="grid gap-2 text-sm font-medium">
-        Nome
-        <Input name="name" placeholder="Pix, cartao, dinheiro..." required />
-      </label>
-      <label className="grid gap-2 text-sm font-medium">
-        Tipo
-        <Select name="method_type" defaultValue="pix">
-          <option value="pix">Pix</option>
-          <option value="cash">Dinheiro</option>
-          <option value="credit_card">Cartao de credito</option>
-          <option value="debit_card">Cartao de debito</option>
-          <option value="bank_transfer">Transferencia bancaria</option>
-          <option value="other">Outro</option>
-        </Select>
-      </label>
-      <Button type="submit" disabled={pending}>
-        <Plus className="size-4" aria-hidden="true" />
-        {pending ? "Salvando..." : "Cadastrar"}
-      </Button>
-    </form>
+      <PageHeader
+        icon={WalletCards}
+        title="Financeiro"
+        description="Recebimentos, contas a pagar, recibos e repasses profissionais."
+      />
+
+      <Tabs
+        ariaLabel="Seções do financeiro"
+        urlParam="section"
+        items={tabs}
+        contentClassName="min-h-[38rem]"
+      />
+    </div>
   );
 }
 
@@ -338,11 +356,14 @@ function ReceivablesSection({
   receivables,
   paymentMethods,
   canReceive,
+  pagination,
+  pending,
+  onPageChange,
 }: {
   receivables: ReceivableRow[];
   paymentMethods: PaymentMethodRow[];
   canReceive: boolean;
-}) {
+} & FinanceSectionPaginationProps) {
   const [target, setTarget] = useState<ReceivableRow | null>(null);
 
   const columns = useMemo<ColumnDef<ReceivableRow>[]>(
@@ -443,7 +464,9 @@ function ReceivablesSection({
       <DataTable
         columns={columns}
         data={receivables}
-        pageSize={8}
+        enableSorting={false}
+        pageSize={pagination.pageSize}
+        serverPagination={{ ...pagination, pending, onPageChange }}
         emptyTitle="Nenhuma conta a receber"
         emptyDescription="Cobranças geradas por consultas aparecerão aqui."
       />
@@ -459,7 +482,14 @@ function ReceivablesSection({
   );
 }
 
-function PaymentsSection({ payments }: { payments: PaymentRow[] }) {
+function PaymentsSection({
+  payments,
+  pagination,
+  pending,
+  onPageChange,
+}: {
+  payments: PaymentRow[];
+} & FinanceSectionPaginationProps) {
   const columns = useMemo<ColumnDef<PaymentRow>[]>(
     () => [
       {
@@ -515,7 +545,9 @@ function PaymentsSection({ payments }: { payments: PaymentRow[] }) {
       <DataTable
         columns={columns}
         data={payments}
-        pageSize={8}
+        enableSorting={false}
+        pageSize={pagination.pageSize}
+        serverPagination={{ ...pagination, pending, onPageChange }}
         emptyTitle="Nenhum recebimento registrado"
         emptyDescription="Pagamentos confirmados aparecerão aqui."
       />
@@ -527,11 +559,14 @@ function PayablesSection({
   payables,
   paymentMethods,
   canManage,
+  pagination,
+  pending,
+  onPageChange,
 }: {
   payables: PayableRow[];
   paymentMethods: PaymentMethodRow[];
   canManage: boolean;
-}) {
+} & FinanceSectionPaginationProps) {
   const [target, setTarget] = useState<PayableRow | null>(null);
 
   const columns = useMemo<ColumnDef<PayableRow>[]>(
@@ -596,7 +631,9 @@ function PayablesSection({
       <DataTable
         columns={columns}
         data={payables}
-        pageSize={8}
+        enableSorting={false}
+        pageSize={pagination.pageSize}
+        serverPagination={{ ...pagination, pending, onPageChange }}
         emptyTitle="Nenhuma conta a pagar"
         emptyDescription="Contas cadastradas manualmente aparecerão aqui."
       />
@@ -615,10 +652,13 @@ function PayablesSection({
 function PayoutsSection({
   payouts,
   canManage,
+  pagination,
+  pending,
+  onPageChange,
 }: {
   payouts: PayoutRow[];
   canManage: boolean;
-}) {
+} & FinanceSectionPaginationProps) {
   const [target, setTarget] = useState<PayoutRow | null>(null);
 
   const columns = useMemo<ColumnDef<PayoutRow>[]>(
@@ -676,7 +716,9 @@ function PayoutsSection({
       <DataTable
         columns={columns}
         data={payouts}
-        pageSize={8}
+        enableSorting={false}
+        pageSize={pagination.pageSize}
+        serverPagination={{ ...pagination, pending, onPageChange }}
         emptyTitle="Nenhum repasse encontrado"
         emptyDescription="Repasses gerados a partir de pagamentos aparecerão aqui."
       />
@@ -925,23 +967,6 @@ function formatCurrency(value: number) {
     style: "currency",
     currency: "BRL",
   }).format(Number(value) || 0);
-}
-
-function paymentMethodTypeLabel(value?: string) {
-  switch (value) {
-    case "cash":
-      return "Dinheiro";
-    case "pix":
-      return "Pix";
-    case "credit_card":
-      return "Cartao de credito";
-    case "debit_card":
-      return "Cartao de debito";
-    case "bank_transfer":
-      return "Transferencia bancaria";
-    default:
-      return "Outro";
-  }
 }
 
 function formatDate(value: string) {

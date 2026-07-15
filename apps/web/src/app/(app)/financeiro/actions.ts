@@ -32,44 +32,6 @@ function friendlyError(message: string) {
   return message;
 }
 
-export async function createPaymentMethod(
-  _state: FinanceActionState,
-  formData: FormData,
-): Promise<FinanceActionState> {
-  const context = await requireFinancePermission("financeiro.ver_geral");
-  if (!context?.organization) return { error: "Acesso negado." };
-
-  const parsed = z
-    .object({
-      name: z.string().trim().min(2).max(80),
-      method_type: z.enum([
-        "cash",
-        "pix",
-        "credit_card",
-        "debit_card",
-        "bank_transfer",
-        "other",
-      ]),
-    })
-    .safeParse(Object.fromEntries(formData));
-
-  if (!parsed.success) {
-    return { error: "Informe nome e tipo da forma de pagamento." };
-  }
-
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from("payment_methods").insert({
-    organization_id: context.organization.id,
-    name: parsed.data.name,
-    method_type: parsed.data.method_type,
-  });
-  if (error) return { error: friendlyError(error.message) };
-
-  revalidatePath("/financeiro");
-  revalidatePath("/agenda");
-  return { success: "Forma de pagamento cadastrada." };
-}
-
 export async function receivePayment(
   _state: FinanceActionState,
   formData: FormData,

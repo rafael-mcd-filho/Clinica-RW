@@ -1,170 +1,96 @@
-import Link from "next/link";
-import {
-  BarChart3,
-  CalendarDays,
-  FileDown,
-  FileSpreadsheet,
-  Filter,
-} from "lucide-react";
-import { ReportsPanel } from "./reports-panel";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input, Select } from "@/components/ui/field";
+import { redirect } from "next/navigation";
 import { requireCompanyPermission } from "@/lib/authz/guards";
-import {
-  buildPhase13ReportData,
-  createReportQueryString,
-  resolveReportFilters,
-  resolveReportPermissions,
-} from "@/lib/reports/phase13";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type RelatoriosPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+const reportPermissions = [
+  "relatorio.operacional",
+  "relatorio.financeiro",
+  "relatorio.clinico",
+];
+
 export default async function RelatoriosPage({
   searchParams,
 }: RelatoriosPageProps) {
-  const params = await searchParams;
-  const context = await requireCompanyPermission([
-    "relatorio.operacional",
-    "relatorio.financeiro",
-    "relatorio.clinico",
+  const [params, context] = await Promise.all([
+    searchParams ?? Promise.resolve({}),
+    requireCompanyPermission(reportPermissions),
   ]);
-  const filters = resolveReportFilters(params);
-  const permissions = resolveReportPermissions(context.permissionCodes);
-  const supabase = await createSupabaseServerClient();
-  const data = await buildPhase13ReportData({
-    filters,
-    organizationId: context.organization.id,
-    permissions,
-    supabase,
-  });
-  const xlsQuery = createReportQueryString(filters, { format: "xls" });
-  const pdfQuery = createReportQueryString(filters, { format: "pdf" });
+  const destination = resolveDestination(params, context.permissionCodes);
 
-  return (
-    <div className="grid gap-6">
-      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
-            <BarChart3 className="size-5" aria-hidden="true" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold">Relatorios</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              BI inicial com indicadores operacionais, financeiros, clinicos e
-              por profissional.
-            </p>
-          </div>
-        </div>
+  redirect(withSearchParams(destination, params));
+}
 
-        {permissions.operational || permissions.export ? (
-          <div className="flex flex-wrap gap-2">
-            {permissions.operational ? (
-              <Button asChild variant="secondary">
-                <Link href="/relatorios/agendamentos">
-                  <CalendarDays className="size-4" aria-hidden="true" />
-                  Resumo dos agendamentos
-                </Link>
-              </Button>
-            ) : null}
-            {permissions.export ? (
-              <>
-                <Button asChild variant="secondary">
-                  <Link href={`/relatorios/exportar?${xlsQuery}`}>
-                    <FileSpreadsheet className="size-4" aria-hidden="true" />
-                    Excel
-                  </Link>
-                </Button>
-                <Button asChild variant="secondary">
-                  <Link
-                    href={`/relatorios/exportar?${pdfQuery}`}
-                    target="_blank"
-                  >
-                    <FileDown className="size-4" aria-hidden="true" />
-                    PDF
-                  </Link>
-                </Button>
-              </>
-            ) : null}
-          </div>
-        ) : null}
-      </section>
+function resolveDestination(
+  params: Record<string, string | string[] | undefined>,
+  permissionCodes: Set<string>,
+) {
+  const requestedReport = firstValue(params.report);
+  const legacyDestination =
+    requestedReport === "operacional"
+      ? "/relatorios/atendimentos"
+      : requestedReport === "financeiro"
+        ? "/relatorios/financeiro"
+        : requestedReport === "clinico"
+          ? "/relatorios/clinico"
+          : requestedReport === "profissionais"
+            ? "/relatorios/profissionais"
+            : null;
 
-      <Card>
-        <CardContent>
-          <form className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <label className="grid gap-2 text-sm font-medium">
-              De
-              <Input name="from" type="date" defaultValue={filters.from} />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Ate
-              <Input name="to" type="date" defaultValue={filters.to} />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Profissional
-              <Select
-                name="professional_id"
-                defaultValue={filters.professionalId}
-              >
-                <option value="">Todos</option>
-                {data.options.professionals.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Unidade
-              <Select name="unit_id" defaultValue={filters.unitId}>
-                <option value="">Todas</option>
-                {data.options.units.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Convenio
-              <Select
-                name="health_insurance_id"
-                defaultValue={filters.healthInsuranceId}
-              >
-                <option value="">Todos</option>
-                {data.options.healthInsurances.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Procedimento
-              <Select name="procedure_id" defaultValue={filters.procedureId}>
-                <option value="">Todos</option>
-                {data.options.procedures.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <div className="flex items-end md:col-span-3 xl:col-span-6">
-              <Button type="submit">
-                <Filter className="size-4" aria-hidden="true" />
-                Aplicar filtros
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+  if (
+    legacyDestination &&
+    canAccessDestination(legacyDestination, permissionCodes)
+  ) {
+    return legacyDestination;
+  }
 
-      <ReportsPanel data={data} />
-    </div>
+  const available = [
+    permissionCodes.has("relatorio.operacional")
+      ? "/relatorios/atendimentos"
+      : null,
+    permissionCodes.has("relatorio.financeiro")
+      ? "/relatorios/financeiro"
+      : null,
+    permissionCodes.has("relatorio.clinico") ? "/relatorios/clinico" : null,
+  ].filter((href): href is string => Boolean(href));
+
+  return available.length === 1 ? available[0] : "/relatorios/visao-geral";
+}
+
+function canAccessDestination(href: string, permissionCodes: Set<string>) {
+  if (href === "/relatorios/atendimentos") {
+    return permissionCodes.has("relatorio.operacional");
+  }
+  if (href === "/relatorios/financeiro") {
+    return permissionCodes.has("relatorio.financeiro");
+  }
+  if (href === "/relatorios/clinico") {
+    return permissionCodes.has("relatorio.clinico");
+  }
+
+  return reportPermissions.some((permission) =>
+    permissionCodes.has(permission),
   );
+}
+
+function withSearchParams(
+  href: string,
+  params: Record<string, string | string[] | undefined>,
+) {
+  const query = new URLSearchParams();
+
+  for (const [key, input] of Object.entries(params)) {
+    if (key === "report" || input == null) continue;
+    const values = Array.isArray(input) ? input : [input];
+    for (const value of values) query.append(key, value);
+  }
+
+  const suffix = query.toString();
+  return suffix ? `${href}?${suffix}` : href;
+}
+
+function firstValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
 }

@@ -1,14 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowRight,
-  Building2,
-  Pin,
-  Search,
-  Settings,
-  Waypoints,
-} from "lucide-react";
+import { ArrowRight, Search, Waypoints } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 export type PanelRow = {
   id: string;
@@ -77,17 +71,15 @@ export function PanelsList({
             label="Ver painéis excluídos"
           />
         </div>
-        {action ? <div className="shrink-0 lg:ml-auto">{action}</div> : null}
+        {action && visiblePanels.length ? (
+          <div className="shrink-0 lg:ml-auto">{action}</div>
+        ) : null}
       </div>
 
       {visiblePanels.length ? (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visiblePanels.map((panel) => (
-            <PanelCard
-              key={panel.id}
-              panel={panel}
-              canConfigure={canConfigure}
-            />
+            <PanelCard key={panel.id} panel={panel} />
           ))}
         </section>
       ) : (
@@ -101,10 +93,26 @@ export function PanelsList({
             }
             description={
               panels.length
-                ? "Ajuste a busca ou habilite a visualizacao de paineis excluidos."
+                ? "Ajuste a busca ou habilite a visualização de painéis excluídos."
                 : canConfigure
                   ? "Crie o primeiro painel para acompanhar leads ou jornadas de pacientes."
-                  : "Peca a um administrador para criar o primeiro painel."
+                  : "Peça a um administrador para criar o primeiro painel."
+            }
+            actions={
+              panels.length ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setQuery("");
+                    setShowArchived(true);
+                  }}
+                >
+                  Mostrar todos
+                </Button>
+              ) : canConfigure ? (
+                action
+              ) : undefined
             }
           />
         </Card>
@@ -113,68 +121,46 @@ export function PanelsList({
   );
 }
 
-function PanelCard({
-  panel,
-  canConfigure,
-}: {
-  panel: PanelRow;
-  canConfigure: boolean;
-}) {
+function PanelCard({ panel }: { panel: PanelRow }) {
+  const activeCardsLabel = `${panel.activeCardCount} ${
+    panel.activeCardCount === 1 ? "card ativo" : "cards ativos"
+  }`;
+
   return (
-    <Card className="group overflow-hidden transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-border-strong hover:shadow-[var(--shadow-hover)]">
-      <CardContent className="grid min-h-[13.25rem] grid-rows-[1fr_auto] p-0">
-        <div className="grid gap-4 px-6 py-6">
+    <Card className="group h-full overflow-hidden transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-border-strong hover:shadow-[var(--shadow-hover)]">
+      <CardContent className="flex h-full min-h-[12rem] flex-col p-0">
+        <div className="flex flex-1 flex-col px-6 py-5">
           <div>
             <div className="flex items-start justify-between gap-3">
-              <h2 className="truncate text-heading-sm font-semibold text-foreground">
+              <h2 className="line-clamp-1 text-heading-sm font-semibold text-foreground">
                 {panel.name}
               </h2>
               {!panel.active ? (
                 <Badge
                   variant="neutral"
-                  className="h-5 px-1.5 text-caption font-semibold uppercase"
+                  className="h-5 shrink-0 px-1.5 text-caption font-semibold uppercase"
                 >
                   Excluído
                 </Badge>
               ) : null}
             </div>
-            {panel.description ? (
-              <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                {panel.description}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="h-px bg-border" />
-
-          <div className="flex min-w-0 items-center gap-2 text-body text-foreground">
-            <Building2
-              className="size-4 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <span className="truncate">Para toda a empresa</span>
+            <p
+              className={cn(
+                "mt-2 min-h-10 line-clamp-2 text-sm",
+                panel.description
+                  ? "text-muted-foreground"
+                  : "italic text-placeholder",
+              )}
+            >
+              {panel.description || "Sem descrição"}
+            </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-border bg-muted/40 px-6 py-4">
-          <div className="flex items-center gap-4 text-muted-foreground">
-            {canConfigure ? (
-              <Link
-                href={`/funis/${panel.id}`}
-                className="inline-flex size-9 items-center justify-center rounded-md transition-colors hover:bg-white hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                aria-label={`Configurar ${panel.name}`}
-                title="Configurar"
-              >
-                <Settings className="size-5" aria-hidden="true" />
-              </Link>
-            ) : null}
-            <span
-              className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground"
-              title={`${panel.activeCardCount} cards ativos`}
-            >
-              <Pin className="size-5" aria-hidden="true" />
-            </span>
-          </div>
+        <div className="flex min-h-16 items-center justify-between gap-3 border-t border-border bg-muted/40 px-6 py-3">
+          <span className="text-sm text-muted-foreground">
+            {activeCardsLabel}
+          </span>
 
           <Button asChild variant="secondary">
             <Link href={`/funis/${panel.id}`}>

@@ -53,9 +53,12 @@ export function PatientPhotoForm({
   }
 
   return (
-    <form action={formAction} className="grid justify-items-center gap-3">
+    <form
+      action={formAction}
+      className="grid min-w-0 justify-items-center gap-3"
+    >
       <div className="relative">
-        <div className="flex size-24 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-2xl font-semibold text-primary">
+        <div className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-heading-lg font-semibold text-primary sm:size-20 lg:size-24">
           {preview ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img

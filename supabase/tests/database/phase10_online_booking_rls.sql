@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(19);
 
 create temporary table phase10_test_results (result text not null) on commit drop;
 create temporary table phase10_ids (
@@ -147,6 +147,25 @@ set enabled = true,
     max_no_shows_180_days = 1
 where organization_id = 'a1000000-0000-0000-0000-000000000010';
 
+update public.schedule_online_booking_settings
+set enabled = true,
+    min_notice_hours = 0,
+    max_days_ahead = 60,
+    cancellation_notice_hours = 24
+where organization_id = 'a1000000-0000-0000-0000-000000000010'
+  and schedule_id = 'a1000000-0000-0000-0000-000000000070';
+
+insert into public.schedule_online_booking_procedures (
+  organization_id,
+  schedule_id,
+  procedure_id
+)
+values (
+  'a1000000-0000-0000-0000-000000000010',
+  'a1000000-0000-0000-0000-000000000070',
+  'a1000000-0000-0000-0000-000000000060'
+);
+
 insert into public.patients (
   id, organization_id, full_name, cpf, phone, whatsapp
 )
@@ -278,6 +297,53 @@ select throws_ok(
   'Online booking is blocked by recent no-show history.',
   'Public booking blocks recent no-show history'
 );
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  'a1000000-0000-0000-0000-000000000001',
+  true
+);
+
+update public.online_booking_settings
+set max_no_shows_180_days = 0
+where organization_id = 'a1000000-0000-0000-0000-000000000010';
+
+set local role anon;
+select set_config('request.jwt.claim.sub', '', true);
+
+insert into phase10_test_results (result)
+select lives_ok(
+  $$
+    select public.submit_online_booking_request(
+      'phase10-a',
+      'a1000000-0000-0000-0000-000000000070',
+      'a1000000-0000-0000-0000-000000000060',
+      ((current_date + 7)::timestamp + time '12:00') at time zone 'America/Fortaleza',
+      'Paciente Com Protecao Desativada',
+      'protecao.desativada@example.com',
+      '5584888888888',
+      '99999999999',
+      null,
+      null,
+      true
+    )
+  $$,
+  'Zero no-show threshold disables the protection instead of blocking everyone'
+);
+
+reset role;
+
+delete from public.online_booking_requests
+where organization_id = 'a1000000-0000-0000-0000-000000000010'
+  and patient_email = 'protecao.desativada@example.com';
+
+update public.online_booking_settings
+set max_no_shows_180_days = 1
+where organization_id = 'a1000000-0000-0000-0000-000000000010';
+
+set local role anon;
+select set_config('request.jwt.claim.sub', '', true);
 
 insert into phase10_test_results (result)
 select lives_ok(

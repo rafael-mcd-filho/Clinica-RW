@@ -1,9 +1,10 @@
 import type { CSSProperties } from "react";
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { IBM_Plex_Sans } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
-import { Providers } from "./providers";
+import { PerformanceMonitor } from "@/components/observability/performance-monitor";
 import { getPlatformSettings } from "@/lib/platform/settings";
 
 const plexSans = IBM_Plex_Sans({
@@ -44,7 +45,10 @@ export default async function RootLayout({
           } as CSSProperties
         }
       >
-        <Providers>{children}</Providers>
+        {children}
+        <Suspense fallback={null}>
+          <PerformanceMonitor />
+        </Suspense>
         <Toaster
           position="bottom-right"
           richColors

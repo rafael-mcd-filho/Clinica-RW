@@ -3,8 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getRequestContext } from "@/lib/auth/context";
+import {
+  removeOrganizationLogo,
+  uploadOrganizationLogo,
+} from "@/lib/storage/branding";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isValidCNPJ } from "@/lib/validation/br";
+import {
+  brazilianStateCodes,
+  isValidCEP,
+  isValidCNPJ,
+  isValidPhoneBR,
+} from "@/lib/validation/br";
 
 export type CompanyActionState = {
   error?: string;
@@ -155,7 +164,7 @@ const clinicSchema = z
     address_complement: optionalText,
     district: optionalText,
     city: optionalText,
-    state: optionalText,
+    state: z.enum(brazilianStateCodes).optional().or(z.literal("")),
     timezone: z.string().trim().min(1, "Informe o fuso horário."),
     locale: z.string().trim().min(1, "Informe o idioma."),
     automatic_mode: z.enum(["true", "false"]),
@@ -169,6 +178,20 @@ const clinicSchema = z
         message: "CNPJ da clínica inválido.",
       });
     }
+    if (data.phone && !isValidPhoneBR(data.phone)) {
+      context.addIssue({
+        code: "custom",
+        path: ["phone"],
+        message: "Telefone da clínica inválido.",
+      });
+    }
+    if (data.postal_code && !isValidCEP(data.postal_code)) {
+      context.addIssue({
+        code: "custom",
+        path: ["postal_code"],
+        message: "CEP da clínica inválido.",
+      });
+    }
   });
 
 const settingsTagSchema = z.object({
@@ -176,19 +199,61 @@ const settingsTagSchema = z.object({
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Cor inválida."),
 });
 
+const patientAutomationTriggerSchema = z.enum(
+  [
+    "new_patient",
+    "appointment_scheduled",
+    "first_visit",
+    "revenue_threshold",
+    "birthday",
+    "appointment_before",
+    "appointment_day",
+    "appointment_completed",
+  ],
+  { message: "Selecione um gatilho válido." },
+);
+
+const patientAutomationActionSchema = z.enum(["add_tag", "remove_tag"], {
+  message: "Selecione uma ação válida.",
+});
+
+const optionalAutomationDays = z.preprocess(
+  (value) => (value === "" || value == null ? undefined : value),
+  z.coerce
+    .number()
+    .int()
+    .min(1, "Informe ao menos 1 dia.")
+    .max(365, "O gatilho aceita no máximo 365 dias.")
+    .optional(),
+);
+
+const optionalAutomationScopeId = z.preprocess(
+  (value) => (value === "" || value == null ? undefined : value),
+  z.string().uuid("Selecione uma opção válida.").optional(),
+);
+
+const appointmentAutomationTriggers = new Set([
+  "appointment_scheduled",
+  "appointment_before",
+  "appointment_day",
+  "appointment_completed",
+  "first_visit",
+]);
+
 const patientTagRuleSchema = z
   .object({
     name: z.string().trim().min(2, "Informe o nome da regra."),
     tag_id: z.string().uuid("Selecione a tag."),
-    trigger_type: z.enum(
-      [
-        "new_patient",
-        "appointment_scheduled",
-        "first_visit",
-        "revenue_threshold",
-      ],
-      { message: "Selecione um gatilho válido." },
+    trigger_type: patientAutomationTriggerSchema,
+    action_type: z.preprocess(
+      (value) => (value === "" || value == null ? "add_tag" : value),
+      patientAutomationActionSchema,
     ),
+    // Aceitamos os dois nomes durante a transição da tela antiga.
+    offset_days: optionalAutomationDays,
+    days_offset: optionalAutomationDays,
+    schedule_id: optionalAutomationScopeId,
+    professional_id: optionalAutomationScopeId,
     duration_days: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z.coerce
@@ -200,10 +265,40 @@ const patientTagRuleSchema = z
     ),
     minimum_paid_amount: z.preprocess(
       decimalValue,
-      z.number().min(0, "O valor mínimo não pode ser negativo.").optional(),
+      z
+        .number()
+        .positive("O faturamento mínimo deve ser maior que zero.")
+        .optional(),
+    ),
+    active: z.preprocess(
+      (value) =>
+        value == null || value === ""
+          ? true
+          : value === true || value === "true" || value === "on",
+      z.boolean(),
     ),
   })
   .superRefine((data, context) => {
+    const offsetDays = data.offset_days ?? data.days_offset;
+
+    if (
+      data.offset_days != null &&
+      data.days_offset != null &&
+      data.offset_days !== data.days_offset
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["offset_days"],
+        message: "O prazo antes do agendamento está inconsistente.",
+      });
+    }
+    if (data.trigger_type === "appointment_before" && offsetDays == null) {
+      context.addIssue({
+        code: "custom",
+        path: ["offset_days"],
+        message: "Informe quantos dias antes do agendamento.",
+      });
+    }
     if (
       data.trigger_type === "revenue_threshold" &&
       data.minimum_paid_amount == null
@@ -212,6 +307,24 @@ const patientTagRuleSchema = z
         code: "custom",
         path: ["minimum_paid_amount"],
         message: "Informe o faturamento mínimo para esta regra.",
+      });
+    }
+    if (data.action_type === "remove_tag" && data.duration_days != null) {
+      context.addIssue({
+        code: "custom",
+        path: ["duration_days"],
+        message: "A duração se aplica apenas à ação de inserir tag.",
+      });
+    }
+    if (
+      (data.schedule_id || data.professional_id) &&
+      !appointmentAutomationTriggers.has(data.trigger_type)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["schedule_id"],
+        message:
+          "Os filtros de agenda e profissional se aplicam apenas a gatilhos de agendamento.",
       });
     }
   });
@@ -242,17 +355,34 @@ function nullifyEmptyValues(values: Record<string, unknown>) {
 }
 
 function friendlyDatabaseError(message: string) {
+  const normalizedMessage = message.toLowerCase();
+
   if (message.includes("duplicate key")) {
     return "Já existe um cadastro com estes dados.";
   }
   if (message.includes("foreign key")) {
     return "Um dos vínculos selecionados não pertence a esta empresa.";
   }
+  if (normalizedMessage.includes("support session")) {
+    return "A sessão de suporte expirou. Encerre o suporte e inicie uma nova sessão.";
+  }
+  if (
+    normalizedMessage.includes("insufficient permission") ||
+    normalizedMessage.includes("permission denied")
+  ) {
+    return "Seu perfil não possui permissão para realizar esta alteração.";
+  }
+  if (
+    normalizedMessage.includes("invalid patient automation") ||
+    normalizedMessage.includes("invalid automation")
+  ) {
+    return "Revise o gatilho e a ação configurados para esta automação.";
+  }
   return message;
 }
 
 function refreshCompanySettings() {
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/dashboard");
 }
 
@@ -272,8 +402,20 @@ export async function saveClinicSettings(
 
   const { timezone, locale, automatic_mode, manual_mode, ...clinic } =
     parsed.data;
-  const supabase = await createSupabaseServerClient();
   const organizationId = context.organization.id;
+  const uploadedLogo = await uploadOrganizationLogo(
+    formData.get("logo"),
+    organizationId,
+  );
+
+  if (uploadedLogo.error) {
+    return { error: uploadedLogo.error };
+  }
+
+  const removeLogo = formData.get("remove_logo") === "true";
+  const currentLogoUrl = context.organization.logo_url ?? null;
+  const logoUrl = uploadedLogo.url ?? (removeLogo ? null : currentLogoUrl);
+  const supabase = await createSupabaseServerClient();
 
   const [{ error: clinicError }, { error: settingsError }] = await Promise.all([
     supabase
@@ -291,6 +433,9 @@ export async function saveClinicSettings(
   ]);
 
   if (clinicError || settingsError) {
+    if (uploadedLogo.url) {
+      await removeOrganizationLogo(uploadedLogo.url, organizationId);
+    }
     return {
       error: friendlyDatabaseError(
         clinicError?.message ?? settingsError?.message ?? "Falha ao salvar.",
@@ -317,12 +462,20 @@ export async function saveClinicSettings(
       document: clinic.document || null,
       phone: clinic.phone || null,
       email: clinic.email || null,
+      logo_url: logoUrl,
       mode,
     })
     .eq("id", organizationId);
 
   if (organizationError) {
+    if (uploadedLogo.url) {
+      await removeOrganizationLogo(uploadedLogo.url, organizationId);
+    }
     return { error: friendlyDatabaseError(organizationError.message) };
+  }
+
+  if (currentLogoUrl && currentLogoUrl !== logoUrl) {
+    await removeOrganizationLogo(currentLogoUrl, organizationId);
   }
 
   await supabase.from("audit_logs").insert({
@@ -331,7 +484,11 @@ export async function saveClinicSettings(
     action: "organization.settings_updated",
     resource_type: "organization",
     resource_id: organizationId,
-    metadata: { mode, automatic_mode: automatic_mode === "true" },
+    metadata: {
+      mode,
+      automatic_mode: automatic_mode === "true",
+      logo_updated: logoUrl !== currentLogoUrl,
+    },
   });
 
   refreshCompanySettings();
@@ -394,9 +551,10 @@ export async function createSettingsTag(
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from("tags").insert({
-    organization_id: context.organization.id,
-    ...parsed.data,
+  const { error } = await supabase.rpc("create_patient_tag", {
+    p_name: parsed.data.name,
+    p_color: parsed.data.color,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
   });
 
   if (error) {
@@ -407,7 +565,7 @@ export async function createSettingsTag(
   return { success: "Tag criada." };
 }
 
-export async function createPatientTagRule(
+export async function createPatientAutomationRule(
   _previousState: CompanyActionState,
   formData: FormData,
 ): Promise<CompanyActionState> {
@@ -421,91 +579,170 @@ export async function createPatientTagRule(
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
-  const { minimum_paid_amount, trigger_type, ...data } = parsed.data;
-  const supabase = await createSupabaseServerClient();
-  const config =
-    trigger_type === "revenue_threshold"
-      ? { minimum_paid_amount }
-      : trigger_type === "first_visit"
-        ? { remove_on_first_finalized: true }
+  const {
+    action_type,
+    active,
+    days_offset,
+    duration_days,
+    minimum_paid_amount,
+    name,
+    offset_days,
+    professional_id,
+    schedule_id,
+    tag_id,
+    trigger_type,
+  } = parsed.data;
+  const daysBefore = offset_days ?? days_offset;
+  const triggerConfig: Record<string, number | string> =
+    trigger_type === "appointment_before"
+      ? { days_before: daysBefore! }
+      : trigger_type === "revenue_threshold"
+        ? { minimum_paid_amount: minimum_paid_amount! }
         : {};
-  const { data: rule, error } = await supabase
-    .from("patient_tag_rules")
-    .insert({
-      organization_id: context.organization.id,
-      ...data,
-      trigger_type,
-      duration_days: data.duration_days ?? null,
-      config,
-      active: true,
-    })
-    .select("id")
-    .single<{ id: string }>();
 
-  if (error || !rule) {
+  const supabase = await createSupabaseServerClient();
+  const [scheduleResult, professionalResult] = await Promise.all([
+    schedule_id
+      ? supabase
+          .from("schedules")
+          .select("id, professional_id")
+          .eq("id", schedule_id)
+          .eq("organization_id", context.organization.id)
+          .eq("active", true)
+          .maybeSingle<{ id: string; professional_id: string | null }>()
+      : Promise.resolve({ data: null, error: null }),
+    professional_id
+      ? supabase
+          .from("professionals")
+          .select("id")
+          .eq("id", professional_id)
+          .eq("organization_id", context.organization.id)
+          .eq("active", true)
+          .maybeSingle<{ id: string }>()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  if (schedule_id && (scheduleResult.error || !scheduleResult.data)) {
+    return { error: "A agenda selecionada não está disponível." };
+  }
+  if (
+    professional_id &&
+    (professionalResult.error || !professionalResult.data)
+  ) {
+    return { error: "O profissional selecionado não está disponível." };
+  }
+  if (
+    professional_id &&
+    scheduleResult.data &&
+    scheduleResult.data.professional_id !== professional_id
+  ) {
+    return { error: "A agenda não pertence ao profissional selecionado." };
+  }
+
+  if (schedule_id) {
+    triggerConfig.schedule_id = schedule_id;
+  }
+  if (professional_id) {
+    triggerConfig.professional_id = professional_id;
+  }
+
+  const actionConfig = {
+    tag_id,
+    duration_days: action_type === "add_tag" ? (duration_days ?? null) : null,
+  };
+  const { data: ruleId, error } = await supabase.rpc(
+    "create_patient_automation_rule",
+    {
+      p_name: name,
+      p_trigger_type: trigger_type,
+      p_trigger_config: triggerConfig,
+      p_action_type: action_type,
+      p_action_config: actionConfig,
+      p_active: active,
+      p_impersonation_session_id: context.impersonation?.id ?? null,
+    },
+  );
+
+  if (error || typeof ruleId !== "string") {
     return {
       error: friendlyDatabaseError(error?.message ?? "Falha ao criar regra."),
     };
   }
 
-  const { error: refreshError } = await supabase.rpc(
-    "refresh_patient_tag_rule",
-    { p_rule_id: rule.id },
-  );
-
-  if (refreshError) {
-    return {
-      error: friendlyDatabaseError(refreshError.message),
-    };
-  }
-
   refreshCompanySettings();
-  return { success: "Regra de tag criada." };
+  return { success: "Automação criada." };
 }
 
-export async function setPatientTagRuleActive(
+/** Compatibilidade com a tela anterior; novas telas podem usar o nome genérico. */
+export async function createPatientTagRule(
+  previousState: CompanyActionState,
+  formData: FormData,
+): Promise<CompanyActionState> {
+  return createPatientAutomationRule(previousState, formData);
+}
+
+export async function setPatientAutomationRuleActive(
   ruleId: string,
   active: boolean,
 ): Promise<void> {
   const context = await requireCompanyConfig();
-  if (!context?.organization) {
+  if (!context?.organization || !z.string().uuid().safeParse(ruleId).success) {
     return;
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
-    .from("patient_tag_rules")
-    .update({ active })
-    .eq("id", ruleId)
-    .eq("organization_id", context.organization.id);
-
-  if (!error) {
-    if (active) {
-      await supabase.rpc("refresh_patient_tag_rule", { p_rule_id: ruleId });
-    } else {
-      await supabase
-        .from("patient_tags")
-        .delete()
-        .eq("organization_id", context.organization.id)
-        .eq("automation_rule_id", ruleId);
-    }
-  }
+  await supabase.rpc("set_patient_automation_rule_active", {
+    p_rule_id: ruleId,
+    p_active: active,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
+  });
 
   refreshCompanySettings();
 }
 
-export async function deletePatientTagRule(ruleId: string): Promise<void> {
+/** Compatibilidade com a tela anterior; novas telas podem usar o nome genérico. */
+export async function setPatientTagRuleActive(
+  ruleId: string,
+  active: boolean,
+): Promise<void> {
+  return setPatientAutomationRuleActive(ruleId, active);
+}
+
+export async function deletePatientAutomationRule(
+  ruleId: string,
+): Promise<void> {
   const context = await requireCompanyConfig();
-  if (!context?.organization) {
+  if (!context?.organization || !z.string().uuid().safeParse(ruleId).success) {
     return;
   }
 
   const supabase = await createSupabaseServerClient();
-  await supabase
-    .from("patient_tag_rules")
-    .delete()
-    .eq("id", ruleId)
-    .eq("organization_id", context.organization.id);
+  await supabase.rpc("delete_patient_automation_rule", {
+    p_rule_id: ruleId,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
+  });
+
+  refreshCompanySettings();
+}
+
+/** Compatibilidade com a tela anterior; novas telas podem usar o nome genérico. */
+export async function deletePatientTagRule(ruleId: string): Promise<void> {
+  return deletePatientAutomationRule(ruleId);
+}
+
+export async function refreshPatientAutomationRule(
+  ruleId: string,
+): Promise<void> {
+  const context = await requireCompanyConfig();
+  if (!context?.organization || !z.string().uuid().safeParse(ruleId).success) {
+    return;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  await supabase.rpc("refresh_patient_automation_rule", {
+    p_rule_id: ruleId,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
+  });
 
   refreshCompanySettings();
 }
@@ -564,6 +801,8 @@ export async function saveBusinessHours(
     weekday: number;
     start_time: string;
     end_time: string;
+    lunch_start_time: string | null;
+    lunch_end_time: string | null;
     active: boolean;
   }> = [];
 
@@ -574,6 +813,13 @@ export async function saveBusinessHours(
 
     const startTime = String(formData.get(`start_${weekday}`) ?? "");
     const endTime = String(formData.get(`end_${weekday}`) ?? "");
+    const lunchEnabled = formData.get(`lunch_enabled_${weekday}`) === "on";
+    const lunchStartTime = lunchEnabled
+      ? String(formData.get(`lunch_start_${weekday}`) ?? "")
+      : null;
+    const lunchEndTime = lunchEnabled
+      ? String(formData.get(`lunch_end_${weekday}`) ?? "")
+      : null;
 
     if (
       !timePattern.test(startTime) ||
@@ -583,6 +829,22 @@ export async function saveBusinessHours(
       return { error: "Revise os horários de abertura e fechamento." };
     }
 
+    if (
+      lunchEnabled &&
+      (!lunchStartTime ||
+        !lunchEndTime ||
+        !timePattern.test(lunchStartTime) ||
+        !timePattern.test(lunchEndTime) ||
+        lunchStartTime <= startTime ||
+        lunchStartTime >= lunchEndTime ||
+        lunchEndTime >= endTime)
+    ) {
+      return {
+        error:
+          "Revise a pausa para almoço. Ela deve ficar dentro do horário de funcionamento.",
+      };
+    }
+
     hours.push({
       organization_id: context.organization.id,
       unit_id: null,
@@ -590,6 +852,8 @@ export async function saveBusinessHours(
       weekday,
       start_time: startTime,
       end_time: endTime,
+      lunch_start_time: lunchStartTime,
+      lunch_end_time: lunchEndTime,
       active: true,
     });
   }
@@ -601,11 +865,21 @@ export async function saveBusinessHours(
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.rpc("replace_clinic_business_hours", {
     p_organization_id: context.organization.id,
-    p_hours: hours.map(({ weekday, start_time, end_time }) => ({
-      weekday,
-      start_time,
-      end_time,
-    })),
+    p_hours: hours.map(
+      ({
+        weekday,
+        start_time,
+        end_time,
+        lunch_start_time,
+        lunch_end_time,
+      }) => ({
+        weekday,
+        start_time,
+        end_time,
+        lunch_start_time,
+        lunch_end_time,
+      }),
+    ),
   });
   if (error) {
     return { error: friendlyDatabaseError(error.message) };

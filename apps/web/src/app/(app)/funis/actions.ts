@@ -470,64 +470,67 @@ export type CardNoteEntry = {
   created_at: string;
 };
 
-export async function getCardTimeline(cardId: string): Promise<{
-  movements: CardTimelineEntry[];
-  notes: CardNoteEntry[];
-}> {
+export async function getCardMovements(
+  cardId: string,
+): Promise<CardTimelineEntry[]> {
   const context = await requireFunilPermission("funil.ver");
-  if (!context) return { movements: [], notes: [] };
+  if (!context) return [];
   const organizationId = context.organization.id;
 
   const supabase = await createSupabaseServerClient();
-  const [movementsResult, notesResult] = await Promise.all([
-    supabase
-      .from("funnel_card_movements")
-      .select(
-        "id, moved_at, note, from_stage:from_stage_id(name), to_stage:to_stage_id(name), moved_by:moved_by_user_id(name)",
-      )
-      .eq("organization_id", organizationId)
-      .eq("card_id", cardId)
-      .order("moved_at", { ascending: false })
-      .returns<
-        Array<{
-          id: string;
-          moved_at: string;
-          note: string | null;
-          from_stage: { name: string } | null;
-          to_stage: { name: string } | null;
-          moved_by: { name: string } | null;
-        }>
-      >(),
-    supabase
-      .from("funnel_card_notes")
-      .select("id, note, created_at, author:author_user_id(name)")
-      .eq("organization_id", organizationId)
-      .eq("card_id", cardId)
-      .order("created_at", { ascending: false })
-      .returns<
-        Array<{
-          id: string;
-          note: string;
-          created_at: string;
-          author: { name: string } | null;
-        }>
-      >(),
-  ]);
+  const movementsResult = await supabase
+    .from("funnel_card_movements")
+    .select(
+      "id, moved_at, note, from_stage:from_stage_id(name), to_stage:to_stage_id(name), moved_by:moved_by_user_id(name)",
+    )
+    .eq("organization_id", organizationId)
+    .eq("card_id", cardId)
+    .order("moved_at", { ascending: false })
+    .returns<
+      Array<{
+        id: string;
+        moved_at: string;
+        note: string | null;
+        from_stage: { name: string } | null;
+        to_stage: { name: string } | null;
+        moved_by: { name: string } | null;
+      }>
+    >();
 
-  return {
-    movements: (movementsResult.data ?? []).map((row) => ({
-      id: row.id,
-      from_stage_name: row.from_stage?.name ?? null,
-      to_stage_name: row.to_stage?.name ?? "—",
-      moved_by_name: row.moved_by?.name ?? null,
-      moved_at: row.moved_at,
-      note: row.note,
-    })),
-    notes: (notesResult.data ?? []).map((row) => ({
-      id: row.id,
-      author_name: row.author?.name ?? null,
-      note: row.note,
-      created_at: row.created_at,
-    })),
-  };
+  return (movementsResult.data ?? []).map((row) => ({
+    id: row.id,
+    from_stage_name: row.from_stage?.name ?? null,
+    to_stage_name: row.to_stage?.name ?? "—",
+    moved_by_name: row.moved_by?.name ?? null,
+    moved_at: row.moved_at,
+    note: row.note,
+  }));
+}
+
+export async function getCardNotes(cardId: string): Promise<CardNoteEntry[]> {
+  const context = await requireFunilPermission("funil.ver");
+  if (!context) return [];
+
+  const supabase = await createSupabaseServerClient();
+  const notesResult = await supabase
+    .from("funnel_card_notes")
+    .select("id, note, created_at, author:author_user_id(name)")
+    .eq("organization_id", context.organization.id)
+    .eq("card_id", cardId)
+    .order("created_at", { ascending: false })
+    .returns<
+      Array<{
+        id: string;
+        note: string;
+        created_at: string;
+        author: { name: string } | null;
+      }>
+    >();
+
+  return (notesResult.data ?? []).map((row) => ({
+    id: row.id,
+    author_name: row.author?.name ?? null,
+    note: row.note,
+    created_at: row.created_at,
+  }));
 }

@@ -2,7 +2,14 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import {
   Archive,
   ExternalLink,
@@ -51,6 +58,8 @@ export function PatientsTable({
   canArchive,
   canSeeSensitive,
   canViewClinicalRecords,
+  filters,
+  pagination,
 }: {
   patients: PatientListRow[];
   tags: PatientTagOption[];
@@ -59,47 +68,48 @@ export function PatientsTable({
   canArchive: boolean;
   canSeeSensitive: boolean;
   canViewClinicalRecords: boolean;
+  filters: {
+    query: string;
+    sort: "name" | "newest" | "oldest";
+    status: "active" | "archived" | "all";
+    tagId: string;
+  };
+  pagination: { page: number; pageSize: number; total: number };
 }) {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("active");
-  const [tagId, setTagId] = useState("all");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState(filters.query);
   const tagById = useMemo(
     () => new Map(tags.map((tag) => [tag.id, tag])),
     [tags],
   );
 
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase().replace(/\D/g, "");
-    const rawTerm = query.trim().toLowerCase();
+  const navigate = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams.toString());
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value || value === "all" || (key === "sort" && value === "name")) {
+          next.delete(key);
+        } else {
+          next.set(key, value);
+        }
+      });
+      startTransition(() => {
+        router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+      });
+    },
+    [pathname, router, searchParams],
+  );
 
-    return patients.filter((patient) => {
-      const archived = Boolean(patient.deleted_at);
-      if (status === "active" && archived) return false;
-      if (status === "archived" && !archived) return false;
-      if (tagId !== "all" && !patient.tagIds.includes(tagId)) return false;
-      if (!rawTerm) return true;
-
-      const textMatch = [
-        patient.full_name,
-        patient.social_name ?? "",
-        patient.email ?? "",
-        patient.source ?? "",
-        patient.id,
-        patient.lastProfessionalName ?? "",
-        patient.lastInsuranceName ?? "",
-        ...patient.tagIds.map((id) => tagById.get(id)?.name ?? ""),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(rawTerm);
-      const digitMatch = term
-        ? [patient.cpf ?? "", patient.phone ?? "", patient.whatsapp ?? ""]
-            .join(" ")
-            .includes(term)
-        : false;
-      return textMatch || digitMatch;
-    });
-  }, [patients, query, status, tagById, tagId]);
+  useEffect(() => {
+    if (query.trim() === filters.query) return;
+    const timeout = window.setTimeout(() => {
+      navigate({ page: null, q: query.trim() || null });
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [filters.query, navigate, query]);
 
   const columns = useMemo<ColumnDef<PatientListRow>[]>(
     () => [
@@ -257,7 +267,9 @@ export function PatientsTable({
                   variant="ghost"
                   aria-label="Abrir atendimento"
                 >
-                  <Link href={`/prontuario/${patient.lastEncounterId}`}>
+                  <Link
+                    href={`/prontuario/${patient.lastEncounterId}?from=pacientes`}
+                  >
                     <FileText className="size-4" aria-hidden />
                   </Link>
                 </Button>
@@ -290,8 +302,82 @@ export function PatientsTable({
     [canArchive, canViewClinicalRecords, tagById],
   );
 
+  function renderMobilePatient(patient: PatientListRow) {
+    const displayName = patient.social_name || patient.full_name;
+    const archived = Boolean(patient.deleted_at);
+    const visibleTags = patient.tagIds
+      .map((id) => tagById.get(id))
+      .filter((tag): tag is PatientTagOption => Boolean(tag))
+      .slice(0, 3);
+
+    return (
+      <article className="grid gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-xs font-semibold text-primary">
+            {initialsFromName(displayName)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <Link
+              href={`/pacientes/${patient.id}`}
+              className="block truncate font-semibold hover:text-primary"
+            >
+              {displayName}
+            </Link>
+            <p className="truncate text-xs text-muted-foreground">
+              {patient.phone || patient.whatsapp
+                ? formatPhoneBR(patient.phone || patient.whatsapp || "")
+                : "Sem telefone"}
+            </p>
+          </div>
+          {archived ? <Badge variant="neutral">Arquivado</Badge> : null}
+        </div>
+        {visibleTags.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {visibleTags.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex h-5 max-w-28 items-center rounded px-1.5 text-caption font-semibold uppercase text-white"
+                style={{ backgroundColor: tag.color }}
+              >
+                <span className="truncate">{tag.name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <dl className="grid grid-cols-2 gap-3 rounded-md bg-muted/40 p-3 text-xs">
+          <div>
+            <dt className="text-muted-foreground">Nascimento</dt>
+            <dd className="mt-0.5 font-medium">
+              {patient.birth_date ? formatDate(patient.birth_date) : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Último atendimento</dt>
+            <dd className="mt-0.5 font-medium">
+              {patient.lastEncounterAt
+                ? formatDate(patient.lastEncounterAt)
+                : "—"}
+            </dd>
+          </div>
+        </dl>
+        <div className="flex justify-end gap-2">
+          <Button asChild size="sm" variant="secondary">
+            <Link href={`/pacientes/${patient.id}`}>Abrir paciente</Link>
+          </Button>
+          {canArchive ? (
+            <form action={setPatientArchived.bind(null, patient.id, !archived)}>
+              <Button type="submit" size="sm" variant="ghost">
+                {archived ? "Restaurar" : "Arquivar"}
+              </Button>
+            </form>
+          ) : null}
+        </div>
+      </article>
+    );
+  }
+
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4" aria-busy={pending}>
       <section className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative flex-1">
           <Search
@@ -311,8 +397,11 @@ export function PatientsTable({
           />
         </div>
         <Select
-          value={status}
-          onValueChange={setStatus}
+          value={filters.status}
+          onValueChange={(value) => {
+            const next = value as typeof filters.status;
+            navigate({ page: null, status: next });
+          }}
           aria-label="Filtrar status"
           className="lg:w-44"
         >
@@ -321,8 +410,10 @@ export function PatientsTable({
           <option value="all">Todos</option>
         </Select>
         <Select
-          value={tagId}
-          onValueChange={setTagId}
+          value={filters.tagId}
+          onValueChange={(value) => {
+            navigate({ page: null, tag: value });
+          }}
           aria-label="Filtrar tag"
           className="lg:w-48"
         >
@@ -332,6 +423,19 @@ export function PatientsTable({
               {tag.name}
             </option>
           ))}
+        </Select>
+        <Select
+          value={filters.sort}
+          onValueChange={(value) => {
+            const next = value as typeof filters.sort;
+            navigate({ page: null, sort: next });
+          }}
+          aria-label="Ordenar pacientes"
+          className="lg:w-44"
+        >
+          <option value="name">Nome A–Z</option>
+          <option value="newest">Mais recentes</option>
+          <option value="oldest">Mais antigos</option>
         </Select>
         {canCreate ? (
           <Button asChild>
@@ -346,13 +450,23 @@ export function PatientsTable({
         <div className="rounded-lg border border-border bg-card px-5 py-8 text-sm text-destructive">
           {error}
         </div>
-      ) : patients.length ? (
+      ) : patients.length ||
+        filters.query ||
+        filters.status !== "active" ||
+        filters.tagId !== "all" ? (
         <DataTable
           columns={columns}
-          data={filtered}
+          data={patients}
+          enableSorting={false}
           emptyTitle="Nenhum paciente encontrado"
           emptyDescription="Ajuste a busca ou os filtros."
-          pageSize={12}
+          pageSize={pagination.pageSize}
+          renderMobileRow={renderMobilePatient}
+          serverPagination={{
+            ...pagination,
+            pending,
+            onPageChange: (page) => navigate({ page: String(page) }),
+          }}
         />
       ) : (
         <div className="rounded-lg border border-border bg-card px-5 py-12 text-center shadow-[var(--shadow-soft)]">
