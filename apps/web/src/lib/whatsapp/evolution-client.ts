@@ -88,8 +88,8 @@ export async function sendMediaMessage(input: {
   mediaType: "image" | "video" | "document" | "audio";
   caption?: string;
   fileName?: string;
-}): Promise<SendResult> {
-  const config = getEvolutionConfig();
+}, providedConfig?: EvolutionConfig): Promise<SendResult> {
+  const config = providedConfig ?? getEvolutionConfig();
   const payload = await evolutionFetch(
     `/message/sendMedia/${config.instance}`,
     {
@@ -101,7 +101,7 @@ export async function sendMediaMessage(input: {
         caption: input.caption,
         fileName: input.fileName,
       }),
-    },
+    }, config,
   );
   return { waMessageId: extractMessageId(payload), raw: payload };
 }

@@ -2,6 +2,7 @@ import { AttendanceInbox } from "./attendance-inbox";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
+import { createPatientPhotoSignedUrl } from "@/lib/storage/patient-photos";
 import type {
   ConversationListItem,
   ConversationStatus,
@@ -119,11 +120,11 @@ export default async function AtendimentoPage() {
     patientIds.length
       ? supabase
           .from("patients")
-          .select("id, full_name, social_name")
+          .select("id, full_name, social_name, photo_path")
           .eq("organization_id", organizationId)
           .in("id", patientIds)
           .returns<
-            { id: string; full_name: string; social_name: string | null }[]
+            { id: string; full_name: string; social_name: string | null; photo_path: string | null }[]
           >()
       : Promise.resolve({ data: [] }),
     assignedUserIds.length
@@ -137,6 +138,14 @@ export default async function AtendimentoPage() {
   ]);
 
   const patientById = new Map((patients ?? []).map((p) => [p.id, p]));
+  const photoByPatientId = new Map(
+    await Promise.all(
+      (patients ?? []).map(async (patient) => [
+        patient.id,
+        await createPatientPhotoSignedUrl(patient.photo_path),
+      ] as const),
+    ),
+  );
   const userById = new Map((assignedUsers ?? []).map((u) => [u.id, u]));
   const tagById = new Map((tagRows ?? []).map((t) => [t.id, t]));
   const tagsByConversation = new Map<string, ConversationTagView[]>();
@@ -159,6 +168,9 @@ export default async function AtendimentoPage() {
       contactId: row.contact_id,
       contactName: contact?.wa_name || contact?.phone || "Contato",
       contactPhone: contact?.phone ?? "",
+      contactPhotoUrl: contact?.patient_id
+        ? (photoByPatientId.get(contact.patient_id) ?? null)
+        : null,
       patientId: contact?.patient_id ?? null,
       patientName: patient ? patient.social_name || patient.full_name : null,
       assignedUserId: row.assigned_user_id,

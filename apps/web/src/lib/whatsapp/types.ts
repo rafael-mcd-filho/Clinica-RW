@@ -36,6 +36,7 @@ export type ConversationListItem = {
   contactId: string;
   contactName: string;
   contactPhone: string;
+  contactPhotoUrl: string | null;
   patientId: string | null;
   patientName: string | null;
   assignedUserId: string | null;
@@ -59,6 +60,8 @@ export type ConversationMessage = {
   aiSuggested: boolean;
   senderUserName: string | null;
   createdAt: string;
+  waMessageId?: string | null;
+  sentAt?: string | null;
 };
 
 export type AttendanceInstance = {

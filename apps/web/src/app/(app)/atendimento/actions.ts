@@ -3,7 +3,7 @@
 import { getRequestContext } from "@/lib/auth/context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { draftReply } from "@/lib/whatsapp/ai-draft";
-import { sendTextMessage } from "@/lib/whatsapp/evolution-client";
+import { sendMediaMessage, sendTextMessage } from "@/lib/whatsapp/evolution-client";
 import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest";
 import {
@@ -180,8 +180,63 @@ export async function sendMessageAction(
       aiSuggested: false,
       senderUserName: null,
       createdAt: storedMessage.created_at,
+      waMessageId,
+      sentAt: nowIso,
     },
   };
+}
+
+export async function sendMediaMessageAction(formData: FormData): Promise<AttendanceResult> {
+  const auth = await requireAttendant();
+  if (!auth) return { ok: false, error: "Acesso negado." };
+  const conversationId = String(formData.get("conversation_id") ?? "");
+  const file = formData.get("file");
+  if (!conversationId || !(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Selecione um arquivo para enviar." };
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return { ok: false, error: "O arquivo deve ter no máximo 10 MB." };
+  }
+  const mediaType = file.type.startsWith("image/")
+    ? "image"
+    : file.type.startsWith("audio/")
+      ? "audio"
+      : "document";
+  const evolutionConfig = await getOrganizationEvolutionConfig(auth.organizationId);
+  if (!evolutionConfig) return { ok: false, error: "Integração do WhatsApp não configurada." };
+  const supabase = await createSupabaseServerClient();
+  const context = await loadConversationContext(supabase, auth.organizationId, conversationId);
+  if (!context) return { ok: false, error: "Conversa não encontrada." };
+  const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+  let waMessageId: string | null = null;
+  try {
+    const result = await sendMediaMessage({
+      phone: context.phone,
+      mediaUrl: `data:${file.type || "application/octet-stream"};base64,${base64}`,
+      mediaType,
+      fileName: file.name,
+      caption: String(formData.get("caption") ?? "").trim() || undefined,
+    }, evolutionConfig);
+    waMessageId = result.waMessageId;
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Falha ao enviar arquivo." };
+  }
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase.from("whatsapp_messages").insert({
+    organization_id: auth.organizationId,
+    conversation_id: conversationId,
+    wa_message_id: waMessageId,
+    direction: "outbound",
+    sender_user_id: auth.userId,
+    message_type: mediaType,
+    body: file.name,
+    media_mime_type: file.type || null,
+    status: "sent",
+    sent_at: nowIso,
+  }).select("id, created_at").single<{ id: string; created_at: string }>();
+  if (error || !data) return { ok: false, error: error?.message ?? "Arquivo enviado, mas não registrado." };
+  await supabase.from("whatsapp_conversations").update({ status: "open", last_message_at: nowIso, last_message_preview: toMessagePreview(mediaType, file.name) }).eq("organization_id", auth.organizationId).eq("id", conversationId);
+  return { ok: true, message: { id: data.id, direction: "outbound", type: mediaType, body: file.name, mediaUrl: null, mediaMimeType: file.type || null, status: "sent", aiSuggested: false, senderUserName: null, createdAt: data.created_at, waMessageId, sentAt: nowIso } };
 }
 
 export async function assignToMeAction(

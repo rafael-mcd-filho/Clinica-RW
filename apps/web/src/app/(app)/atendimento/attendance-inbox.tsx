@@ -1,14 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import {
   CheckCheck,
+  Archive,
   Inbox,
   MessagesSquare,
-  PanelRightClose,
-  PanelRightOpen,
+  MoreVertical,
+  Mic,
+  Paperclip,
   Search,
   Send,
+  Smile,
+  Square,
   Sparkles,
   Tag as TagIcon,
   UserRound,
@@ -28,6 +33,7 @@ import type { QuickReplyTemplate } from "./page";
 import {
   assignToMeAction,
   markConversationReadAction,
+  sendMediaMessageAction,
   sendMessageAction,
   setConversationStatusAction,
   setConversationTagAction,
@@ -35,6 +41,7 @@ import {
 } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { Input, Textarea } from "@/components/ui/field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type {
@@ -48,10 +55,19 @@ import type {
 import { conversationStatusLabels } from "@/lib/whatsapp/types";
 import { cn } from "@/lib/utils";
 
-const tabs: ConversationStatus[] = ["pending", "open", "resolved"];
+type InboxView = "new" | "mine" | "others" | "resolved";
+const tabs: InboxView[] = ["new", "mine", "others"];
+const tabLabels: Record<InboxView, string> = {
+  new: "Novos",
+  mine: "Meus",
+  others: "Outros",
+  resolved: "Concluídos",
+};
 
 type MessageRow = {
   id: string;
+  conversation_id: string;
+  wa_message_id: string | null;
   direction: "inbound" | "outbound";
   message_type: MessageType;
   body: string | null;
@@ -61,6 +77,7 @@ type MessageRow = {
   ai_suggested: boolean;
   sender_user_id: string | null;
   created_at: string;
+  sent_at: string | null;
 };
 
 export function AttendanceInbox({
@@ -85,7 +102,7 @@ export function AttendanceInbox({
   instance: AttendanceInstance | null;
 }) {
   const [conversations, setConversations] = useState(initialConversations);
-  const [tab, setTab] = useState<ConversationStatus>("pending");
+  const [tab, setTab] = useState<InboxView>("new");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -99,19 +116,25 @@ export function AttendanceInbox({
   );
 
   const counts = useMemo(() => {
-    const base: Record<ConversationStatus, number> = {
-      pending: 0,
-      open: 0,
-      resolved: 0,
-    };
-    for (const item of conversations) base[item.status] += 1;
+    const base: Record<InboxView, number> = { new: 0, mine: 0, others: 0, resolved: 0 };
+    for (const item of conversations) {
+      if (item.status === "pending") base.new += 1;
+      else if (item.status === "resolved") base.resolved += 1;
+      else if (item.assignedUserId === currentUserId) base.mine += 1;
+      else base.others += 1;
+    }
     return base;
-  }, [conversations]);
+  }, [conversations, currentUserId]);
 
   const visibleConversations = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return conversations
-      .filter((item) => item.status === tab)
+      .filter((item) => {
+        if (tab === "new") return item.status === "pending";
+        if (tab === "resolved") return item.status === "resolved";
+        if (tab === "mine") return item.status === "open" && item.assignedUserId === currentUserId;
+        return item.status === "open" && item.assignedUserId !== currentUserId;
+      })
       .filter((item) =>
         normalized
           ? [item.contactName, item.patientName ?? "", item.contactPhone]
@@ -120,7 +143,7 @@ export function AttendanceInbox({
               .includes(normalized)
           : true,
       );
-  }, [conversations, tab, query]);
+  }, [conversations, currentUserId, tab, query]);
 
   const upsertConversation = useCallback(
     (partial: Partial<ConversationListItem> & { id: string }) => {
@@ -201,7 +224,7 @@ export function AttendanceInbox({
     const { data } = await supabaseRef.current
       .from("whatsapp_messages")
       .select(
-        "id, direction, message_type, body, media_url, media_mime_type, status, ai_suggested, sender_user_id, created_at",
+        "id, conversation_id, wa_message_id, direction, message_type, body, media_url, media_mime_type, status, ai_suggested, sender_user_id, created_at, sent_at",
       )
       .eq("organization_id", organizationId)
       .eq("conversation_id", id)
@@ -270,7 +293,6 @@ export function AttendanceInbox({
           messages={messages}
           canAttend={canAttend}
           quickReplies={quickReplies}
-          detailsOpen={detailsOpen}
           onToggleDetails={() => setDetailsOpen((value) => !value)}
           onOptimisticMessage={addOptimisticMessage}
           onMessageConfirmed={confirmOptimisticMessage}
@@ -324,9 +346,9 @@ function ConversationListColumn({
   instance,
   evolutionReady,
 }: {
-  tab: ConversationStatus;
-  counts: Record<ConversationStatus, number>;
-  onTabChange: (tab: ConversationStatus) => void;
+  tab: InboxView;
+  counts: Record<InboxView, number>;
+  onTabChange: (tab: InboxView) => void;
   query: string;
   onQueryChange: (value: string) => void;
   conversations: ConversationListItem[];
@@ -351,6 +373,22 @@ function ConversationListColumn({
           {instance?.phoneNumber ??
             (evolutionReady ? "Aguardando conexão" : "Não configurado")}
         </span>
+        <Button
+          type="button"
+          variant={tab === "resolved" ? "secondary" : "ghost"}
+          size="icon-sm"
+          onClick={() => onTabChange("resolved")}
+          aria-label={`Concluídos (${counts.resolved})`}
+          title="Concluídos"
+          className="relative"
+        >
+          <Archive className="size-4" />
+          {counts.resolved > 0 ? (
+            <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
+              {counts.resolved}
+            </span>
+          ) : null}
+        </Button>
       </div>
       <div className="border-b border-border p-3">
         <label className="relative block">
@@ -381,7 +419,7 @@ function ConversationListColumn({
                   : "",
               )}
             >
-              {conversationStatusLabels[item]}
+              {tabLabels[item]}
               {counts[item] > 0 ? (
                 <span className="tabular-nums text-muted-foreground">
                   {counts[item]}
@@ -441,9 +479,7 @@ function ConversationRow({
         active ? "border-l-2 border-primary bg-primary-muted pl-2.5 hover:bg-primary-muted" : "",
       )}
     >
-      <span className="row-span-3 flex size-10 items-center justify-center rounded-full bg-primary-muted text-sm font-semibold text-primary">
-        {initials(item.contactName)}
-      </span>
+      <ContactAvatar name={item.contactName} photoUrl={item.contactPhotoUrl} />
       <span className="truncate text-body-sm font-semibold text-foreground">
         {item.contactName}
       </span>
@@ -487,7 +523,6 @@ function ConversationThread({
   messages,
   canAttend,
   quickReplies,
-  detailsOpen,
   onToggleDetails,
   onOptimisticMessage,
   onMessageConfirmed,
@@ -498,7 +533,6 @@ function ConversationThread({
   messages: ConversationMessage[];
   canAttend: boolean;
   quickReplies: QuickReplyTemplate[];
-  detailsOpen: boolean;
   onToggleDetails: () => void;
   onOptimisticMessage: (message: ConversationMessage) => void;
   onMessageConfirmed: (tempId: string, message: ConversationMessage) => void;
@@ -526,10 +560,9 @@ function ConversationThread({
   return (
     <section className="flex min-h-0 flex-col overflow-hidden bg-card">
       <header className="flex min-h-16 items-center justify-between gap-3 border-b border-border px-4 py-2">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-sm font-semibold text-primary">
-            {initials(conversation.contactName)}
-          </div>
+        <div className="flex min-w-0 items-center gap-2">
+          <ContactAvatar name={conversation.contactName} photoUrl={conversation.contactPhotoUrl} enlargeable />
+          <button type="button" onClick={onToggleDetails} className="min-w-0 rounded-lg p-1.5 text-left hover:bg-muted/70">
           <div className="min-w-0">
           <p className="truncate text-body-sm font-semibold">
             {conversation.contactName}
@@ -538,6 +571,7 @@ function ConversationThread({
             {formatPhone(conversation.contactPhone)}
           </p>
           </div>
+          </button>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Badge variant="neutral" className="hidden sm:inline-flex">
@@ -569,16 +603,6 @@ function ConversationThread({
             )}
             </>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onToggleDetails}
-            aria-label={detailsOpen ? "Ocultar detalhes" : "Mostrar detalhes"}
-            title={detailsOpen ? "Ocultar detalhes" : "Mostrar detalhes"}
-          >
-            {detailsOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
-          </Button>
         </div>
       </header>
 
@@ -616,6 +640,7 @@ function ConversationThread({
 
 function MessageBubble({ message }: { message: ConversationMessage }) {
   const outbound = message.direction === "outbound";
+  const [detailsOpen, setDetailsOpen] = useState(false);
   return (
     <div className={cn("flex", outbound ? "justify-end" : "justify-start")}>
       <div
@@ -626,11 +651,16 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
             : "rounded-bl-sm border border-border bg-card text-foreground",
         )}
       >
+        <div className="flex items-start gap-2">
         {message.body ? (
           <p className="whitespace-pre-wrap break-words">{message.body}</p>
         ) : (
           <p className="italic opacity-80">{labelForType(message.type)}</p>
         )}
+        <button type="button" onClick={() => setDetailsOpen(true)} className="-mr-1 -mt-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-black/5" aria-label="Detalhes da mensagem">
+          <MoreVertical className="size-3.5" />
+        </button>
+        </div>
         <p
           className={cn(
             "mt-1 flex items-center justify-end gap-1 text-caption tabular-nums",
@@ -644,6 +674,17 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
             <CheckCheck className="size-3.5" aria-hidden="true" />
           ) : null}
         </p>
+        <Modal open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Detalhes da mensagem" className="max-w-md">
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            <MessageDetail label="Direção" value={outbound ? "Enviada" : "Recebida"} />
+            <MessageDetail label="Status" value={messageStatusLabel(message.status)} />
+            <MessageDetail label="Criada" value={formatMessageDateTime(message.createdAt)} />
+            <MessageDetail label="Enviada" value={formatMessageDateTime(message.sentAt)} />
+            <MessageDetail label="Tipo" value={labelForType(message.type)} />
+            <MessageDetail label="Origem" value={outbound ? "Usuário" : "Contato"} />
+            <div className="col-span-2"><MessageDetail label="ID da mensagem" value={message.waMessageId ?? message.id} /></div>
+          </dl>
+        </Modal>
       </div>
     </div>
   );
@@ -666,6 +707,11 @@ function MessageComposer({
   const [sending, setSending] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showEmojis, setShowEmojis] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   async function send() {
     const value = text.trim();
@@ -707,6 +753,45 @@ function MessageComposer({
     }
   }
 
+  async function sendAttachment(file: File) {
+    const tempId = `optimistic-${crypto.randomUUID()}`;
+    const type: MessageType = file.type.startsWith("image/") ? "image" : file.type.startsWith("audio/") ? "audio" : "document";
+    onOptimisticMessage({ id: tempId, direction: "outbound", type, body: file.name, mediaUrl: null, mediaMimeType: file.type || null, status: "queued", aiSuggested: false, senderUserName: null, createdAt: new Date().toISOString() });
+    const data = new FormData();
+    data.set("conversation_id", conversationId);
+    data.set("file", file);
+    const result = await sendMediaMessageAction(data);
+    if (result.ok && result.message) onMessageConfirmed(tempId, result.message);
+    else {
+      onMessageFailed(tempId);
+      toast.error(result.error ?? "Falha ao enviar arquivo.");
+    }
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      recorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (event) => event.data.size && audioChunksRef.current.push(event.data);
+      recorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        void sendAttachment(new File([blob], `audio-${Date.now()}.webm`, { type: blob.type }));
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      toast.error("Não foi possível acessar o microfone.");
+    }
+  }
+
   return (
     <div className="border-t border-border bg-card px-3 py-2.5">
       {showTemplates && quickReplies.length ? (
@@ -727,7 +812,17 @@ function MessageComposer({
           ))}
         </div>
       ) : null}
+      {showEmojis ? (
+        <div className="mb-2 flex flex-wrap gap-1 rounded-lg border border-border bg-popover p-2 shadow-sm">
+          {["😀", "😂", "😊", "😍", "🙏", "👍", "❤️", "🎉", "✅", "📅", "👋", "🤝"].map((emoji) => (
+            <button key={emoji} type="button" onClick={() => setText((value) => `${value}${emoji}`)} className="rounded p-1.5 text-xl hover:bg-muted">{emoji}</button>
+          ))}
+        </div>
+      ) : null}
       <div className="flex items-end gap-2 rounded-2xl border border-border bg-background p-1.5 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+        <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={(event) => { const file = event.target.files?.[0]; if (file) void sendAttachment(file); event.target.value = ""; }} />
+        <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} title="Enviar imagem ou arquivo"><Paperclip className="size-4" /><span className="sr-only">Anexar arquivo</span></Button>
+        <Button type="button" variant="ghost" size="icon" onClick={() => setShowEmojis((value) => !value)} title="Emojis"><Smile className="size-4" /><span className="sr-only">Escolher emoji</span></Button>
         <Textarea
           value={text}
           onChange={(event) => setText(event.target.value)}
@@ -756,11 +851,12 @@ function MessageComposer({
           <Button
             type="button"
             size="icon"
-            disabled={sending || !text.trim()}
-            onClick={send}
+            disabled={sending}
+            onClick={text.trim() ? send : toggleRecording}
+            variant={recording ? "destructive" : "primary"}
           >
-            <Send className="size-4" aria-hidden="true" />
-            <span className="sr-only">Enviar mensagem</span>
+            {text.trim() ? <Send className="size-4" aria-hidden="true" /> : recording ? <Square className="size-4" /> : <Mic className="size-4" />}
+            <span className="sr-only">{text.trim() ? "Enviar mensagem" : recording ? "Parar gravação" : "Gravar áudio"}</span>
           </Button>
         </div>
       </div>
@@ -854,9 +950,7 @@ function ContactPanel({
     <aside className="hidden min-h-0 flex-col overflow-y-auto border-l border-border bg-card xl:flex">
       <div className="border-b border-border p-4">
         <div className="flex items-center gap-3">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-muted text-body-sm font-semibold text-primary">
-            {initials(conversation.contactName)}
-          </div>
+          <ContactAvatar name={conversation.contactName} photoUrl={conversation.contactPhotoUrl} enlargeable />
           <div className="min-w-0">
             <p className="truncate text-body-sm font-semibold">
               {conversation.contactName}
@@ -995,6 +1089,63 @@ function EmptyPanel({
   );
 }
 
+function ContactAvatar({
+  name,
+  photoUrl,
+  enlargeable = false,
+}: {
+  name: string;
+  photoUrl: string | null;
+  enlargeable?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const content = photoUrl ? (
+    <Image
+      unoptimized
+      src={photoUrl}
+      alt={`Foto de ${name}`}
+      width={40}
+      height={40}
+      className="size-10 rounded-full object-cover"
+    />
+  ) : (
+    <span className="flex size-10 items-center justify-center rounded-full bg-primary-muted text-sm font-semibold text-primary">
+      {initials(name)}
+    </span>
+  );
+
+  if (!enlargeable || !photoUrl) return <span className="row-span-3 shrink-0">{content}</span>;
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2" aria-label={`Ampliar foto de ${name}`}>
+        {content}
+      </button>
+      <Modal open={open} onClose={() => setOpen(false)} title={`Foto de ${name}`} className="max-w-2xl">
+        <Image unoptimized src={photoUrl} alt={`Foto ampliada de ${name}`} width={900} height={900} className="max-h-[70vh] w-full rounded-lg object-contain" />
+      </Modal>
+    </>
+  );
+}
+
+function MessageDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-all rounded-md bg-muted px-2.5 py-2 text-xs">{value}</dd>
+    </div>
+  );
+}
+
+function messageStatusLabel(status: ConversationMessage["status"]) {
+  return ({ queued: "Enviando", sent: "Enviada", delivered: "Entregue", read: "Lida", failed: "Falhou", received: "Recebida" } as const)[status];
+}
+
+function formatMessageDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value));
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -1011,6 +1162,8 @@ function toMessage(row: MessageRow): ConversationMessage {
     aiSuggested: row.ai_suggested,
     senderUserName: null,
     createdAt: row.created_at,
+    waMessageId: row.wa_message_id,
+    sentAt: row.sent_at,
   };
 }
 
