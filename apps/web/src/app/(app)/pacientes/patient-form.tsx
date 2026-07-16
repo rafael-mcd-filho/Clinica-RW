@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
-import { Save, UserPlus } from "lucide-react";
+import { FloppyDisk as Save, UserPlus } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   createPatient,

@@ -1,7 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ImageOff, Upload, X } from "lucide-react";
+import {
+  ImageBroken as ImageOff,
+  UploadSimple as Upload,
+  X,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 
 type LogoUploadFieldProps = {

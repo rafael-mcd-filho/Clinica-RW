@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import {
-  Building2,
+  Buildings as Building2,
   Check,
   Copy,
-  KeyRound,
-  Link2,
-  UserRound,
-} from "lucide-react";
+  Key as KeyRound,
+  LinkSimple as Link2,
+  UserCircle as UserRound,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { createEmpresa, type CreateEmpresaState } from "../actions";
 import { Button } from "@/components/ui/button";

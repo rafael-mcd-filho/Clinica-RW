@@ -1,13 +1,13 @@
 import {
-  Building2,
-  CalendarDays,
-  ClipboardList,
-  Globe2,
-  Settings,
-  Tags,
-  MessageCircle,
-  type LucideIcon,
-} from "lucide-react";
+  Buildings as Building2,
+  CalendarDots as CalendarDays,
+  ClipboardText as ClipboardList,
+  Globe as Globe2,
+  GearSix as Settings,
+  Tag as Tags,
+  ChatCircle as MessageCircle,
+} from "@phosphor-icons/react/dist/ssr";
+import type { Icon as LucideIcon } from "@phosphor-icons/react";
 import type {
   CompanyConfigurationAccess,
   CompanyConfigurationRoute,
@@ -42,7 +42,8 @@ const pageMetadata: Record<
   whatsapp: {
     title: "WhatsApp",
     icon: MessageCircle,
-    description: (name) => `Conexão da Evolution API e canal de atendimento de ${name}.`,
+    description: (name) =>
+      `Conexão da Evolution API e canal de atendimento de ${name}.`,
   },
   "tags-automacoes": {
     title: "Tags e automações",

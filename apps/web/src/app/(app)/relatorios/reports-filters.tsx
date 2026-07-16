@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Filter, SlidersHorizontal, X } from "lucide-react";
+import {
+  FunnelSimple as Filter,
+  SlidersHorizontal,
+  X,
+} from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DateRangePickerInput } from "@/components/ui/date-picker-input";

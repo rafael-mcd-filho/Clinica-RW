@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useId, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash as Trash2 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { createFunnel } from "./actions";
 import { categoricalColors, defaultStageColor } from "@/lib/colors";

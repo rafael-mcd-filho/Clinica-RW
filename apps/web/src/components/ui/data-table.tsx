@@ -10,7 +10,11 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { ChevronDown, ChevronsUpDown, ChevronUp } from "lucide-react";
+import {
+  CaretDown as ChevronDown,
+  CaretUpDown as ChevronsUpDown,
+  CaretUp as ChevronUp,
+} from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";

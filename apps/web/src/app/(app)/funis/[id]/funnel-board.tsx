@@ -25,18 +25,18 @@ import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
-  ArrowUpFromLine,
-  CalendarDays,
-  Columns3,
-  Filter,
-  GripVertical,
-  Inbox,
-  List,
-  MessageCircle,
-  MoreVertical,
-  Search,
+  UploadSimple as ArrowUpFromLine,
+  CalendarDots as CalendarDays,
+  Columns as Columns3,
+  FunnelSimple as Filter,
+  DotsSixVertical as GripVertical,
+  Tray as Inbox,
+  ListBullets as List,
+  ChatCircle as MessageCircle,
+  DotsThreeVertical as MoreVertical,
+  MagnifyingGlass as Search,
   User,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { moveCard } from "../actions";
 import { CardPanel } from "./card-panel";

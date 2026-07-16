@@ -1,7 +1,11 @@
 "use client";
 
 import { useActionState, useEffect, useId, useState } from "react";
-import { Plus, Settings, Trash2 } from "lucide-react";
+import {
+  Plus,
+  GearSix as Settings,
+  Trash as Trash2,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { createStage, deleteStage, updateStage } from "../actions";
 import { defaultStageColor } from "@/lib/colors";

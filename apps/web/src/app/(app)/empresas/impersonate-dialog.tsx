@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Headphones } from "lucide-react";
+import { Headset as Headphones } from "@phosphor-icons/react";
 import {
   startImpersonation,
   type ImpersonationActionState,

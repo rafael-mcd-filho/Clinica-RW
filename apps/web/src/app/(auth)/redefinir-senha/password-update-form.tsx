@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { KeyRound } from "lucide-react";
+import { Key as KeyRound } from "@phosphor-icons/react";
 import { updatePassword, type PasswordUpdateState } from "../login/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";

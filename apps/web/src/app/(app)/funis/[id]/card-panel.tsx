@@ -5,11 +5,11 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import {
   Archive,
   CalendarPlus,
-  ExternalLink,
-  MessageSquarePlus,
+  ArrowSquareOut as ExternalLink,
+  ChatCenteredDots as MessageSquarePlus,
   Paperclip,
   X,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   addCardNote,

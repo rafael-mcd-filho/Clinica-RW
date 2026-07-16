@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import {
-  CalendarCheck2,
-  CheckCircle2,
-  ChevronRight,
-  Clock3,
-  PanelRightOpen,
-  Pin,
-  PinOff,
-  RefreshCw,
+  CalendarCheck as CalendarCheck2,
+  CheckCircle as CheckCircle2,
+  CaretRight as ChevronRight,
+  Clock as Clock3,
+  SidebarSimple as PanelRightOpen,
+  PushPin as Pin,
+  PushPinSlash as PinOff,
+  ArrowsClockwise as RefreshCw,
   X,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

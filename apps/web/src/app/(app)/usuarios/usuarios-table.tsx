@@ -4,16 +4,16 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import {
   Check,
   Copy,
-  KeyRound,
+  Key as KeyRound,
   Lock,
-  MoreVertical,
-  Pencil,
-  Search,
-  Trash2,
-  Unlock,
-  UserRound,
-  UsersRound,
-} from "lucide-react";
+  DotsThreeVertical as MoreVertical,
+  PencilSimple as Pencil,
+  MagnifyingGlass as Search,
+  Trash as Trash2,
+  LockOpen as Unlock,
+  UserCircle as UserRound,
+  UsersThree as UsersRound,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   deleteUser,

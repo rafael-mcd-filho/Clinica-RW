@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/lib/utils";
 
 type CheckboxProps = Omit<

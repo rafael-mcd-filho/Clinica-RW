@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
-  Activity,
+  Pulse as Activity,
   ArrowRight,
-  CalendarDays,
+  CalendarDots as CalendarDays,
   ShieldCheck,
   Stethoscope,
-  WalletCards,
-} from "lucide-react";
+  Wallet as WalletCards,
+} from "@phosphor-icons/react/dist/ssr";
 import { Button } from "@/components/ui/button";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import { getPlatformSettings } from "@/lib/platform/settings";

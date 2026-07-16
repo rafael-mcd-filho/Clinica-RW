@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, History, UserRound, UsersRound } from "lucide-react";
+import {
+  ArrowLeft,
+  ClockCounterClockwise as History,
+  UserCircle as UserRound,
+  UsersThree as UsersRound,
+} from "@phosphor-icons/react/dist/ssr";
 import { EmpresaDetailsForm } from "./empresa-details-form";
 import { OwnerDetailsForm } from "./owner-details-form";
 import { ImpersonateButton } from "./impersonate-button";

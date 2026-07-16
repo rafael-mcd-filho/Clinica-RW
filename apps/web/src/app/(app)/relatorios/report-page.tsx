@@ -1,15 +1,15 @@
 import Link from "next/link";
 import {
-  BarChart3,
+  ChartBar as BarChart3,
   CalendarCheck,
-  CalendarDays,
-  FileDown,
-  FileSpreadsheet,
+  CalendarDots as CalendarDays,
+  FileArrowDown as FileDown,
+  FileXls as FileSpreadsheet,
   Stethoscope,
-  UsersRound,
-  WalletCards,
-  type LucideIcon,
-} from "lucide-react";
+  UsersThree as UsersRound,
+  Wallet as WalletCards,
+} from "@phosphor-icons/react/dist/ssr";
+import type { Icon as LucideIcon } from "@phosphor-icons/react";
 import { ReportsFilters } from "./reports-filters";
 import { ReportsPanel, type ReportsPanelView } from "./reports-panel";
 import { Button } from "@/components/ui/button";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
-import { Save } from "lucide-react";
+import { FloppyDisk as Save } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { updateEmpresa, type UpdateEmpresaState } from "../actions";
 import { Button } from "@/components/ui/button";

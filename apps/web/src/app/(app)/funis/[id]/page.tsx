@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Settings } from "lucide-react";
+import { GearSix as Settings } from "@phosphor-icons/react/dist/ssr";
 import {
   FunnelBoard,
   stagnationDays,

@@ -1,4 +1,4 @@
-import { PanelsTopLeft } from "lucide-react";
+import { SquaresFour as PanelsTopLeft } from "@phosphor-icons/react/dist/ssr";
 import { CreateFunnelDialog } from "./create-funnel-dialog";
 import { PanelsList, type PanelRow } from "./panels-list";
 import { PageHeader } from "@/components/ui/page-header";

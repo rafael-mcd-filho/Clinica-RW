@@ -1,18 +1,18 @@
 import {
   ArrowDown,
   ArrowUp,
-  Building2,
-  CalendarCheck2,
-  CalendarClock,
+  Buildings as Building2,
+  CalendarCheck as CalendarCheck2,
+  CalendarDots as CalendarClock,
   CalendarPlus,
-  CheckCircle2,
-  ClipboardCheck,
-  ShieldAlert,
-  TrendingUp,
+  CheckCircle as CheckCircle2,
+  ClipboardText as ClipboardCheck,
+  ShieldWarning as ShieldAlert,
+  TrendUp as TrendingUp,
   UserPlus,
-  UsersRound,
-  type LucideIcon,
-} from "lucide-react";
+  UsersThree as UsersRound,
+} from "@phosphor-icons/react/dist/ssr";
+import type { Icon as LucideIcon } from "@phosphor-icons/react";
 import { formatInTimeZone } from "date-fns-tz";
 import { DashboardFilters } from "./dashboard-filters";
 import {

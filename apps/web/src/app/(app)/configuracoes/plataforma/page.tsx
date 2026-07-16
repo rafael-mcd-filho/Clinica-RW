@@ -1,12 +1,16 @@
-import { Settings } from "lucide-react";
+import { GearSix as Settings } from "@phosphor-icons/react/dist/ssr";
 import { PlatformSettingsForm } from "../platform-settings-form";
 import { requirePlatformConfigurationAccess } from "../_lib/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { getPlatformSettings } from "@/lib/platform/settings";
+import { getPlatformEvolutionSummary } from "@/lib/whatsapp/credentials";
 
 export default async function PlataformaConfiguracoesPage() {
   await requirePlatformConfigurationAccess();
-  const settings = await getPlatformSettings();
+  const [settings, evolution] = await Promise.all([
+    getPlatformSettings(),
+    getPlatformEvolutionSummary(),
+  ]);
 
   return (
     <div className="grid gap-6">
@@ -27,7 +31,7 @@ export default async function PlataformaConfiguracoesPage() {
           </div>
         </div>
         <div className="p-5">
-          <PlatformSettingsForm settings={settings} />
+          <PlatformSettingsForm settings={settings} evolution={evolution} />
         </div>
       </section>
     </div>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { LogIn } from "lucide-react";
+import { SignIn as LogIn } from "@phosphor-icons/react";
 import { signInWithPassword, type LoginState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";

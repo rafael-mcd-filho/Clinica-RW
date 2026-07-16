@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CalendarDays, UserRound } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarDots as CalendarDays,
+  UserCircle as UserRound,
+} from "@phosphor-icons/react/dist/ssr";
 import {
   DocumentPanel,
   type ClinicalDocument,

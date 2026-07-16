@@ -28,11 +28,15 @@ export async function POST(request: NextRequest) {
   }
 
   const secret = payload.instance
-    ? (await getInstanceWebhookSecret(payload.instance)) ?? getWebhookSecret()
+    ? ((await getInstanceWebhookSecret(payload.instance)) ?? getWebhookSecret())
     : getWebhookSecret();
   if (secret) {
-    const provided = request.headers.get("x-webhook-secret") ?? request.headers.get("apikey") ?? "";
-    if (provided !== secret) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const provided =
+      request.headers.get("x-webhook-secret") ??
+      request.headers.get("apikey") ??
+      "";
+    if (provided !== secret)
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   try {
@@ -59,8 +63,17 @@ async function handleEvent(payload: EvolutionEvent): Promise<void> {
   if (eventName === "messages.upsert") {
     const parsed = parseInboundMessage(instanceName, payload.data);
     if (parsed) {
-      if (parsed.type !== "text" && parsed.type !== "system" && parsed.waMessageId) {
-        parsed.mediaUrl = await persistInboundMedia(instanceName, parsed.waMessageId, parsed.mediaMimeType, payload.data);
+      if (
+        parsed.type !== "text" &&
+        parsed.type !== "system" &&
+        parsed.waMessageId
+      ) {
+        parsed.mediaUrl = await persistInboundMedia(
+          instanceName,
+          parsed.waMessageId,
+          parsed.mediaMimeType,
+          payload.data,
+        );
       }
       await ingestInboundMessage(parsed);
     }
@@ -86,19 +99,33 @@ async function handleEvent(payload: EvolutionEvent): Promise<void> {
   }
 }
 
-async function persistInboundMedia(instanceName: string, messageId: string, hintedMimeType: string | null, messagePayload: unknown) {
+async function persistInboundMedia(
+  instanceName: string,
+  messageId: string,
+  hintedMimeType: string | null,
+  messagePayload: unknown,
+) {
   try {
     const config = await getEvolutionConfigByInstance(instanceName);
     if (!config) return null;
     const media = await getMediaMessageBase64(messagePayload, config);
     if (!media) return null;
     const dataUri = media.base64.match(/^data:([^;]+);base64,([\s\S]+)$/);
-    const mimeType = dataUri?.[1] ?? media.mimeType ?? hintedMimeType ?? "application/octet-stream";
+    const mimeType =
+      dataUri?.[1] ??
+      media.mimeType ??
+      hintedMimeType ??
+      "application/octet-stream";
     const encoded = dataUri?.[2] ?? media.base64;
     const extension = extensionForMimeType(mimeType);
     const path = `${config.organizationId}/${messageId}.${extension}`;
     const admin = createSupabaseAdminClient();
-    const { error } = await admin.storage.from("whatsapp-media").upload(path, Buffer.from(encoded, "base64"), { contentType: mimeType, upsert: true });
+    const { error } = await admin.storage
+      .from("whatsapp-media")
+      .upload(path, Buffer.from(encoded, "base64"), {
+        contentType: mimeType,
+        upsert: true,
+      });
     return error ? null : path;
   } catch (error) {
     console.error("[whatsapp media]", error);
@@ -108,7 +135,17 @@ async function persistInboundMedia(instanceName: string, messageId: string, hint
 
 function extensionForMimeType(mimeType: string) {
   const subtype = mimeType.split("/")[1]?.split(";")[0]?.toLowerCase() ?? "bin";
-  return (({ jpeg: "jpg", "svg+xml": "svg", "vnd.openxmlformats-officedocument.wordprocessingml.document": "docx" } as Record<string, string>)[subtype] ?? subtype.replace(/[^a-z0-9]/g, "")) || "bin";
+  return (
+    ((
+      {
+        jpeg: "jpg",
+        "svg+xml": "svg",
+        "vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+      } as Record<string, string>
+    )[subtype] ??
+      subtype.replace(/[^a-z0-9]/g, "")) ||
+    "bin"
+  );
 }
 
 function parseInboundMessage(

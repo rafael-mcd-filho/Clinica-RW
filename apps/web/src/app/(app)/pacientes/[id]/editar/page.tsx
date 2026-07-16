@@ -2,18 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   ArrowLeft,
-  CalendarDays,
-  Clock3,
+  CalendarDots as CalendarDays,
+  Clock as Clock3,
   FileText,
-  History,
-  Mail,
-  MessageSquare,
+  ClockCounterClockwise as History,
+  EnvelopeSimple as Mail,
+  ChatCentered as MessageSquare,
   Phone,
-  Settings2,
+  Faders as Settings2,
   Stethoscope,
-  UserRound,
-  WalletCards,
-} from "lucide-react";
+  UserCircle as UserRound,
+  Wallet as WalletCards,
+} from "@phosphor-icons/react/dist/ssr";
 import {
   ClinicalSummaryForm,
   ConsentsPanel,

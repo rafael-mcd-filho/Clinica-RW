@@ -1,5 +1,5 @@
-import { renderToBuffer } from "@react-pdf/renderer";
-import { createElement } from "react";
+import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
+import { createElement, type ReactElement } from "react";
 import { notFound } from "next/navigation";
 import {
   ReceiptDocument,
@@ -108,7 +108,7 @@ export async function GET(
         professionalName: professionalResult.data?.name ?? null,
         receivable,
       },
-    }),
+    }) as unknown as ReactElement<DocumentProps>,
   );
 
   const body = new Uint8Array(pdfBytes).buffer;

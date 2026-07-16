@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Plus, User } from "lucide-react";
+import { Plus, User } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";

@@ -1,6 +1,9 @@
 "use client";
 
-import { ArrowLeftRight, CalendarRange } from "lucide-react";
+import {
+  ArrowsLeftRight as ArrowLeftRight,
+  CalendarDots as CalendarRange,
+} from "@phosphor-icons/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DateRangePickerInput } from "@/components/ui/date-picker-input";

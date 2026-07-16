@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Search, Waypoints } from "lucide-react";
+import {
+  ArrowRight,
+  MagnifyingGlass as Search,
+  FlowArrow as Waypoints,
+} from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";

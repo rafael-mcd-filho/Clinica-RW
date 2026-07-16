@@ -1,4 +1,9 @@
-import { Building2, Mail, ShieldCheck, UserRound } from "lucide-react";
+import {
+  Buildings as Building2,
+  EnvelopeSimple as Mail,
+  ShieldCheck,
+  UserCircle as UserRound,
+} from "@phosphor-icons/react/dist/ssr";
 import {
   getCurrentAppUser,
   requireAuthenticatedUser,

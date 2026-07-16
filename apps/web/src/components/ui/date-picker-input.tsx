@@ -10,7 +10,7 @@ import {
 } from "react";
 import { DayPicker, type DateRange } from "react-day-picker";
 import { ptBR } from "date-fns/locale";
-import { CalendarDays } from "lucide-react";
+import { CalendarDots as CalendarDays } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

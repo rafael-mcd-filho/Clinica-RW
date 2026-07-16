@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronsUpDown, X } from "lucide-react";
+import { Check, CaretUpDown as ChevronsUpDown, X } from "@phosphor-icons/react";
 import {
   Children,
   isValidElement,

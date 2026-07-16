@@ -1,5 +1,5 @@
-import { renderToBuffer } from "@react-pdf/renderer";
-import { createElement } from "react";
+import { renderToBuffer, type DocumentProps } from "@react-pdf/renderer";
+import { createElement, type ReactElement } from "react";
 import { ReportsDocument } from "@/lib/pdf/reports-document";
 import {
   buildPhase13ReportData,
@@ -57,7 +57,10 @@ export async function GET(request: Request) {
   }
 
   const pdfBytes = await renderToBuffer(
-    createElement(ReportsDocument, { clinicName, data }),
+    createElement(ReportsDocument, {
+      clinicName,
+      data,
+    }) as unknown as ReactElement<DocumentProps>,
   );
   const body = new Uint8Array(pdfBytes).buffer;
 

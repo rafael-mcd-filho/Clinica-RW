@@ -24,6 +24,24 @@ Supabase (whatsapp_*)  ── Realtime ──▶  inbox (attendance-inbox.tsx)
 - **Realtime:** `whatsapp_messages`, `whatsapp_conversations` e
   `whatsapp_instances` estão na publication `supabase_realtime`.
 
+## Recursos de CRM no inbox
+
+- **Iniciar atendimento** — conversa pendente exibe um banner; o clique assume
+  a conversa (RPC `claim_whatsapp_conversation`, à prova de corrida).
+- **Transferência** — menu no cabeçalho da thread transfere a conversa para
+  outro atendente ativo da organização.
+- **Notas internas** — aba "Nota interna" no compositor grava uma
+  `whatsapp_message` com `message_type = 'note'` (âmbar, nunca enviada ao
+  WhatsApp, fora do preview e da sugestão de IA). Requer a migração
+  `20260716000000_whatsapp_internal_notes.sql`.
+- **Assinatura** — checkbox "Assinar como <nome>" prefixa `*Nome:*` na
+  mensagem (preferência salva por navegador).
+- **Vínculo de paciente** — o painel do contato busca pacientes
+  (`/api/patients/search`) e vincula/desvincula o contato.
+- **Próximos agendamentos** — o painel mostra os 3 próximos agendamentos do
+  paciente vinculado, além das reservas do agendamento online.
+- **Separadores de dia** — a thread agrupa mensagens por dia (Hoje/Ontem/data).
+
 ## Configuração pelo painel
 
 Administradores com `atendimento.configurar` podem acessar

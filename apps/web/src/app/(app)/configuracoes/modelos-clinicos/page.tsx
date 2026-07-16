@@ -1,4 +1,7 @@
-import { ClipboardList, FileText } from "lucide-react";
+import {
+  ClipboardText as ClipboardList,
+  FileText,
+} from "@phosphor-icons/react/dist/ssr";
 import {
   DocumentTemplateManager,
   type DocumentClinicBranding,

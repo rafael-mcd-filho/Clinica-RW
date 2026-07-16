@@ -27,7 +27,9 @@ export default async function AtendimentoPage() {
   const canAttend = context.permissionCodes.has("atendimento.atender");
   const canConfigure = context.permissionCodes.has("atendimento.configurar");
   const organizationId = context.organization.id;
-  const evolutionReady = Boolean(await getOrganizationEvolutionConfig(organizationId));
+  const evolutionReady = Boolean(
+    await getOrganizationEvolutionConfig(organizationId),
+  );
   const currentUserId = context.effectiveUser?.id ?? null;
 
   const supabase = await createSupabaseServerClient();
@@ -116,34 +118,50 @@ export default async function AtendimentoPage() {
     ),
   ];
 
-  const [{ data: patients }, { data: assignedUsers }] = await Promise.all([
-    patientIds.length
-      ? supabase
-          .from("patients")
-          .select("id, full_name, social_name, photo_path")
-          .eq("organization_id", organizationId)
-          .in("id", patientIds)
-          .returns<
-            { id: string; full_name: string; social_name: string | null; photo_path: string | null }[]
-          >()
-      : Promise.resolve({ data: [] }),
-    assignedUserIds.length
-      ? supabase
-          .from("app_users")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .in("id", assignedUserIds)
-          .returns<{ id: string; name: string }[]>()
-      : Promise.resolve({ data: [] }),
-  ]);
+  const [{ data: patients }, { data: assignedUsers }, { data: attendants }] =
+    await Promise.all([
+      patientIds.length
+        ? supabase
+            .from("patients")
+            .select("id, full_name, social_name, photo_path")
+            .eq("organization_id", organizationId)
+            .in("id", patientIds)
+            .returns<
+              {
+                id: string;
+                full_name: string;
+                social_name: string | null;
+                photo_path: string | null;
+              }[]
+            >()
+        : Promise.resolve({ data: [] }),
+      assignedUserIds.length
+        ? supabase
+            .from("app_users")
+            .select("id, name")
+            .eq("organization_id", organizationId)
+            .in("id", assignedUserIds)
+            .returns<{ id: string; name: string }[]>()
+        : Promise.resolve({ data: [] }),
+      supabase
+        .from("app_users")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("status", "active")
+        .order("name")
+        .returns<{ id: string; name: string }[]>(),
+    ]);
 
   const patientById = new Map((patients ?? []).map((p) => [p.id, p]));
   const photoByPatientId = new Map(
     await Promise.all(
-      (patients ?? []).map(async (patient) => [
-        patient.id,
-        await createPatientPhotoSignedUrl(patient.photo_path),
-      ] as const),
+      (patients ?? []).map(
+        async (patient) =>
+          [
+            patient.id,
+            await createPatientPhotoSignedUrl(patient.photo_path),
+          ] as const,
+      ),
     ),
   );
   const userById = new Map((assignedUsers ?? []).map((u) => [u.id, u]));
@@ -196,6 +214,8 @@ export default async function AtendimentoPage() {
       <AttendanceInbox
         organizationId={organizationId}
         currentUserId={currentUserId}
+        currentUserName={context.effectiveUser?.name ?? null}
+        attendants={attendants ?? []}
         canAttend={canAttend}
         canConfigure={canConfigure}
         evolutionReady={evolutionReady}

@@ -1,4 +1,4 @@
-import { Activity } from "lucide-react";
+import { Pulse as Activity } from "@phosphor-icons/react/dist/ssr";
 import { PasswordUpdateForm } from "./password-update-form";
 
 export default function RedefinirSenhaPage() {

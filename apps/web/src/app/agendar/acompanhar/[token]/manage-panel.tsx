@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect } from "react";
-import { CalendarClock, X } from "lucide-react";
+import { CalendarDots as CalendarClock, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   cancelPublicBooking,

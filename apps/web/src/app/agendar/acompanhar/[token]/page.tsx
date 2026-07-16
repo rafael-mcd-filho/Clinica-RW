@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { addDays } from "date-fns";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "@phosphor-icons/react/dist/ssr";
 import {
   CancelCard,
   ManageBookingPanel,

@@ -1,9 +1,9 @@
 import {
-  Building2,
-  CircleDollarSign,
-  Settings,
-  WalletCards,
-} from "lucide-react";
+  Buildings as Building2,
+  CurrencyCircleDollar as CircleDollarSign,
+  GearSix as Settings,
+  Wallet as WalletCards,
+} from "@phosphor-icons/react/dist/ssr";
 import {
   FinancePanel,
   type FinancialCategoryRow,
@@ -34,13 +34,42 @@ type FinanceSummaryRpcRow = {
   payout_count: number | string;
 };
 
+type FinancePeriodMetricsRow = {
+  accrual_revenue: number | string;
+  accrual_expense: number | string;
+  cash_in: number | string;
+  cash_out: number | string;
+  open_receivable: number | string;
+  open_payable: number | string;
+  average_collection_days: number | string;
+};
+
+type DreRow = { dre_group: string; amount: number | string };
+
 const financePageSize = 10;
 
-export default async function FinanceiroPage({
-  searchParams,
-}: {
+export type FinanceSection =
+  | "visao-geral"
+  | "a-receber"
+  | "a-pagar"
+  | "movimentacoes"
+  | "repasses"
+  | "dre";
+
+export default async function FinanceiroPage(props: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  return renderFinanceiroPage("visao-geral", props);
+}
+
+export async function renderFinanceiroPage(
+  section: FinanceSection,
+  {
+    searchParams,
+  }: {
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  },
+) {
   const context = await getRequestContext();
 
   if (context.isSuperAdmin) {
@@ -77,6 +106,7 @@ export default async function FinanceiroPage({
   const organizationId = context.organization.id;
   const supabase = await createSupabaseServerClient();
   const params = (await searchParams) ?? {};
+  const period = financePeriod(params);
   const pages = {
     receivables: financePageParam(params.receivables_page),
     payments: financePageParam(params.payments_page),
@@ -92,19 +122,24 @@ export default async function FinanceiroPage({
     payouts,
     paymentMethods,
     categories,
+    periodMetrics,
+    dre,
   ] = await Promise.all([
     supabase
       .rpc("get_operational_finance_summary", {
         p_organization_id: organizationId,
       })
       .returns<FinanceSummaryRpcRow[]>(),
-    canViewCash
+    canViewCash && section === "a-receber"
       ? supabase
           .from("accounts_receivable")
           .select(
             "id, description, amount, paid_amount, due_date, status, patients(full_name, social_name), professionals(name)",
+            { count: "exact" },
           )
           .eq("organization_id", organizationId)
+          .gte("due_date", period.from)
+          .lte("due_date", period.to)
           .order("due_date", { ascending: true })
           .order("id", { ascending: true })
           .range(
@@ -113,13 +148,16 @@ export default async function FinanceiroPage({
           )
           .returns<ReceivableRow[]>()
       : Promise.resolve({ data: [] as ReceivableRow[] }),
-    canViewCash
+    canViewCash && section === "movimentacoes"
       ? supabase
           .from("payments")
           .select(
             "id, account_receivable_id, amount, paid_at, payment_methods(name), accounts_receivable(description)",
+            { count: "exact" },
           )
           .eq("organization_id", organizationId)
+          .gte("paid_at", `${period.from}T00:00:00-03:00`)
+          .lte("paid_at", `${period.to}T23:59:59.999-03:00`)
           .order("paid_at", { ascending: false })
           .order("id", { ascending: true })
           .range(
@@ -128,11 +166,15 @@ export default async function FinanceiroPage({
           )
           .returns<PaymentRow[]>()
       : Promise.resolve({ data: [] as PaymentRow[] }),
-    canViewPayables
+    canViewPayables && section === "a-pagar"
       ? supabase
           .from("accounts_payable")
-          .select("id, vendor_name, description, amount, due_date, status")
+          .select("id, vendor_name, description, amount, due_date, status", {
+            count: "exact",
+          })
           .eq("organization_id", organizationId)
+          .gte("due_date", period.from)
+          .lte("due_date", period.to)
           .order("due_date", { ascending: true })
           .order("id", { ascending: true })
           .range(
@@ -141,11 +183,15 @@ export default async function FinanceiroPage({
           )
           .returns<PayableRow[]>()
       : Promise.resolve({ data: [] as PayableRow[] }),
-    canViewPayouts
+    canViewPayouts && section === "repasses"
       ? supabase
           .from("professional_payouts")
-          .select("id, amount, due_date, status, professionals(name)")
+          .select("id, amount, due_date, status, professionals(name)", {
+            count: "exact",
+          })
           .eq("organization_id", organizationId)
+          .gte("due_date", period.from)
+          .lte("due_date", period.to)
           .order("due_date", { ascending: false })
           .order("id", { ascending: true })
           .range(
@@ -154,7 +200,8 @@ export default async function FinanceiroPage({
           )
           .returns<PayoutRow[]>()
       : Promise.resolve({ data: [] as PayoutRow[] }),
-    canReceive || canManagePayables
+    (canReceive && section === "a-receber") ||
+    (canManagePayables && section === "a-pagar")
       ? supabase
           .from("payment_methods")
           .select("id, name, method_type")
@@ -163,15 +210,31 @@ export default async function FinanceiroPage({
           .order("name")
           .returns<PaymentMethodRow[]>()
       : Promise.resolve({ data: [] as PaymentMethodRow[] }),
-    canManagePayables
+    canViewGeneral || canReceive || canManagePayables
       ? supabase
           .from("financial_categories")
-          .select("id, name, category_type")
+          .select("id, name, category_type, dre_group")
           .eq("organization_id", organizationId)
           .eq("active", true)
           .order("name")
           .returns<FinancialCategoryRow[]>()
       : Promise.resolve({ data: [] as FinancialCategoryRow[] }),
+    supabase
+      .rpc("get_finance_period_metrics", {
+        p_organization_id: organizationId,
+        p_from: period.from,
+        p_to: period.to,
+      })
+      .returns<FinancePeriodMetricsRow[]>(),
+    canViewGeneral
+      ? supabase
+          .rpc("get_finance_dre", {
+            p_organization_id: organizationId,
+            p_from: period.from,
+            p_to: period.to,
+          })
+          .returns<DreRow[]>()
+      : Promise.resolve({ data: [] as DreRow[] }),
   ]);
 
   if (financeSummary.error) {
@@ -185,37 +248,57 @@ export default async function FinanceiroPage({
   const summaryRow = Array.isArray(financeSummary.data)
     ? financeSummary.data[0]
     : undefined;
+  const periodRows = Array.isArray(periodMetrics.data)
+    ? (periodMetrics.data as unknown as FinancePeriodMetricsRow[])
+    : [];
+  const dreRows = Array.isArray(dre.data)
+    ? (dre.data as unknown as DreRow[])
+    : [];
   const summary: FinanceSummary = {
     openReceivable: Number(summaryRow?.open_receivable ?? 0),
     receivedMonth: Number(summaryRow?.received_month ?? 0),
     openPayable: Number(summaryRow?.open_payable ?? 0),
     pendingPayout: Number(summaryRow?.pending_payout ?? 0),
+    accrualRevenue: Number(periodRows[0]?.accrual_revenue ?? 0),
+    accrualExpense: Number(periodRows[0]?.accrual_expense ?? 0),
+    cashIn: Number(periodRows[0]?.cash_in ?? 0),
+    cashOut: Number(periodRows[0]?.cash_out ?? 0),
+    averageCollectionDays: Number(periodRows[0]?.average_collection_days ?? 0),
   };
   const pagination = {
     receivables: financePagination(
       pages.receivables,
-      summaryRow?.receivable_count,
+      ("count" in receivables ? receivables.count : null) ??
+        summaryRow?.receivable_count,
       receivableRows.length,
     ),
     payments: financePagination(
       pages.payments,
-      summaryRow?.payment_count,
+      ("count" in payments ? payments.count : null) ??
+        summaryRow?.payment_count,
       paymentRows.length,
     ),
     payables: financePagination(
       pages.payables,
-      summaryRow?.payable_count,
+      ("count" in payables ? payables.count : null) ??
+        summaryRow?.payable_count,
       payableRows.length,
     ),
     payouts: financePagination(
       pages.payouts,
-      summaryRow?.payout_count,
+      ("count" in payouts ? payouts.count : null) ?? summaryRow?.payout_count,
       payoutRows.length,
     ),
   } satisfies Record<string, FinanceListPagination>;
 
   return (
     <FinancePanel
+      section={section}
+      period={period}
+      dreRows={dreRows.map((row) => ({
+        group: row.dre_group,
+        amount: Number(row.amount),
+      }))}
       summary={summary}
       receivables={receivableRows}
       payments={paymentRows}
@@ -233,6 +316,24 @@ export default async function FinanceiroPage({
       }}
     />
   );
+}
+
+function financePeriod(params: Record<string, string | string[] | undefined>) {
+  const now = new Date();
+  const fallbackFrom = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  const fallbackTo = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+  )
+    .toISOString()
+    .slice(0, 10);
+  const validDate = (value: string | undefined) =>
+    value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
+  const mode = firstSearchParam(params.mode) === "cash" ? "cash" : "accrual";
+  return {
+    from: validDate(firstSearchParam(params.from)) ?? fallbackFrom,
+    to: validDate(firstSearchParam(params.to)) ?? fallbackTo,
+    mode: mode as "cash" | "accrual",
+  };
 }
 
 function firstSearchParam(value: string | string[] | undefined) {

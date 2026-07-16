@@ -11,14 +11,14 @@ import { useRouter } from "next/navigation";
 import {
   CalendarCheck,
   Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  KeyRound,
-  LoaderCircle,
+  CaretLeft as ChevronLeft,
+  CaretRight as ChevronRight,
+  Clock as Clock3,
+  Key as KeyRound,
+  CircleNotch as LoaderCircle,
   ShieldCheck,
-  UserRound,
-} from "lucide-react";
+  UserCircle as UserRound,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   startContactVerification,

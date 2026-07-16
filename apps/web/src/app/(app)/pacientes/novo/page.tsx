@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@phosphor-icons/react/dist/ssr";
 import { PatientForm } from "../patient-form";
 import { Button } from "@/components/ui/button";
 import { requireCompanyPermission } from "@/lib/authz/guards";

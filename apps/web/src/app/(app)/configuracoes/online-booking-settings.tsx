@@ -1,19 +1,16 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import Link from "next/link";
 import {
-  CalendarDays,
   Check,
   Copy,
-  ExternalLink,
-  Globe2,
-  Link2,
-  MessageSquare,
-  Settings2,
+  ArrowSquareOut as ExternalLink,
+  Globe as Globe2,
+  ChatCentered as MessageSquare,
+  Faders as Settings2,
   Star,
-  UserRound,
-} from "lucide-react";
+  UserCircle as UserRound,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   createOnlineBookingReview,
@@ -78,35 +75,26 @@ export type OnlineBookingProfileData = {
   }>;
 };
 
-export type OnlineBookingScheduleSummary = {
-  id: string;
-  name: string;
-  active: boolean;
-  onlineEnabled: boolean;
-};
-
 const initialState: AgendaActionState = {};
-type BookingSettingsSection = "publication" | "rules" | "profile" | "reviews";
+type BookingSettingsSection = "rules" | "profile" | "reviews";
 
 export function OnlineBookingSettings({
   settings,
   healthInsurances,
   paymentMethods,
   reviews,
-  schedules,
 }: {
   settings: OnlineBookingSettingsData | null;
   healthInsurances: OnlineBookingProfileData["healthInsurances"];
   paymentMethods: OnlineBookingProfileData["paymentMethods"];
   reviews: OnlineBookingProfileData["reviews"];
-  schedules: OnlineBookingScheduleSummary[];
 }) {
   const [state, action, pending] = useActionState(
     updateOnlineBookingSettings,
     initialState,
   );
   const [activeSection, setActiveSection] =
-    useState<BookingSettingsSection>("publication");
+    useState<BookingSettingsSection>("rules");
 
   useEffect(() => {
     if (state.success) toast.success(state.success);
@@ -127,6 +115,11 @@ export function OnlineBookingSettings({
 
   return (
     <div className="grid gap-5">
+      <PublicBookingAccessCard
+        publicPath={publicPath}
+        enabled={settings.enabled}
+      />
+
       <Tabs
         ariaLabel="Seções do agendamento online"
         value={activeSection}
@@ -134,11 +127,6 @@ export function OnlineBookingSettings({
           setActiveSection(value as BookingSettingsSection)
         }
         items={[
-          {
-            id: "publication",
-            label: "Publicação e agendas",
-            icon: <CalendarDays />,
-          },
           { id: "rules", label: "Regras do portal", icon: <Settings2 /> },
           { id: "profile", label: "Perfil público", icon: <UserRound /> },
           {
@@ -148,18 +136,6 @@ export function OnlineBookingSettings({
           },
         ]}
       />
-
-      <section
-        hidden={activeSection !== "publication"}
-        className="grid gap-5"
-        aria-label="Publicação e agendas"
-      >
-        <PublicBookingAccessCard
-          publicPath={publicPath}
-          enabled={settings.enabled}
-        />
-        <SchedulePublicationSummary schedules={schedules} />
-      </section>
 
       <Card hidden={activeSection !== "rules" && activeSection !== "profile"}>
         <CardHeader>
@@ -432,75 +408,6 @@ export function OnlineBookingSettings({
   );
 }
 
-function SchedulePublicationSummary({
-  schedules,
-}: {
-  schedules: OnlineBookingScheduleSummary[];
-}) {
-  const activeSchedules = schedules.filter((schedule) => schedule.active);
-  const enabledCount = activeSchedules.filter(
-    (schedule) => schedule.onlineEnabled,
-  ).length;
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <CalendarDays className="size-5 shrink-0 text-primary" aria-hidden />
-          <div className="min-w-0">
-            <h2 className="font-semibold">Agendas publicadas</h2>
-            <p className="text-sm text-muted-foreground">
-              Disponibilidade, serviços e prazos são definidos em cada agenda.
-            </p>
-          </div>
-        </div>
-        <Badge variant={enabledCount ? "success" : "neutral"}>
-          {enabledCount} de {activeSchedules.length}
-        </Badge>
-      </CardHeader>
-      <CardContent className="py-4">
-        {activeSchedules.length ? (
-          <div className="divide-y divide-border rounded-lg border border-border">
-            {activeSchedules.map((schedule) => (
-              <div
-                key={schedule.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
-                    {schedule.name}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {schedule.onlineEnabled
-                      ? "Disponível no portal público"
-                      : "Não publicada no portal"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={schedule.onlineEnabled ? "success" : "neutral"}
-                  >
-                    {schedule.onlineEnabled ? "Publicada" : "Desativada"}
-                  </Badge>
-                  <Button asChild variant="secondary" size="sm">
-                    <Link href={`/configuracoes/agenda?agenda=${schedule.id}`}>
-                      Configurar
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="rounded-md border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
-            Nenhuma agenda ativa foi cadastrada.
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 function PublicBookingAccessCard({
   publicPath,
   enabled,
@@ -523,57 +430,50 @@ function PublicBookingAccessCard({
   }
 
   return (
-    <Card className="border-primary/25 bg-primary-muted/30">
-      <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground shadow-[var(--shadow-soft)]">
-            <Link2 className="size-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-semibold">Página pública de agendamento</h2>
-              <Badge variant={enabled ? "success" : "neutral"}>
-                {enabled ? "Publicada" : "Desativada"}
-              </Badge>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Compartilhe este endereço para pacientes solicitarem horários.
-            </p>
-            <code className="mt-2 block max-w-full break-all rounded-md border border-border bg-card px-3 py-2 text-sm text-secondary-foreground">
-              {publicPath}
-            </code>
-            {!enabled ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Ative e salve o agendamento online antes de compartilhar o link.
-              </p>
-            ) : null}
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-[var(--shadow-soft)] sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <Globe2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">Página pública</span>
+            <Badge variant={enabled ? "success" : "neutral"}>
+              {enabled ? "Publicada" : "Desativada"}
+            </Badge>
           </div>
+          <code className="block truncate text-xs text-muted-foreground">
+            {publicPath}
+          </code>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2 sm:pl-[3.25rem] lg:pl-0">
-          <Button type="button" variant="secondary" onClick={copyPublicLink}>
-            {copied ? (
-              <Check className="size-4" aria-hidden="true" />
-            ) : (
-              <Copy className="size-4" aria-hidden="true" />
-            )}
-            {copied ? "Copiado" : "Copiar link"}
-          </Button>
-          {enabled ? (
-            <Button asChild>
-              <a href={publicPath} target="_blank" rel="noreferrer">
-                <ExternalLink className="size-4" aria-hidden="true" />
-                Abrir página
-              </a>
-            </Button>
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={copyPublicLink}
+        >
+          {copied ? (
+            <Check className="size-4" aria-hidden="true" />
           ) : (
-            <Button type="button" disabled>
+            <Copy className="size-4" aria-hidden="true" />
+          )}
+          {copied ? "Copiado" : "Copiar link"}
+        </Button>
+        {enabled ? (
+          <Button asChild variant="ghost" size="sm">
+            <a href={publicPath} target="_blank" rel="noreferrer">
               <ExternalLink className="size-4" aria-hidden="true" />
               Abrir página
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+            </a>
+          </Button>
+        ) : (
+          <Button type="button" variant="ghost" size="sm" disabled>
+            <ExternalLink className="size-4" aria-hidden="true" />
+            Abrir página
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,13 @@
 "use client";
 
-import { Copy, FilePlus2, FileText, Pencil, Power, Save } from "lucide-react";
+import {
+  Copy,
+  FilePlus as FilePlus2,
+  FileText,
+  PencilSimple as Pencil,
+  Power,
+  FloppyDisk as Save,
+} from "@phosphor-icons/react";
 import {
   useActionState,
   useCallback,

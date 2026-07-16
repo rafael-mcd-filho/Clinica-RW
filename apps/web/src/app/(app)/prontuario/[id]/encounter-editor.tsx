@@ -2,7 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
-import { CircleCheck, FileCheck, Plus, Save } from "lucide-react";
+import {
+  CheckCircle as CircleCheck,
+  FileText as FileCheck,
+  Plus,
+  FloppyDisk as Save,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   addEncounterAddendum,

@@ -77,7 +77,14 @@ export type ProcedureCostRow = {
   id: string;
   procedure_id: string;
   name: string;
-  cost_type: "commission" | "location_fee" | "other";
+  cost_type:
+    | "commission"
+    | "location_fee"
+    | "materials"
+    | "outsourced_service"
+    | "taxes"
+    | "equipment"
+    | "other";
   calculation_type: "fixed" | "percentage";
   value: number;
   active: boolean;

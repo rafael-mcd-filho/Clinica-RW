@@ -226,10 +226,7 @@ textarea {
   outline-color: var(--ring);
 }
 
-/* Traço refinado e uniforme para toda a iconografia lucide. */
-svg.lucide {
-  stroke-width: 1.75;
-}
+/* Iconografia: Phosphor Icons (peso regular; duotone em nav/cabeçalhos). */
 
 @keyframes shimmer {
   100% {

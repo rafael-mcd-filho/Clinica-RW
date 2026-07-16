@@ -1,15 +1,15 @@
 import { notFound } from "next/navigation";
 import {
-  CalendarDays,
-  CircleCheck,
-  Clock3,
+  CalendarDots as CalendarDays,
+  CheckCircle as CircleCheck,
+  Clock as Clock3,
   CreditCard,
   MapPin,
   ShieldCheck,
   Stethoscope,
   Star,
-  UserRound,
-} from "lucide-react";
+  UserCircle as UserRound,
+} from "@phosphor-icons/react/dist/ssr";
 import {
   BookingForm,
   type PublicInsurance,

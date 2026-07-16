@@ -2,21 +2,21 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   ArrowLeft,
-  CalendarDays,
-  CircleCheck,
-  Clock3,
+  CalendarDots as CalendarDays,
+  CheckCircle as CircleCheck,
+  Clock as Clock3,
   CreditCard,
-  Edit3,
+  PencilSimpleLine as Edit3,
   FileText,
-  HeartPulse,
-  Mail,
+  Heartbeat as HeartPulse,
+  EnvelopeSimple as Mail,
   MapPin,
   Phone,
-  ShieldAlert,
+  ShieldWarning as ShieldAlert,
   Stethoscope,
   Tag,
-  UserRound,
-} from "lucide-react";
+  UserCircle as UserRound,
+} from "@phosphor-icons/react/dist/ssr";
 import { type ClinicalSummary, type TagRow } from "./patient-detail-panels";
 import { PatientPhotoForm } from "./patient-photo-form";
 import { Badge } from "@/components/ui/badge";

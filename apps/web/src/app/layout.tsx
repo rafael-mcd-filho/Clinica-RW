@@ -15,7 +15,7 @@ const plexSans = IBM_Plex_Sans({
 
 export async function generateMetadata(): Promise<Metadata> {
   const settings = await getPlatformSettings();
-  const icon = settings.logo_url ?? "/favicon.ico";
+  const icon = settings.logo_url ?? "/default-favicon.ico";
 
   return {
     title: settings.app_name,

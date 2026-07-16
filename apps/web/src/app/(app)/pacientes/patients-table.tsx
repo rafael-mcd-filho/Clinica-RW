@@ -12,13 +12,13 @@ import {
 } from "react";
 import {
   Archive,
-  ExternalLink,
+  ArrowSquareOut as ExternalLink,
   FileText,
   Plus,
-  RotateCcw,
-  Search,
-  UsersRound,
-} from "lucide-react";
+  ArrowCounterClockwise as RotateCcw,
+  MagnifyingGlass as Search,
+  UsersThree as UsersRound,
+} from "@phosphor-icons/react";
 import { setPatientArchived } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { X } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +44,7 @@ export function Modal({
           <Dialog.Content
             data-select-portal-root
             className={cn(
-              "relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-lg)] data-[state=open]:animate-dialog-in",
+              "relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-lg)] outline-none data-[state=open]:animate-dialog-in",
               className,
             )}
           >
@@ -74,7 +74,9 @@ export function Modal({
                 </Button>
               </Dialog.Close>
             </header>
-            <div className="min-w-0 overflow-y-auto p-5">{children}</div>
+            <div className="min-w-0 overflow-x-hidden overflow-y-auto p-5">
+              {children}
+            </div>
             {footer ? (
               <footer className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-4">
                 {footer}

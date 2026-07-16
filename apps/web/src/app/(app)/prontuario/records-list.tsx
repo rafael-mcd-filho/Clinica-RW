@@ -3,7 +3,10 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ExternalLink, Search } from "lucide-react";
+import {
+  ArrowSquareOut as ExternalLink,
+  MagnifyingGlass as Search,
+} from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";

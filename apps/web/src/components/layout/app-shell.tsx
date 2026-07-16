@@ -2,28 +2,28 @@
 
 import Link from "next/link";
 import {
-  Activity,
-  BarChart3,
-  Building2,
-  CalendarDays,
-  ChevronDown,
-  History,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  MessagesSquare,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings,
-  ShieldAlert,
+  Pulse as Activity,
+  ChartBar as BarChart3,
+  Buildings as Building2,
+  CalendarDots as CalendarDays,
+  CaretDown as ChevronDown,
+  ClockCounterClockwise as History,
+  SquaresFour as LayoutDashboard,
+  SignOut as LogOut,
+  List as Menu,
+  ChatsCircle as MessagesSquare,
+  SidebarSimple as PanelLeftClose,
+  Sidebar as PanelLeftOpen,
+  GearSix as Settings,
+  ShieldWarning as ShieldAlert,
   Stethoscope,
-  type LucideIcon,
-  UserCog,
-  UserRound,
-  UsersRound,
-  WalletCards,
-  Waypoints,
-} from "lucide-react";
+  type Icon as LucideIcon,
+  UserGear as UserCog,
+  UserCircle as UserRound,
+  UsersThree as UsersRound,
+  Wallet as WalletCards,
+  FlowArrow as Waypoints,
+} from "@phosphor-icons/react";
 import { useId, useState, useSyncExternalStore } from "react";
 import { signOut } from "@/app/(auth)/login/actions";
 import { endImpersonation } from "@/app/(app)/suporte/actions";
@@ -296,9 +296,7 @@ export function AppShell({
         <main
           className={cn(
             "mx-auto min-h-[calc(100svh-3.5rem)] min-w-0 w-full",
-            pathname.startsWith("/atendimento")
-              ? "p-0"
-              : "px-4 py-6 md:px-6",
+            pathname.startsWith("/atendimento") ? "p-0" : "px-4 py-6 md:px-6",
             contentWidthClass(pathname),
           )}
         >
@@ -448,7 +446,9 @@ function SidebarLink({
   const hasChildren = Boolean(item.children?.length);
   const active = isNavRouteActive(pathname, item.href);
   const activeChild = item.children?.some((child) =>
-    isNavRouteActive(pathname, child.href),
+    child.href === item.href
+      ? pathname === child.href
+      : isNavRouteActive(pathname, child.href),
   );
   const routeInGroup = active || Boolean(activeChild);
   const [expansionOverride, setExpansionOverride] = useState<{
@@ -488,33 +488,50 @@ function SidebarLink({
           />
         </button>
 
-        {expanded ? (
-          <div
-            id={childrenId}
-            className="ml-5 grid gap-0.5 border-l border-sidebar-border pl-3"
-          >
-            {item.children?.map((child) => {
-              const childIsActive = isNavRouteActive(pathname, child.href);
+        <div
+          id={childrenId}
+          aria-hidden={!expanded}
+          className={cn(
+            "grid transition-[grid-template-rows,opacity] duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+            expanded
+              ? "grid-rows-[1fr] opacity-100"
+              : "grid-rows-[0fr] opacity-0",
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div
+              className={cn(
+                "ml-5 grid gap-0.5 border-l border-sidebar-border pl-3 transition-transform duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+                expanded ? "translate-y-0" : "-translate-y-1",
+              )}
+            >
+              {item.children?.map((child) => {
+                const childIsActive =
+                  child.href === item.href
+                    ? pathname === child.href
+                    : isNavRouteActive(pathname, child.href);
 
-              return (
-                <Link
-                  key={child.href}
-                  href={child.href}
-                  aria-current={childIsActive ? "page" : undefined}
-                  onClick={onNavigate}
-                  className={cn(
-                    "relative flex min-h-9 items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
-                    childIsActive
-                      ? "bg-sidebar-active text-sidebar-active-foreground"
-                      : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
-                  )}
-                >
-                  {child.label}
-                </Link>
-              );
-            })}
+                return (
+                  <Link
+                    key={child.href}
+                    href={child.href}
+                    aria-current={childIsActive ? "page" : undefined}
+                    tabIndex={expanded ? undefined : -1}
+                    onClick={onNavigate}
+                    className={cn(
+                      "relative flex min-h-9 items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+                      childIsActive
+                        ? "bg-sidebar-active text-sidebar-active-foreground"
+                        : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                    )}
+                  >
+                    {child.label}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-        ) : null}
+        </div>
       </div>
     );
   }
@@ -531,7 +548,11 @@ function SidebarLink({
           : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
       )}
     >
-      <Icon className="size-4" aria-hidden="true" />
+      <Icon
+        className="size-4"
+        weight={active ? "fill" : "duotone"}
+        aria-hidden="true"
+      />
       {item.label}
     </Link>
   );

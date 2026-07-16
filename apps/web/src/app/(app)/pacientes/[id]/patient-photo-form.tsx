@@ -2,7 +2,12 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Save, Trash2, Upload } from "lucide-react";
+import {
+  Camera,
+  FloppyDisk as Save,
+  Trash as Trash2,
+  UploadSimple as Upload,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { updatePatientPhoto, type PatientActionState } from "../actions";
 import { Button } from "@/components/ui/button";

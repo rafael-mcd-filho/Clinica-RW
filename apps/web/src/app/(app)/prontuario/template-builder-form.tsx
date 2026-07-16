@@ -19,18 +19,18 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
-  ArchiveRestore,
-  ClipboardList,
+  ArrowCounterClockwise as ArchiveRestore,
+  ClipboardText as ClipboardList,
   Copy,
-  FilePlus2,
-  GripVertical,
-  MoreHorizontal,
-  Pencil,
+  FilePlus as FilePlus2,
+  DotsSixVertical as GripVertical,
+  DotsThree as MoreHorizontal,
+  PencilSimple as Pencil,
   Plus,
-  Save,
+  FloppyDisk as Save,
   Star,
-  Trash2,
-} from "lucide-react";
+  Trash as Trash2,
+} from "@phosphor-icons/react";
 import {
   useActionState,
   useCallback,

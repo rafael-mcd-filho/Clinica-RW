@@ -1,4 +1,4 @@
-import { Activity } from "lucide-react";
+import { Pulse as Activity } from "@phosphor-icons/react/dist/ssr";
 import { PasswordResetRequestForm } from "./password-reset-request-form";
 
 export default function EsqueciSenhaPage() {

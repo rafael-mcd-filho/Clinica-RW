@@ -17,26 +17,26 @@ import { fromZonedTime } from "date-fns-tz";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  Ban,
-  CalendarClock,
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
+  Prohibit as Ban,
+  CalendarDots as CalendarClock,
+  CalendarDots as CalendarDays,
+  CaretLeft as ChevronLeft,
+  CaretRight as ChevronRight,
   Check,
-  Clock3,
+  Clock as Clock3,
   FileText,
-  Mail,
+  EnvelopeSimple as Mail,
   Phone,
   Plus,
-  RefreshCw,
-  Search,
+  ArrowsClockwise as RefreshCw,
+  MagnifyingGlass as Search,
   SlidersHorizontal,
   Stethoscope,
   UserCheck,
-  UserRound,
-  WalletCards,
+  UserCircle as UserRound,
+  Wallet as WalletCards,
   X,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   changeAppointmentStatus,

@@ -1,4 +1,7 @@
-import { getEvolutionConfig, type EvolutionConfig } from "@/lib/whatsapp/config";
+import {
+  getEvolutionConfig,
+  type EvolutionConfig,
+} from "@/lib/whatsapp/config";
 
 /**
  * Cliente HTTP fino para a Evolution API (v2). Todas as chamadas usam a API key
@@ -20,6 +23,13 @@ export type ConnectionState =
   | "close"
   | "refused"
   | "unknown";
+
+export type InstanceDetails = {
+  state: ConnectionState;
+  phoneNumber: string | null;
+  displayName: string | null;
+  profilePictureUrl: string | null;
+};
 
 async function evolutionFetch(
   path: string,
@@ -75,20 +85,27 @@ export async function sendTextMessage(
   providedConfig?: EvolutionConfig,
 ): Promise<SendResult> {
   const config = providedConfig ?? getEvolutionConfig();
-  const payload = await evolutionFetch(`/message/sendText/${config.instance}`, {
-    method: "POST",
-    body: JSON.stringify({ number: toWhatsAppNumber(phone), text }),
-  }, config);
+  const payload = await evolutionFetch(
+    `/message/sendText/${config.instance}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ number: toWhatsAppNumber(phone), text }),
+    },
+    config,
+  );
   return { waMessageId: extractMessageId(payload), raw: payload };
 }
 
-export async function sendMediaMessage(input: {
-  phone: string;
-  mediaUrl: string;
-  mediaType: "image" | "video" | "document" | "audio";
-  caption?: string;
-  fileName?: string;
-}, providedConfig?: EvolutionConfig): Promise<SendResult> {
+export async function sendMediaMessage(
+  input: {
+    phone: string;
+    mediaUrl: string;
+    mediaType: "image" | "video" | "document" | "audio";
+    caption?: string;
+    fileName?: string;
+  },
+  providedConfig?: EvolutionConfig,
+): Promise<SendResult> {
   const config = providedConfig ?? getEvolutionConfig();
   const payload = await evolutionFetch(
     `/message/sendMedia/${config.instance}`,
@@ -101,16 +118,21 @@ export async function sendMediaMessage(input: {
         caption: input.caption,
         fileName: input.fileName,
       }),
-    }, config,
+    },
+    config,
   );
   return { waMessageId: extractMessageId(payload), raw: payload };
 }
 
 /** Estado atual da conexão da instância. */
-export async function getConnectionState(providedConfig?: EvolutionConfig): Promise<ConnectionState> {
+export async function getConnectionState(
+  providedConfig?: EvolutionConfig,
+): Promise<ConnectionState> {
   const config = providedConfig ?? getEvolutionConfig();
   const payload = await evolutionFetch(
-    `/instance/connectionState/${config.instance}`, undefined, config,
+    `/instance/connectionState/${config.instance}`,
+    undefined,
+    config,
   );
   const state =
     payload && typeof payload === "object" && "instance" in payload
@@ -120,12 +142,18 @@ export async function getConnectionState(providedConfig?: EvolutionConfig): Prom
 }
 
 /** Inicia a conexão e retorna o QR code (base64) para parear o número. */
-export async function connectInstance(providedConfig?: EvolutionConfig): Promise<{
+export async function connectInstance(
+  providedConfig?: EvolutionConfig,
+): Promise<{
   qrBase64: string | null;
   pairingCode: string | null;
 }> {
   const config = providedConfig ?? getEvolutionConfig();
-  const payload = await evolutionFetch(`/instance/connect/${config.instance}`, undefined, config);
+  const payload = await evolutionFetch(
+    `/instance/connect/${config.instance}`,
+    undefined,
+    config,
+  );
   if (payload && typeof payload === "object") {
     const record = payload as Record<string, unknown>;
     return {
@@ -137,12 +165,86 @@ export async function connectInstance(providedConfig?: EvolutionConfig): Promise
   return { qrBase64: null, pairingCode: null };
 }
 
+/** Cria uma instância Baileys isolada para a empresa. */
+export async function createInstance(
+  providedConfig: EvolutionConfig,
+): Promise<void> {
+  await evolutionFetch(
+    "/instance/create",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        instanceName: providedConfig.instance,
+        integration: "WHATSAPP-BAILEYS",
+        qrcode: false,
+        groupsIgnore: true,
+        readMessages: false,
+        readStatus: false,
+        syncFullHistory: false,
+      }),
+    },
+    providedConfig,
+  );
+}
+
+/** Encerra a sessão do WhatsApp sem apagar a instância da empresa. */
+export async function logoutInstance(
+  providedConfig: EvolutionConfig,
+): Promise<void> {
+  await evolutionFetch(
+    `/instance/logout/${providedConfig.instance}`,
+    { method: "DELETE" },
+    providedConfig,
+  );
+}
+
+/** Retorna estado e identidade da conta conectada. */
+export async function getInstanceDetails(
+  providedConfig: EvolutionConfig,
+): Promise<InstanceDetails | null> {
+  const payload = await evolutionFetch(
+    `/instance/fetchInstances?instanceName=${encodeURIComponent(providedConfig.instance)}`,
+    undefined,
+    providedConfig,
+  );
+  const first = Array.isArray(payload) ? payload[0] : payload;
+  if (!first || typeof first !== "object") return null;
+  const root = first as Record<string, unknown>;
+  const nested =
+    root.instance && typeof root.instance === "object"
+      ? (root.instance as Record<string, unknown>)
+      : root;
+  const owner = readString(nested.owner) ?? readString(root.owner);
+  const rawState =
+    readString(nested.status) ?? readString(root.connectionStatus);
+
+  return {
+    state: normalizeConnectionState(rawState),
+    phoneNumber: owner?.replace(/@.*$/, "") ?? null,
+    displayName: readString(nested.profileName) ?? readString(root.profileName),
+    profilePictureUrl:
+      readString(nested.profilePictureUrl) ?? readString(root.profilePicUrl),
+  };
+}
+
 /** Registra a URL de webhook da instância para receber eventos de mensagem. */
-export async function getInstanceWebhook(providedConfig?: EvolutionConfig): Promise<{ enabled: boolean; url: string | null }> {
+export async function getInstanceWebhook(
+  providedConfig?: EvolutionConfig,
+): Promise<{ enabled: boolean; url: string | null }> {
   const config = providedConfig ?? getEvolutionConfig();
-  const payload = await evolutionFetch(`/webhook/find/${config.instance}`, undefined, config);
-  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : null;
-  return { enabled: record?.enabled === true, url: typeof record?.url === "string" ? record.url : null };
+  const payload = await evolutionFetch(
+    `/webhook/find/${config.instance}`,
+    undefined,
+    config,
+  );
+  const record =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : null;
+  return {
+    enabled: record?.enabled === true,
+    url: typeof record?.url === "string" ? record.url : null,
+  };
 }
 
 export async function getMediaMessageBase64(
@@ -162,25 +264,43 @@ export async function getMediaMessageBase64(
   );
   if (!payload || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
-  const base64 = typeof record.base64 === "string" ? record.base64 : typeof record.data === "string" ? record.data : null;
+  const base64 =
+    typeof record.base64 === "string"
+      ? record.base64
+      : typeof record.data === "string"
+        ? record.data
+        : null;
   if (!base64) return null;
-  const mimeType = typeof record.mimetype === "string" ? record.mimetype : typeof record.mimeType === "string" ? record.mimeType : null;
+  const mimeType =
+    typeof record.mimetype === "string"
+      ? record.mimetype
+      : typeof record.mimeType === "string"
+        ? record.mimeType
+        : null;
   return { base64, mimeType };
 }
 
-export async function setInstanceWebhook(url: string, secret?: string, providedConfig?: EvolutionConfig): Promise<void> {
+export async function setInstanceWebhook(
+  url: string,
+  secret?: string,
+  providedConfig?: EvolutionConfig,
+): Promise<void> {
   const config = providedConfig ?? getEvolutionConfig();
-  await evolutionFetch(`/webhook/set/${config.instance}`, {
-    method: "POST",
-    body: JSON.stringify({
-      webhook: {
-        enabled: true,
-        url,
-        events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
-        ...(secret ? { headers: { "x-webhook-secret": secret } } : {}),
-      },
-    }),
-  }, config);
+  await evolutionFetch(
+    `/webhook/set/${config.instance}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url,
+          events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
+          ...(secret ? { headers: { "x-webhook-secret": secret } } : {}),
+        },
+      }),
+    },
+    config,
+  );
 }
 
 function extractMessageId(payload: unknown): string | null {
@@ -191,4 +311,20 @@ function extractMessageId(payload: unknown): string | null {
     }
   }
   return null;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeConnectionState(value: string | null): ConnectionState {
+  if (
+    value === "open" ||
+    value === "connecting" ||
+    value === "close" ||
+    value === "refused"
+  ) {
+    return value;
+  }
+  return "unknown";
 }

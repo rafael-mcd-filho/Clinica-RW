@@ -3,12 +3,12 @@
 import { useActionState, useEffect } from "react";
 import {
   Check,
-  CheckCircle2,
+  CheckCircle as CheckCircle2,
   Plus,
-  Save,
+  FloppyDisk as Save,
   ShieldCheck,
   XCircle,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   addPatientConsent,

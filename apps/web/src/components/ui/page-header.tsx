@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowLeft, type LucideIcon } from "lucide-react";
+import { ArrowLeft } from "@phosphor-icons/react/dist/ssr";
+import type { Icon as LucideIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +37,7 @@ export function PageHeader({
           </Button>
         ) : Icon ? (
           <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
-            <Icon className="size-5" aria-hidden="true" />
+            <Icon className="size-5" weight="duotone" aria-hidden="true" />
           </div>
         ) : null}
         <div className="min-w-0">

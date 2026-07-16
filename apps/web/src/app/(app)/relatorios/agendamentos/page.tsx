@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { CalendarDays, Download, Filter, RotateCcw } from "lucide-react";
+import {
+  CalendarDots as CalendarDays,
+  DownloadSimple as Download,
+  FunnelSimple as Filter,
+  ArrowCounterClockwise as RotateCcw,
+} from "@phosphor-icons/react/dist/ssr";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

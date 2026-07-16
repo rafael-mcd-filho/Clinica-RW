@@ -4,23 +4,28 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
-  CheckCheck,
+  Checks as CheckCheck,
   Archive,
-  Inbox,
-  MessagesSquare,
-  MoreVertical,
-  Mic,
+  CalendarDots,
+  LinkSimple,
+  Note,
+  Play,
+  Tray as Inbox,
+  ChatsCircle as MessagesSquare,
+  DotsThreeVertical as MoreVertical,
+  Microphone as Mic,
   Paperclip,
-  Search,
-  Send,
-  Smile,
+  MagnifyingGlass as Search,
+  PaperPlaneRight as Send,
+  Smiley as Smile,
   Square,
-  Sparkles,
+  Sparkle as Sparkles,
   Tag as TagIcon,
-  UserRound,
-  Wifi,
-  WifiOff,
-} from "lucide-react";
+  UserCircle as UserRound,
+  UserSwitch,
+  WifiHigh as Wifi,
+  WifiSlash as WifiOff,
+} from "@phosphor-icons/react";
 import {
   useCallback,
   useEffect,
@@ -32,16 +37,20 @@ import {
 import { toast } from "sonner";
 import type { QuickReplyTemplate } from "./page";
 import {
+  addInternalNoteAction,
   assignToMeAction,
+  linkPatientAction,
   markConversationReadAction,
   sendMediaMessageAction,
   sendMessageAction,
   setConversationStatusAction,
   setConversationTagAction,
   suggestReplyAction,
+  transferConversationAction,
 } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
 import { Input, Textarea } from "@/components/ui/field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -81,9 +90,13 @@ type MessageRow = {
   sent_at: string | null;
 };
 
+export type AttendantOption = { id: string; name: string };
+
 export function AttendanceInbox({
   organizationId,
   currentUserId,
+  currentUserName,
+  attendants,
   canAttend,
   canConfigure,
   evolutionReady,
@@ -94,6 +107,8 @@ export function AttendanceInbox({
 }: {
   organizationId: string;
   currentUserId: string | null;
+  currentUserName: string | null;
+  attendants: AttendantOption[];
   canAttend: boolean;
   canConfigure: boolean;
   evolutionReady: boolean;
@@ -113,7 +128,10 @@ export function AttendanceInbox({
   const router = useRouter();
 
   useEffect(() => {
-    const task = window.setTimeout(() => setConversations(initialConversations), 0);
+    const task = window.setTimeout(
+      () => setConversations(initialConversations),
+      0,
+    );
     return () => window.clearTimeout(task);
   }, [initialConversations]);
 
@@ -123,7 +141,12 @@ export function AttendanceInbox({
   );
 
   const counts = useMemo(() => {
-    const base: Record<InboxView, number> = { new: 0, mine: 0, others: 0, resolved: 0 };
+    const base: Record<InboxView, number> = {
+      new: 0,
+      mine: 0,
+      others: 0,
+      resolved: 0,
+    };
     for (const item of conversations) {
       if (item.status === "pending") base.new += 1;
       else if (item.status === "resolved") base.resolved += 1;
@@ -139,7 +162,10 @@ export function AttendanceInbox({
       .filter((item) => {
         if (tab === "new") return item.status === "pending";
         if (tab === "resolved") return item.status === "resolved";
-        if (tab === "mine") return item.status === "open" && item.assignedUserId === currentUserId;
+        if (tab === "mine")
+          return (
+            item.status === "open" && item.assignedUserId === currentUserId
+          );
         return item.status === "open" && item.assignedUserId !== currentUserId;
       })
       .filter((item) =>
@@ -191,10 +217,19 @@ export function AttendanceInbox({
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "whatsapp_messages", filter: `organization_id=eq.${organizationId}` },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "whatsapp_messages",
+          filter: `organization_id=eq.${organizationId}`,
+        },
         (payload) => {
           const row = payload.new as MessageRow;
-          setMessages((current) => current.map((message) => message.id === row.id ? toMessage(row) : message));
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === row.id ? toMessage(row) : message,
+            ),
+          );
         },
       )
       .on(
@@ -228,17 +263,32 @@ export function AttendanceInbox({
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "conversation_tags", filter: `organization_id=eq.${organizationId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "conversation_tags",
+          filter: `organization_id=eq.${organizationId}`,
+        },
         () => router.refresh(),
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "whatsapp_contacts", filter: `organization_id=eq.${organizationId}` },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "whatsapp_contacts",
+          filter: `organization_id=eq.${organizationId}`,
+        },
         () => router.refresh(),
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "whatsapp_instances", filter: `organization_id=eq.${organizationId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "whatsapp_instances",
+          filter: `organization_id=eq.${organizationId}`,
+        },
         () => router.refresh(),
       )
       .subscribe();
@@ -248,22 +298,27 @@ export function AttendanceInbox({
     };
   }, [organizationId, router, upsertConversation]);
 
-  const reloadMessages = useCallback(async (id: string) => {
-    const { data } = await supabaseRef.current
-      .from("whatsapp_messages")
-      .select("id, conversation_id, wa_message_id, direction, message_type, body, media_url, media_mime_type, status, ai_suggested, sender_user_id, created_at, sent_at")
-      .eq("organization_id", organizationId)
-      .eq("conversation_id", id)
-      .order("created_at", { ascending: true })
-      .limit(300)
-      .returns<MessageRow[]>();
-    if (selectedIdRef.current === id) {
-      setMessages((current) => [
-        ...(data ?? []).map(toMessage),
-        ...current.filter((message) => message.id.startsWith("optimistic-")),
-      ]);
-    }
-  }, [organizationId]);
+  const reloadMessages = useCallback(
+    async (id: string) => {
+      const { data } = await supabaseRef.current
+        .from("whatsapp_messages")
+        .select(
+          "id, conversation_id, wa_message_id, direction, message_type, body, media_url, media_mime_type, status, ai_suggested, sender_user_id, created_at, sent_at",
+        )
+        .eq("organization_id", organizationId)
+        .eq("conversation_id", id)
+        .order("created_at", { ascending: true })
+        .limit(300)
+        .returns<MessageRow[]>();
+      if (selectedIdRef.current === id) {
+        setMessages((current) => [
+          ...(data ?? []).map(toMessage),
+          ...current.filter((message) => message.id.startsWith("optimistic-")),
+        ]);
+      }
+    },
+    [organizationId],
+  );
 
   useEffect(() => {
     if (!selectedId) return;
@@ -288,7 +343,8 @@ export function AttendanceInbox({
 
   function addOptimisticMessage(message: ConversationMessage) {
     setMessages((current) => [...current, message]);
-    if (selectedIdRef.current) {
+    // Notas internas não alteram preview nem status da conversa.
+    if (selectedIdRef.current && message.type !== "note") {
       upsertConversation({
         id: selectedIdRef.current,
         lastMessageAt: message.createdAt,
@@ -298,7 +354,10 @@ export function AttendanceInbox({
     }
   }
 
-  function confirmOptimisticMessage(tempId: string, message: ConversationMessage) {
+  function confirmOptimisticMessage(
+    tempId: string,
+    message: ConversationMessage,
+  ) {
     setMessages((current) => {
       const withoutServerDuplicate = current.filter(
         (item) => item.id !== message.id,
@@ -339,6 +398,9 @@ export function AttendanceInbox({
           conversation={selected}
           messages={messages}
           canAttend={canAttend}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          attendants={attendants}
           quickReplies={quickReplies}
           onToggleDetails={() => setDetailsOpen((value) => !value)}
           onOptimisticMessage={addOptimisticMessage}
@@ -346,6 +408,15 @@ export function AttendanceInbox({
           onMessageFailed={removeOptimisticMessage}
           onStatusChange={(status) =>
             upsertConversation({ id: selected.id, status })
+          }
+          onAssigned={(userId) =>
+            upsertConversation({
+              id: selected.id,
+              assignedUserId: userId,
+              assignedUserName:
+                attendants.find((item) => item.id === userId)?.name ?? null,
+              status: "open",
+            })
           }
         />
       ) : (
@@ -523,7 +594,9 @@ function ConversationRow({
       onClick={onSelect}
       className={cn(
         "grid h-auto min-h-[4.5rem] w-full grid-cols-[2.5rem_1fr_auto] gap-x-2 gap-y-0.5 rounded-none px-3 py-2.5 text-left font-normal",
-        active ? "border-l-2 border-primary bg-primary-muted pl-2.5 hover:bg-primary-muted" : "",
+        active
+          ? "border-l-2 border-primary bg-primary-muted pl-2.5 hover:bg-primary-muted"
+          : "",
       )}
     >
       <ContactAvatar name={item.contactName} photoUrl={item.contactPhotoUrl} />
@@ -569,22 +642,30 @@ function ConversationThread({
   conversation,
   messages,
   canAttend,
+  currentUserId,
+  currentUserName,
+  attendants,
   quickReplies,
   onToggleDetails,
   onOptimisticMessage,
   onMessageConfirmed,
   onMessageFailed,
   onStatusChange,
+  onAssigned,
 }: {
   conversation: ConversationListItem;
   messages: ConversationMessage[];
   canAttend: boolean;
+  currentUserId: string | null;
+  currentUserName: string | null;
+  attendants: AttendantOption[];
   quickReplies: QuickReplyTemplate[];
   onToggleDetails: () => void;
   onOptimisticMessage: (message: ConversationMessage) => void;
   onMessageConfirmed: (tempId: string, message: ConversationMessage) => void;
   onMessageFailed: (tempId: string) => void;
   onStatusChange: (status: ConversationStatus) => void;
+  onAssigned: (userId: string | null) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [pending, startTransition] = useTransition();
@@ -604,50 +685,115 @@ function ConversationThread({
     });
   }
 
+  function startAttendance() {
+    startTransition(async () => {
+      const result = await assignToMeAction(conversation.id);
+      if (result.ok) {
+        onAssigned(currentUserId);
+      } else {
+        toast.error(result.error ?? "Falha ao iniciar o atendimento.");
+      }
+    });
+  }
+
+  function transferTo(userId: string) {
+    startTransition(async () => {
+      const result = await transferConversationAction(conversation.id, userId);
+      if (result.ok) {
+        onAssigned(userId);
+        toast.success("Conversa transferida.");
+      } else {
+        toast.error(result.error ?? "Falha ao transferir.");
+      }
+    });
+  }
+
+  const transferTargets = attendants.filter(
+    (item) => item.id !== conversation.assignedUserId,
+  );
+
   return (
     <section className="flex min-h-0 flex-col overflow-hidden bg-card">
       <header className="flex min-h-16 items-center justify-between gap-3 border-b border-border px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <ContactAvatar name={conversation.contactName} photoUrl={conversation.contactPhotoUrl} enlargeable />
-          <button type="button" onClick={onToggleDetails} className="min-w-0 rounded-lg p-1.5 text-left hover:bg-muted/70">
-          <div className="min-w-0">
-          <p className="truncate text-body-sm font-semibold">
-            {conversation.contactName}
-          </p>
-          <p className="truncate text-label tabular-nums text-muted-foreground">
-            {formatPhone(conversation.contactPhone)}
-          </p>
-          </div>
+          <ContactAvatar
+            name={conversation.contactName}
+            photoUrl={conversation.contactPhotoUrl}
+            enlargeable
+          />
+          <button
+            type="button"
+            onClick={onToggleDetails}
+            className="min-w-0 rounded-lg p-1.5 text-left hover:bg-muted/70"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-body-sm font-semibold">
+                {conversation.contactName}
+              </p>
+              <p className="truncate text-label tabular-nums text-muted-foreground">
+                {formatPhone(conversation.contactPhone)}
+              </p>
+            </div>
           </button>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <Badge variant="neutral" className="hidden sm:inline-flex">
-            {conversationStatusLabels[conversation.status]}
-          </Badge>
+          {conversation.assignedUserName ? (
+            <Badge variant="primary" className="hidden md:inline-flex">
+              {conversation.assignedUserId === currentUserId
+                ? "Com você"
+                : conversation.assignedUserName}
+            </Badge>
+          ) : (
+            <Badge variant="neutral" className="hidden sm:inline-flex">
+              {conversationStatusLabels[conversation.status]}
+            </Badge>
+          )}
           {canAttend ? (
             <>
-            {conversation.status !== "resolved" ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={pending}
-                onClick={() => changeStatus("resolved")}
-              >
-                <CheckCheck className="size-4" aria-hidden="true" />
-                Concluir
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={pending}
-                onClick={() => changeStatus("open")}
-              >
-                Reabrir
-              </Button>
-            )}
+              {transferTargets.length ? (
+                <DropdownMenu
+                  trigger={<UserSwitch className="size-4" aria-hidden="true" />}
+                  triggerLabel="Transferir conversa"
+                >
+                  {(close) => (
+                    <>
+                      {transferTargets.map((attendant) => (
+                        <DropdownMenuItem
+                          key={attendant.id}
+                          onSelect={() => {
+                            close();
+                            transferTo(attendant.id);
+                          }}
+                        >
+                          {attendant.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+                </DropdownMenu>
+              ) : null}
+              {conversation.status !== "resolved" ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => changeStatus("resolved")}
+                >
+                  <CheckCheck className="size-4" aria-hidden="true" />
+                  Concluir
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => changeStatus("open")}
+                >
+                  Reabrir
+                </Button>
+              )}
             </>
           ) : null}
         </div>
@@ -658,8 +804,17 @@ function ConversationThread({
         className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-surface-sunken px-4 py-5 sm:px-6"
       >
         {messages.length ? (
-          messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+          groupMessagesByDay(messages).map((group) => (
+            <div key={group.key} className="space-y-2">
+              <div className="sticky top-0 z-10 flex justify-center py-1">
+                <span className="rounded-full border border-border bg-card px-3 py-0.5 text-caption font-medium text-muted-foreground shadow-[var(--shadow-soft)]">
+                  {group.label}
+                </span>
+              </div>
+              {group.messages.map((message) => (
+                <MessageBubble key={message.id} message={message} />
+              ))}
+            </div>
           ))
         ) : (
           <p className="py-8 text-center text-label text-muted-foreground">
@@ -668,9 +823,27 @@ function ConversationThread({
         )}
       </div>
 
+      {canAttend && conversation.status === "pending" ? (
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-primary-muted px-4 py-3">
+          <p className="text-body-sm text-foreground">
+            Este atendimento ainda não tem responsável.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            disabled={pending}
+            onClick={startAttendance}
+          >
+            <Play className="size-4" weight="fill" aria-hidden="true" />
+            Iniciar atendimento
+          </Button>
+        </div>
+      ) : null}
+
       {canAttend ? (
         <MessageComposer
           conversationId={conversation.id}
+          currentUserName={currentUserName}
           quickReplies={quickReplies}
           onOptimisticMessage={onOptimisticMessage}
           onMessageConfirmed={onMessageConfirmed}
@@ -685,37 +858,113 @@ function ConversationThread({
   );
 }
 
+type MessageDayGroup = {
+  key: string;
+  label: string;
+  messages: ConversationMessage[];
+};
+
+function groupMessagesByDay(
+  messages: ConversationMessage[],
+): MessageDayGroup[] {
+  const groups: MessageDayGroup[] = [];
+  for (const message of messages) {
+    const date = new Date(message.createdAt);
+    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.messages.push(message);
+    } else {
+      groups.push({ key, label: dayLabel(date), messages: [message] });
+    }
+  }
+  return groups;
+}
+
+const dayFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "long",
+  year: "numeric",
+});
+
+function dayLabel(date: Date): string {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Hoje";
+  if (date.toDateString() === yesterday.toDateString()) return "Ontem";
+  return dayFormatter.format(date);
+}
+
 function MessageBubble({ message }: { message: ConversationMessage }) {
   const outbound = message.direction === "outbound";
+  const isNote = message.type === "note";
   const [detailsOpen, setDetailsOpen] = useState(false);
   return (
     <div className={cn("flex", outbound ? "justify-end" : "justify-start")}>
       <div
         className={cn(
           "max-w-[82%] rounded-xl px-3 py-2 text-body-sm shadow-[var(--shadow-soft)] sm:max-w-[68%]",
-          outbound
-            ? "rounded-br-sm bg-primary-muted text-foreground"
-            : "rounded-bl-sm border border-border bg-card text-foreground",
+          isNote
+            ? "rounded-br-sm border border-warning/40 bg-warning-muted text-warning-foreground"
+            : outbound
+              ? "rounded-br-sm bg-primary-muted text-foreground"
+              : "rounded-bl-sm border border-border bg-card text-foreground",
         )}
       >
-        <div className="relative grid gap-2 pr-4">
-        {message.mediaUrl && message.type === "image" ? (
-          <a href={`/api/whatsapp/media/${message.id}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg">
-            <Image unoptimized src={`/api/whatsapp/media/${message.id}`} alt={message.body ?? "Imagem recebida"} width={420} height={320} className="max-h-80 w-auto max-w-full object-contain" />
-          </a>
-        ) : message.mediaUrl && message.type === "audio" ? (
-          <audio controls preload="metadata" src={`/api/whatsapp/media/${message.id}`} className="max-w-full" />
-        ) : message.mediaUrl ? (
-          <a href={`/api/whatsapp/media/${message.id}`} target="_blank" rel="noreferrer" className="font-medium text-primary underline">Abrir arquivo</a>
+        {isNote ? (
+          <p className="mb-1 flex items-center gap-1 text-caption font-semibold uppercase tracking-wide">
+            <Note className="size-3.5" weight="fill" aria-hidden="true" />
+            Nota interna
+          </p>
         ) : null}
-        {message.body ? (
-          <p className="whitespace-pre-wrap break-words">{message.body}</p>
-        ) : (
-          <p className="italic opacity-80">{labelForType(message.type)}</p>
-        )}
-        <button type="button" onClick={() => setDetailsOpen(true)} className="absolute -right-1 -top-1 rounded p-1 text-muted-foreground hover:bg-black/5" aria-label="Detalhes da mensagem">
-          <MoreVertical className="size-3.5" />
-        </button>
+        <div className="relative grid gap-2 pr-4">
+          {message.mediaUrl && message.type === "image" ? (
+            <a
+              href={`/api/whatsapp/media/${message.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="block overflow-hidden rounded-lg"
+            >
+              <Image
+                unoptimized
+                src={`/api/whatsapp/media/${message.id}`}
+                alt={message.body ?? "Imagem recebida"}
+                width={420}
+                height={320}
+                className="max-h-80 w-auto max-w-full object-contain"
+              />
+            </a>
+          ) : message.mediaUrl && message.type === "audio" ? (
+            <audio
+              controls
+              preload="metadata"
+              src={`/api/whatsapp/media/${message.id}`}
+              className="max-w-full"
+            />
+          ) : message.mediaUrl ? (
+            <a
+              href={`/api/whatsapp/media/${message.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-primary underline"
+            >
+              Abrir arquivo
+            </a>
+          ) : null}
+          {message.body ? (
+            <p className="whitespace-pre-wrap break-words">{message.body}</p>
+          ) : (
+            <p className="italic opacity-80">{labelForType(message.type)}</p>
+          )}
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            className="absolute -right-1 -top-1 rounded p-1 text-muted-foreground hover:bg-black/5"
+            aria-label="Detalhes da mensagem"
+          >
+            <MoreVertical className="size-3.5" />
+          </button>
         </div>
         <p
           className={cn(
@@ -730,15 +979,40 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
             <CheckCheck className="size-3.5" aria-hidden="true" />
           ) : null}
         </p>
-        <Modal open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Detalhes da mensagem" className="max-w-md">
+        <Modal
+          open={detailsOpen}
+          onClose={() => setDetailsOpen(false)}
+          title="Detalhes da mensagem"
+          className="max-w-md"
+        >
           <dl className="grid grid-cols-2 gap-3 text-sm">
-            <MessageDetail label="Direção" value={outbound ? "Enviada" : "Recebida"} />
-            <MessageDetail label="Status" value={messageStatusLabel(message.status)} />
-            <MessageDetail label="Criada" value={formatMessageDateTime(message.createdAt)} />
-            <MessageDetail label="Enviada" value={formatMessageDateTime(message.sentAt)} />
+            <MessageDetail
+              label="Direção"
+              value={outbound ? "Enviada" : "Recebida"}
+            />
+            <MessageDetail
+              label="Status"
+              value={messageStatusLabel(message.status)}
+            />
+            <MessageDetail
+              label="Criada"
+              value={formatMessageDateTime(message.createdAt)}
+            />
+            <MessageDetail
+              label="Enviada"
+              value={formatMessageDateTime(message.sentAt)}
+            />
             <MessageDetail label="Tipo" value={labelForType(message.type)} />
-            <MessageDetail label="Origem" value={outbound ? "Usuário" : "Contato"} />
-            <div className="col-span-2"><MessageDetail label="ID da mensagem" value={message.waMessageId ?? message.id} /></div>
+            <MessageDetail
+              label="Origem"
+              value={outbound ? "Usuário" : "Contato"}
+            />
+            <div className="col-span-2">
+              <MessageDetail
+                label="ID da mensagem"
+                value={message.waMessageId ?? message.id}
+              />
+            </div>
           </dl>
         </Modal>
       </div>
@@ -746,37 +1020,67 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
   );
 }
 
+const signatureStorageKey = "hi-clinic-atendimento-assinatura";
+
 function MessageComposer({
   conversationId,
+  currentUserName,
   quickReplies,
   onOptimisticMessage,
   onMessageConfirmed,
   onMessageFailed,
 }: {
   conversationId: string;
+  currentUserName: string | null;
   quickReplies: QuickReplyTemplate[];
   onOptimisticMessage: (message: ConversationMessage) => void;
   onMessageConfirmed: (tempId: string, message: ConversationMessage) => void;
   onMessageFailed: (tempId: string) => void;
 }) {
   const [text, setText] = useState("");
+  const [mode, setMode] = useState<"reply" | "note">("reply");
   const [sending, setSending] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showEmojis, setShowEmojis] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [signatureEnabled, setSignatureEnabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  useEffect(() => {
+    const task = window.setTimeout(() => {
+      setSignatureEnabled(
+        window.localStorage.getItem(signatureStorageKey) === "true",
+      );
+    }, 0);
+    return () => window.clearTimeout(task);
+  }, []);
+
+  function toggleSignature() {
+    setSignatureEnabled((value) => {
+      window.localStorage.setItem(signatureStorageKey, String(!value));
+      return !value;
+    });
+  }
+
+  const isNoteMode = mode === "note";
+
   async function send() {
-    const value = text.trim();
-    if (!value || sending) return;
+    const raw = text.trim();
+    if (!raw || sending) return;
+
+    const value =
+      !isNoteMode && signatureEnabled && currentUserName
+        ? `*${currentUserName}:*\n${raw}`
+        : raw;
+
     const tempId = `optimistic-${crypto.randomUUID()}`;
     onOptimisticMessage({
       id: tempId,
       direction: "outbound",
-      type: "text",
+      type: isNoteMode ? "note" : "text",
       body: value,
       mediaUrl: null,
       mediaMimeType: null,
@@ -787,13 +1091,15 @@ function MessageComposer({
     });
     setText("");
     setSending(true);
-    const result = await sendMessageAction(conversationId, value);
+    const result = isNoteMode
+      ? await addInternalNoteAction(conversationId, value)
+      : await sendMessageAction(conversationId, value);
     setSending(false);
     if (result.ok && result.message) {
       onMessageConfirmed(tempId, result.message);
     } else {
       onMessageFailed(tempId);
-      setText((current) => current || value);
+      setText((current) => current || raw);
       toast.error(result.error ?? "Falha ao enviar.");
     }
   }
@@ -811,8 +1117,23 @@ function MessageComposer({
 
   async function sendAttachment(file: File) {
     const tempId = `optimistic-${crypto.randomUUID()}`;
-    const type: MessageType = file.type.startsWith("image/") ? "image" : file.type.startsWith("audio/") ? "audio" : "document";
-    onOptimisticMessage({ id: tempId, direction: "outbound", type, body: file.name, mediaUrl: null, mediaMimeType: file.type || null, status: "queued", aiSuggested: false, senderUserName: null, createdAt: new Date().toISOString() });
+    const type: MessageType = file.type.startsWith("image/")
+      ? "image"
+      : file.type.startsWith("audio/")
+        ? "audio"
+        : "document";
+    onOptimisticMessage({
+      id: tempId,
+      direction: "outbound",
+      type,
+      body: file.name,
+      mediaUrl: null,
+      mediaMimeType: file.type || null,
+      status: "queued",
+      aiSuggested: false,
+      senderUserName: null,
+      createdAt: new Date().toISOString(),
+    });
     const data = new FormData();
     data.set("conversation_id", conversationId);
     data.set("file", file);
@@ -833,12 +1154,17 @@ function MessageComposer({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
-      recorder.ondataavailable = (event) => event.data.size && audioChunksRef.current.push(event.data);
+      recorder.ondataavailable = (event) =>
+        event.data.size && audioChunksRef.current.push(event.data);
       recorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const blob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
         stream.getTracks().forEach((track) => track.stop());
         setRecording(false);
-        void sendAttachment(new File([blob], `audio-${Date.now()}.webm`, { type: blob.type }));
+        void sendAttachment(
+          new File([blob], `audio-${Date.now()}.webm`, { type: blob.type }),
+        );
       };
       recorderRef.current = recorder;
       recorder.start();
@@ -850,6 +1176,38 @@ function MessageComposer({
 
   return (
     <div className="border-t border-border bg-card px-3 py-2.5">
+      <div className="mb-2 inline-flex rounded-md bg-muted p-0.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setMode("reply")}
+          className={cn(
+            "h-7 px-3 text-label",
+            !isNoteMode
+              ? "bg-card text-foreground shadow-[var(--shadow-soft)] hover:bg-card"
+              : "",
+          )}
+        >
+          <Send className="size-3.5" aria-hidden="true" />
+          Responder
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setMode("note")}
+          className={cn(
+            "h-7 px-3 text-label",
+            isNoteMode
+              ? "bg-warning-muted text-warning-foreground shadow-[var(--shadow-soft)] hover:bg-warning-muted"
+              : "",
+          )}
+        >
+          <Note className="size-3.5" aria-hidden="true" />
+          Nota interna
+        </Button>
+      </div>
       {showTemplates && quickReplies.length ? (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {quickReplies.map((template) => (
@@ -870,15 +1228,72 @@ function MessageComposer({
       ) : null}
       {showEmojis ? (
         <div className="mb-2 flex flex-wrap gap-1 rounded-lg border border-border bg-popover p-2 shadow-sm">
-          {["😀", "😂", "😊", "😍", "🙏", "👍", "❤️", "🎉", "✅", "📅", "👋", "🤝"].map((emoji) => (
-            <button key={emoji} type="button" onClick={() => setText((value) => `${value}${emoji}`)} className="rounded p-1.5 text-xl hover:bg-muted">{emoji}</button>
+          {[
+            "😀",
+            "😂",
+            "😊",
+            "😍",
+            "🙏",
+            "👍",
+            "❤️",
+            "🎉",
+            "✅",
+            "📅",
+            "👋",
+            "🤝",
+          ].map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => setText((value) => `${value}${emoji}`)}
+              className="rounded p-1.5 text-xl hover:bg-muted"
+            >
+              {emoji}
+            </button>
           ))}
         </div>
       ) : null}
-      <div className="flex items-end gap-2 rounded-2xl border border-border bg-background p-1.5 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
-        <input ref={fileInputRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={(event) => { const file = event.target.files?.[0]; if (file) void sendAttachment(file); event.target.value = ""; }} />
-        <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} title="Enviar imagem ou arquivo"><Paperclip className="size-4" /><span className="sr-only">Anexar arquivo</span></Button>
-        <Button type="button" variant="ghost" size="icon" onClick={() => setShowEmojis((value) => !value)} title="Emojis"><Smile className="size-4" /><span className="sr-only">Escolher emoji</span></Button>
+      <div
+        className={cn(
+          "flex items-end gap-2 rounded-2xl border p-1.5 focus-within:ring-2",
+          isNoteMode
+            ? "border-warning/50 bg-warning-muted/40 focus-within:border-warning focus-within:ring-warning/15"
+            : "border-border bg-background focus-within:border-primary focus-within:ring-primary/15",
+        )}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void sendAttachment(file);
+            event.target.value = "";
+          }}
+        />
+        {!isNoteMode ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            title="Enviar imagem ou arquivo"
+          >
+            <Paperclip className="size-4" />
+            <span className="sr-only">Anexar arquivo</span>
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => setShowEmojis((value) => !value)}
+          title="Emojis"
+        >
+          <Smile className="size-4" />
+          <span className="sr-only">Escolher emoji</span>
+        </Button>
         <Textarea
           value={text}
           onChange={(event) => setText(event.target.value)}
@@ -888,43 +1303,76 @@ function MessageComposer({
               void send();
             }
           }}
-          placeholder="Escreva uma mensagem…"
+          placeholder={
+            isNoteMode
+              ? "Escreva uma nota interna (visível só para a equipe)…"
+              : "Escreva uma mensagem…"
+          }
           rows={1}
           className="min-h-10 flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
         />
         <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={suggesting}
-            onClick={suggest}
-            title="Sugerir resposta com IA"
-          >
-            <Sparkles className="size-4" aria-hidden="true" />
-            {suggesting ? "…" : "IA"}
-          </Button>
+          {!isNoteMode ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={suggesting}
+              onClick={suggest}
+              title="Sugerir resposta com IA"
+            >
+              <Sparkles className="size-4" aria-hidden="true" />
+              {suggesting ? "…" : "IA"}
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="icon"
             disabled={sending}
-            onClick={text.trim() ? send : toggleRecording}
+            onClick={text.trim() || isNoteMode ? send : toggleRecording}
             variant={recording ? "destructive" : "primary"}
           >
-            {text.trim() ? <Send className="size-4" aria-hidden="true" /> : recording ? <Square className="size-4" /> : <Mic className="size-4" />}
-            <span className="sr-only">{text.trim() ? "Enviar mensagem" : recording ? "Parar gravação" : "Gravar áudio"}</span>
+            {text.trim() || isNoteMode ? (
+              <Send className="size-4" aria-hidden="true" />
+            ) : recording ? (
+              <Square className="size-4" />
+            ) : (
+              <Mic className="size-4" />
+            )}
+            <span className="sr-only">
+              {text.trim() || isNoteMode
+                ? "Enviar"
+                : recording
+                  ? "Parar gravação"
+                  : "Gravar áudio"}
+            </span>
           </Button>
         </div>
       </div>
-      {quickReplies.length ? (
-        <button
-          type="button"
-          onClick={() => setShowTemplates((value) => !value)}
-          className="mt-1 text-caption text-muted-foreground hover:text-foreground"
-        >
-          {showTemplates ? "Ocultar" : "Respostas rápidas"}
-        </button>
-      ) : null}
+      <div className="mt-1 flex items-center justify-between gap-3">
+        {quickReplies.length && !isNoteMode ? (
+          <button
+            type="button"
+            onClick={() => setShowTemplates((value) => !value)}
+            className="text-caption text-muted-foreground hover:text-foreground"
+          >
+            {showTemplates ? "Ocultar" : "Respostas rápidas"}
+          </button>
+        ) : (
+          <span />
+        )}
+        {!isNoteMode && currentUserName ? (
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-caption text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={signatureEnabled}
+              onChange={toggleSignature}
+              className="size-3.5 accent-primary"
+            />
+            Assinar como {currentUserName.split(" ")[0]}
+          </label>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1008,7 +1456,11 @@ function ContactPanel({
     <aside className="hidden min-h-0 flex-col overflow-y-auto border-l border-border bg-card xl:flex">
       <div className="border-b border-border p-4">
         <div className="flex items-center gap-3">
-          <ContactAvatar name={conversation.contactName} photoUrl={conversation.contactPhotoUrl} enlargeable />
+          <ContactAvatar
+            name={conversation.contactName}
+            photoUrl={conversation.contactPhotoUrl}
+            enlargeable
+          />
           <div className="min-w-0">
             <p className="truncate text-body-sm font-semibold">
               {conversation.contactName}
@@ -1020,12 +1472,41 @@ function ContactPanel({
         </div>
 
         {conversation.patientId ? (
-          <Button asChild variant="secondary" size="sm" className="mt-3 w-full">
-            <Link href={`/pacientes/${conversation.patientId}`}>
-              <UserRound className="size-4" aria-hidden="true" />
-              Ver ficha do paciente
-            </Link>
-          </Button>
+          <div className="mt-3 grid gap-1.5">
+            <Button asChild variant="secondary" size="sm" className="w-full">
+              <Link href={`/pacientes/${conversation.patientId}`}>
+                <UserRound className="size-4" aria-hidden="true" />
+                Ver ficha do paciente
+              </Link>
+            </Button>
+            {canAttend ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full text-label text-muted-foreground"
+                onClick={() => {
+                  void linkPatientAction(conversation.contactId, null).then(
+                    (result) => {
+                      if (result.ok) {
+                        toast.success("Vínculo removido.");
+                        router.refresh();
+                      } else {
+                        toast.error(result.error ?? "Falha ao desvincular.");
+                      }
+                    },
+                  );
+                }}
+              >
+                Desvincular paciente
+              </Button>
+            ) : null}
+          </div>
+        ) : canAttend ? (
+          <PatientLinkSearch
+            contactId={conversation.contactId}
+            onLinked={() => router.refresh()}
+          />
         ) : (
           <p className="mt-3 rounded-md border border-dashed border-border px-3 py-2 text-label text-muted-foreground">
             Contato ainda não vinculado a um paciente.
@@ -1093,6 +1574,13 @@ function ContactPanel({
         )}
       </div>
 
+      {conversation.patientId ? (
+        <UpcomingAppointments
+          organizationId={organizationId}
+          patientId={conversation.patientId}
+        />
+      ) : null}
+
       <div className="p-4">
         <p className="mb-2 text-label font-medium uppercase tracking-wide text-muted-foreground">
           Reservas
@@ -1120,6 +1608,202 @@ function ContactPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+type PatientSearchResult = {
+  id: string;
+  full_name: string;
+  social_name: string | null;
+};
+
+/** Busca um paciente existente (via /api/patients/search) e vincula ao contato. */
+function PatientLinkSearch({
+  contactId,
+  onLinked,
+}: {
+  contactId: string;
+  onLinked: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PatientSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      if (trimmed.length < 3) {
+        setResults([]);
+        return;
+      }
+      setSearching(true);
+      try {
+        const response = await fetch(
+          `/api/patients/search?q=${encodeURIComponent(trimmed)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (response.ok) {
+          const payload = (await response.json()) as {
+            patients?: PatientSearchResult[];
+          };
+          setResults((payload.patients ?? []).slice(0, 5));
+        }
+      } catch {
+        // busca abortada/offline — silencioso
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [query]);
+
+  function link(patientId: string) {
+    void linkPatientAction(contactId, patientId).then((result) => {
+      if (result.ok) {
+        toast.success("Paciente vinculado à conversa.");
+        setQuery("");
+        setResults([]);
+        onLinked();
+      } else {
+        toast.error(result.error ?? "Falha ao vincular.");
+      }
+    });
+  }
+
+  return (
+    <div className="mt-3 grid gap-1.5">
+      <label className="relative block">
+        <span className="sr-only">Vincular paciente</span>
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Vincular paciente…"
+          className="h-8 w-full pl-8 text-body-sm"
+        />
+        <LinkSimple
+          className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-placeholder"
+          aria-hidden="true"
+        />
+      </label>
+      {searching ? (
+        <p className="text-caption text-muted-foreground">Buscando…</p>
+      ) : null}
+      {results.length ? (
+        <ul className="overflow-hidden rounded-md border border-border">
+          {results.map((patient) => (
+            <li key={patient.id}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => link(patient.id)}
+                className="w-full justify-start rounded-none text-body-sm font-normal"
+              >
+                {patient.social_name || patient.full_name}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : query.trim().length >= 3 && !searching ? (
+        <p className="text-caption text-muted-foreground">
+          Nenhum paciente encontrado.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+const appointmentStatusLabels: Record<string, string> = {
+  scheduled: "Agendado",
+  confirmed: "Confirmado",
+  attended: "Atendido",
+  cancelled: "Cancelado",
+  no_show: "Faltou",
+};
+
+/** Próximos agendamentos do paciente vinculado (contexto rápido do CRM). */
+function UpcomingAppointments({
+  organizationId,
+  patientId,
+}: {
+  organizationId: string;
+  patientId: string;
+}) {
+  const [appointments, setAppointments] = useState<
+    { id: string; start_at: string; status: string }[]
+  >([]);
+  const supabaseRef = useRef(createSupabaseBrowserClient());
+
+  useEffect(() => {
+    let active = true;
+    void supabaseRef.current
+      .from("appointments")
+      .select("id, start_at, status")
+      .eq("organization_id", organizationId)
+      .eq("patient_id", patientId)
+      .gte("start_at", new Date().toISOString())
+      .order("start_at", { ascending: true })
+      .limit(3)
+      .returns<{ id: string; start_at: string; status: string }[]>()
+      .then(({ data }) => {
+        if (active) setAppointments(data ?? []);
+      });
+    return () => {
+      active = false;
+    };
+  }, [organizationId, patientId]);
+
+  return (
+    <div className="border-b border-border p-4">
+      <p className="mb-2 flex items-center gap-1.5 text-label font-medium uppercase tracking-wide text-muted-foreground">
+        <CalendarDots className="size-3.5" aria-hidden="true" />
+        Próximos agendamentos
+      </p>
+      {appointments.length ? (
+        <ul className="grid gap-2">
+          {appointments.map((appointment) => (
+            <li
+              key={appointment.id}
+              className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-label"
+            >
+              <span className="tabular-nums text-foreground">
+                {formatDateTime(appointment.start_at)}
+              </span>
+              <Badge
+                variant={
+                  appointment.status === "confirmed" ||
+                  appointment.status === "attended"
+                    ? "success"
+                    : appointment.status === "cancelled" ||
+                        appointment.status === "no_show"
+                      ? "neutral"
+                      : "primary"
+                }
+              >
+                {appointmentStatusLabels[appointment.status] ??
+                  appointment.status}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="grid gap-2">
+          <p className="text-label text-muted-foreground">
+            Nenhum agendamento futuro.
+          </p>
+          <Button asChild variant="secondary" size="sm">
+            <Link href="/agenda">
+              <CalendarDots className="size-4" aria-hidden="true" />
+              Abrir agenda
+            </Link>
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1172,15 +1856,33 @@ function ContactAvatar({
     </span>
   );
 
-  if (!enlargeable || !photoUrl) return <span className="row-span-3 shrink-0">{content}</span>;
+  if (!enlargeable || !photoUrl)
+    return <span className="row-span-3 shrink-0">{content}</span>;
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2" aria-label={`Ampliar foto de ${name}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2"
+        aria-label={`Ampliar foto de ${name}`}
+      >
         {content}
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title={`Foto de ${name}`} className="max-w-2xl">
-        <Image unoptimized src={photoUrl} alt={`Foto ampliada de ${name}`} width={900} height={900} className="max-h-[70vh] w-full rounded-lg object-contain" />
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`Foto de ${name}`}
+        className="max-w-2xl"
+      >
+        <Image
+          unoptimized
+          src={photoUrl}
+          alt={`Foto ampliada de ${name}`}
+          width={900}
+          height={900}
+          className="max-h-[70vh] w-full rounded-lg object-contain"
+        />
       </Modal>
     </>
   );
@@ -1190,18 +1892,32 @@ function MessageDetail({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-all rounded-md bg-muted px-2.5 py-2 text-xs">{value}</dd>
+      <dd className="mt-1 break-all rounded-md bg-muted px-2.5 py-2 text-xs">
+        {value}
+      </dd>
     </div>
   );
 }
 
 function messageStatusLabel(status: ConversationMessage["status"]) {
-  return ({ queued: "Enviando", sent: "Enviada", delivered: "Entregue", read: "Lida", failed: "Falhou", received: "Recebida" } as const)[status];
+  return (
+    {
+      queued: "Enviando",
+      sent: "Enviada",
+      delivered: "Entregue",
+      read: "Lida",
+      failed: "Falhou",
+      received: "Recebida",
+    } as const
+  )[status];
 }
 
 function formatMessageDateTime(value: string | null | undefined) {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "medium",
+  }).format(new Date(value));
 }
 
 // ---------------------------------------------------------------------------
@@ -1246,6 +1962,7 @@ function labelForType(type: MessageType): string {
     location: "Localização",
     contact: "Contato",
     sticker: "Figurinha",
+    note: "Nota interna",
   };
   return labels[type] ?? "Mensagem";
 }

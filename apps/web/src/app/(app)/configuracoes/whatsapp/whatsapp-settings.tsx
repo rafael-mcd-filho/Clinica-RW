@@ -1,73 +1,220 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
 import Image from "next/image";
-import { CheckCircle2, KeyRound, Loader2, Radio, Webhook } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import {
+  CircleNotch as Loader2,
+  SignOut as LogOut,
+  ChatCircle as MessageCircle,
+  Broadcast as Radio,
+  ArrowsClockwise as RefreshCw,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { connectWhatsApp, registerWhatsAppWebhook, saveWhatsAppConfig, testWhatsAppConnection, type WhatsAppActionState } from "./actions";
+import {
+  connectWhatsApp,
+  disconnectWhatsApp,
+  testWhatsAppConnection,
+  type WhatsAppActionState,
+} from "./actions";
 
 type Props = {
-  initial: { apiUrl: string; instance: string; hasApiKey: boolean; status: string; webhookUrl: string; configured: boolean };
-  suggestedWebhookUrl: string;
+  initial: {
+    status: string;
+    phoneNumber: string | null;
+    displayName: string | null;
+    profilePictureUrl: string | null;
+    platformConfigured: boolean;
+  };
 };
 
-const initialState: WhatsAppActionState = {};
+const statusLabels: Record<string, string> = {
+  connected: "Conectado",
+  open: "Conectado",
+  connecting: "Conectando",
+  disconnected: "Desconectado",
+  close: "Desconectado",
+  error: "Erro na conexão",
+  refused: "Conexão recusada",
+  unknown: "Estado desconhecido",
+};
 
-export function WhatsAppSettings({ initial, suggestedWebhookUrl }: Props) {
-  const [saveState, saveAction, saving] = useActionState(saveWhatsAppConfig, initialState);
-  const [webhookState, webhookAction, registering] = useActionState(registerWhatsAppWebhook, initialState);
-  const [connection, setConnection] = useState<WhatsAppActionState>({ state: initial.status });
+export function WhatsAppSettings({ initial }: Props) {
+  const [connection, setConnection] = useState<WhatsAppActionState>({
+    state: initial.status,
+    phoneNumber: initial.phoneNumber,
+    displayName: initial.displayName,
+    profilePictureUrl: initial.profilePictureUrl,
+  });
   const [pending, startTransition] = useTransition();
+  const state = connection.state ?? initial.status;
+  const connected = state === "connected" || state === "open";
+  const connecting = state === "connecting";
 
   function run(action: () => Promise<WhatsAppActionState>) {
     startTransition(async () => {
       const result = await action();
-      setConnection(result);
+      setConnection((current) => ({ ...current, ...result }));
       if (result.error) toast.error(result.error);
       else if (result.success) toast.success(result.success);
     });
   }
 
+  useEffect(() => {
+    if (!connecting) return;
+    const timer = window.setInterval(async () => {
+      const result = await testWhatsAppConnection();
+      if (!result.error)
+        setConnection((current) => ({ ...current, ...result }));
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [connecting]);
+
   const qrSource = connection.qrBase64
-    ? connection.qrBase64.startsWith("data:") ? connection.qrBase64 : `data:image/png;base64,${connection.qrBase64}`
+    ? connection.qrBase64.startsWith("data:")
+      ? connection.qrBase64
+      : `data:image/png;base64,${connection.qrBase64}`
     : null;
+  const profilePicture =
+    connection.profilePictureUrl ?? initial.profilePictureUrl;
+  const displayName = connection.displayName ?? initial.displayName;
+  const phoneNumber = connection.phoneNumber ?? initial.phoneNumber;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-2">
-      <section className="rounded-xl border border-border bg-card p-6 shadow-sm xl:col-span-2">
-        <div className="mb-5 flex items-start gap-3"><KeyRound className="mt-0.5 size-5 text-primary" /><div><h2 className="font-semibold">Credenciais da Evolution API</h2><p className="text-sm text-muted-foreground">A API key é criptografada no servidor e nunca volta a ser exibida.</p></div></div>
-        <form action={saveAction} className="grid gap-4 md:grid-cols-2">
-          <Field label="URL da Evolution API"><input name="api_url" type="url" required defaultValue={initial.apiUrl} placeholder="https://evolution.exemplo.com" className={inputClass} /></Field>
-          <Field label="Nome da instância"><input name="instance" required defaultValue={initial.instance} placeholder="MinhaClinica" className={inputClass} /></Field>
-          <Field label="API key" hint={initial.hasApiKey ? "Deixe vazio para manter a chave salva." : undefined}><input name="api_key" type="password" required={!initial.hasApiKey} autoComplete="new-password" placeholder={initial.hasApiKey ? "••••••••••••••••" : "Cole a chave da Evolution"} className={inputClass} /></Field>
-          <div className="flex items-end"><Button type="submit" disabled={saving}>{saving && <Loader2 className="size-4 animate-spin" />}Validar e salvar</Button></div>
-          <Feedback state={saveState} />
-        </form>
-      </section>
+    <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-4">
+          <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-50 text-emerald-700">
+            {profilePicture ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={profilePicture}
+                alt="Foto do perfil do WhatsApp"
+                className="size-full object-cover"
+              />
+            ) : (
+              <MessageCircle className="size-7" aria-hidden="true" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold">Conexão do WhatsApp</h2>
+              <span
+                className={`size-2.5 rounded-full ${
+                  connected
+                    ? "bg-emerald-500"
+                    : connecting
+                      ? "animate-pulse bg-amber-500"
+                      : "bg-slate-400"
+                }`}
+                aria-hidden="true"
+              />
+              <span className="text-sm font-medium">
+                {statusLabels[state] ?? state}
+              </span>
+            </div>
+            {connected ? (
+              <div className="mt-2 grid gap-0.5 text-sm">
+                <span className="font-medium">
+                  {displayName ?? "Conta do WhatsApp"}
+                </span>
+                <span className="text-muted-foreground">
+                  {formatPhone(phoneNumber)}
+                </span>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {connecting
+                  ? "Leia o QR Code abaixo. O status será atualizado automaticamente."
+                  : "Conecte um número para habilitar o canal de atendimento."}
+              </p>
+            )}
+          </div>
+        </div>
 
-      <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <div className="mb-5 flex items-start gap-3"><Radio className="mt-0.5 size-5 text-primary" /><div><h2 className="font-semibold">Conexão do número</h2><p className="text-sm text-muted-foreground">Teste o acesso ou inicie o pareamento pelo WhatsApp.</p></div></div>
-        <div className="mb-4 flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${connection.state === "open" || initial.status === "connected" ? "bg-emerald-500" : "bg-amber-500"}`} /><span>Estado: {connection.state ?? initial.status}</span></div>
-        <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={!initial.configured || pending} onClick={() => run(testWhatsAppConnection)}>Testar conexão</Button><Button disabled={!initial.configured || pending} onClick={() => run(connectWhatsApp)}>{pending && <Loader2 className="size-4 animate-spin" />}Conectar WhatsApp</Button></div>
-        {qrSource && <div className="mt-5 grid justify-items-center gap-2 rounded-lg bg-white p-4 text-slate-900"><Image unoptimized width={256} height={256} src={qrSource} alt="QR Code para conectar o WhatsApp" className="size-64" /><span className="text-sm">WhatsApp → Aparelhos conectados → Conectar aparelho</span></div>}
-        {connection.pairingCode && <div className="mt-4 rounded-lg border border-border p-4 text-center"><span className="text-sm text-muted-foreground">Código de pareamento</span><div className="mt-1 text-2xl font-semibold tracking-widest">{connection.pairingCode}</div></div>}
-        <Feedback state={connection} />
-      </section>
+        <div className="flex flex-wrap gap-2">
+          {(connected || connecting) && (
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() => run(testWhatsAppConnection)}
+            >
+              <RefreshCw
+                className={pending ? "size-4 animate-spin" : "size-4"}
+                aria-hidden="true"
+              />
+              Testar conexão
+            </Button>
+          )}
+          {connected ? (
+            <Button
+              variant="destructive"
+              disabled={pending}
+              onClick={() => run(disconnectWhatsApp)}
+            >
+              <LogOut className="size-4" aria-hidden="true" />
+              Desconectar
+            </Button>
+          ) : !connecting ? (
+            <Button
+              disabled={!initial.platformConfigured || pending}
+              onClick={() => run(connectWhatsApp)}
+            >
+              {pending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Radio className="size-4" aria-hidden="true" />
+              )}
+              Conectar WhatsApp
+            </Button>
+          ) : null}
+        </div>
+      </div>
 
-      <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <div className="mb-5 flex items-start gap-3"><Webhook className="mt-0.5 size-5 text-primary" /><div><h2 className="font-semibold">Webhook</h2><p className="text-sm text-muted-foreground">Recebe mensagens e atualizações da Evolution em tempo real.</p></div></div>
-        <form action={webhookAction} className="grid gap-4">
-          <Field label="URL pública do webhook"><input name="webhook_url" type="url" required defaultValue={initial.webhookUrl || suggestedWebhookUrl} className={inputClass} /></Field>
-          {webhookState.needsConfirmation && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Webhook atual:</strong> {webhookState.existingWebhook}<label className="mt-3 flex items-center gap-2"><input type="checkbox" name="confirm_replace" value="true" required /> Confirmo que desejo substituir esse webhook.</label></div>}
-          <Button type="submit" disabled={!initial.configured || registering} className="w-fit">{registering && <Loader2 className="size-4 animate-spin" />}Registrar webhook</Button>
-          <Feedback state={webhookState} />
-        </form>
-      </section>
-    </div>
+      {!initial.platformConfigured ? (
+        <p className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          A integração ainda precisa ser configurada pelo Super Admin.
+        </p>
+      ) : null}
+
+      {qrSource && connecting ? (
+        <div className="mt-6 grid justify-items-center gap-3 rounded-lg border border-border bg-white p-5 text-slate-900">
+          <Image
+            unoptimized
+            width={256}
+            height={256}
+            src={qrSource}
+            alt="QR Code para conectar o WhatsApp"
+            className="size-64"
+          />
+          <span className="text-center text-sm">
+            WhatsApp → Aparelhos conectados → Conectar aparelho
+          </span>
+        </div>
+      ) : null}
+
+      {connection.pairingCode && connecting ? (
+        <div className="mt-4 rounded-lg border border-border p-4 text-center">
+          <span className="text-sm text-muted-foreground">
+            Código de pareamento
+          </span>
+          <div className="mt-1 text-2xl font-semibold tracking-widest">
+            {connection.pairingCode}
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
-const inputClass = "h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) { return <label className="grid gap-1.5 text-sm font-medium"><span>{label}</span>{children}{hint && <span className="text-xs font-normal text-muted-foreground">{hint}</span>}</label>; }
-function Feedback({ state }: { state: WhatsAppActionState }) { if (!state.error && !state.success) return null; return <div className={`md:col-span-2 flex items-center gap-2 text-sm ${state.error ? "text-destructive" : "text-emerald-700"}`}>{!state.error && <CheckCircle2 className="size-4" />}{state.error ?? state.success}</div>; }
+function formatPhone(phone: string | null) {
+  if (!phone) return "Número não informado pela Evolution";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 13 && digits.startsWith("55")) {
+    return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+  }
+  if (digits.length === 12 && digits.startsWith("55")) {
+    return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 8)}-${digits.slice(8)}`;
+  }
+  return phone;
+}

@@ -2,19 +2,19 @@
 
 import { useActionState, useEffect, useState } from "react";
 import {
-  BadgeCheck,
+  SealCheck as BadgeCheck,
   Cake,
-  CalendarCheck2,
-  CalendarClock,
-  CalendarDays,
-  CircleDollarSign,
+  CalendarCheck as CalendarCheck2,
+  CalendarDots as CalendarClock,
+  CalendarDots as CalendarDays,
+  CurrencyCircleDollar as CircleDollarSign,
   Plus,
-  RefreshCw,
-  Save,
+  ArrowsClockwise as RefreshCw,
+  FloppyDisk as Save,
   Tag,
-  Trash2,
+  Trash as Trash2,
   UserPlus,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   createPatientTagRule,

@@ -10,6 +10,7 @@ Componentes base vivem em `apps/web/src/components/ui/`.
 
 1. **Zero hex fora de `globals.css`** — nada de `#slate`, `bg-[#...]`, `text-[#...]` em `.tsx`.
    Paletas categóricas (cores de tag/etapa de funil/gráfico) vivem em `src/lib/colors.ts`.
+   Ícones: só `@phosphor-icons/react` (nunca reintroduzir lucide ou outra lib).
 2. **Zero `text-[Npx]`** — todo tamanho de fonte sai da escala tipográfica abaixo.
 3. **Zero `<button>` cru em `app/`** — 100% via `<Button>`. Primitives internas de
    `components/ui/` podem usar `<button>` nativo.
@@ -80,8 +81,11 @@ Sombra é funcional (comunica plano), nunca decorativa e **nunca colorida**.
 
 ## Ícones
 
-Só `lucide-react`. Traço global `stroke-width: 1.75` (regra `svg.lucide` em
-`globals.css`) — não passar `strokeWidth` por prop.
+Só `@phosphor-icons/react`. Regra de peso: `regular` (default) em controles e
+texto; `duotone` em navegação, cabeçalhos de página e empty states; `fill` no
+item de navegação ativo. Server components importam de
+`@phosphor-icons/react/dist/ssr` (o entry padrão usa contexto client); o tipo
+`Icon` é exportado apenas pelo entry principal (import type é seguro em ambos).
 
 Escala fechada — via wrapper `<Icon>` (`components/ui/icon.tsx`) ou classes:
 

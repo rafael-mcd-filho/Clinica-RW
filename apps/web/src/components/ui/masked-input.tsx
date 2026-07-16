@@ -4,6 +4,12 @@ import { IMaskInput } from "react-imask";
 import { cn } from "@/lib/utils";
 import { fieldClasses } from "@/components/ui/field";
 
+// Os tipos do react-imask ainda não acompanham o @types/react 19 mais novo;
+// o componente aceita as props nativas de input em runtime.
+const MaskInput = IMaskInput as unknown as React.ComponentType<
+  Record<string, unknown>
+>;
+
 type MaskKind = "cep" | "cnpj" | "cpf" | "phone";
 
 const maskByKind: Record<MaskKind, string | Array<{ mask: string }>> = {
@@ -32,7 +38,7 @@ export function MaskedInput({
   ...props
 }: MaskedInputProps) {
   return (
-    <IMaskInput
+    <MaskInput
       {...props}
       className={cn(fieldClasses, className)}
       defaultValue={defaultValue}

@@ -8,21 +8,19 @@ import {
   useState,
 } from "react";
 import {
-  Boxes,
-  Building2,
-  CheckCircle2,
-  Clock3,
-  Pencil,
+  Package as Boxes,
+  Buildings as Building2,
+  CheckCircle as CheckCircle2,
+  Clock as Clock3,
+  PencilSimple as Pencil,
   Plus,
-  Save,
+  FloppyDisk as Save,
   Stethoscope,
-  Trash2,
-  UsersRound,
-} from "lucide-react";
+  UsersThree as UsersRound,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   completeOnboarding,
-  deletePriceItem,
   saveBusinessHours,
   saveClinicSettings,
   saveRegistration,
@@ -43,6 +41,7 @@ import { MaskedInput } from "@/components/ui/masked-input";
 import { FormError } from "@/components/ui/form-error";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
 import { LogoUploadField } from "@/components/ui/logo-upload-field";
+import { Modal } from "@/components/ui/modal";
 import { RequiredMark } from "@/components/ui/required-mark";
 import { Switch } from "@/components/ui/switch";
 import { Tabs } from "@/components/ui/tabs";
@@ -50,7 +49,6 @@ import type {
   BaseRow,
   BusinessHourRow,
   CompanySettingsData,
-  PriceTableItemRow,
 } from "@/lib/clinic/base-registrations";
 
 const initialState: CompanyActionState = {};
@@ -149,19 +147,6 @@ export function CompanySettings({
     value: item.id,
     label: `${item.name} · ${item.email}`,
   }));
-  const insuranceOptions = data.healthInsurances.map((item) => ({
-    value: item.id,
-    label: item.name,
-  }));
-  const priceTableOptions = data.priceTables.map((item) => ({
-    value: item.id,
-    label: item.name,
-  }));
-  const procedureOptions = data.procedures.map((item) => ({
-    value: item.id,
-    label: item.name,
-  }));
-
   return (
     <div className="grid gap-6">
       {!data.settings.onboarding_completed_at ? (
@@ -195,6 +180,8 @@ export function CompanySettings({
                 <RegistrationSection
                   kind="unit"
                   title="Unidades"
+                  itemLabel="Unidade"
+                  modalForm
                   description="Endereços físicos onde a clínica atende."
                   rows={data.units as EditableRow[]}
                   fields={unitFields}
@@ -207,6 +194,8 @@ export function CompanySettings({
                 <RegistrationSection
                   kind="room"
                   title="Salas"
+                  itemLabel="Sala"
+                  modalForm
                   description="Consultórios e ambientes vinculados a uma unidade."
                   rows={data.rooms as EditableRow[]}
                   fields={[
@@ -221,6 +210,9 @@ export function CompanySettings({
                 <RegistrationSection
                   kind="equipment"
                   title="Equipamentos"
+                  itemLabel="Equipamento"
+                  itemGender="masculine"
+                  modalForm
                   description="Recursos compartilhados usados nos atendimentos."
                   rows={data.equipment as EditableRow[]}
                   fields={[
@@ -245,6 +237,8 @@ export function CompanySettings({
                 <RegistrationSection
                   kind="specialty"
                   title="Especialidades"
+                  itemLabel="Especialidade"
+                  modalForm
                   description="Especialidades usadas na equipe e no prontuário."
                   rows={data.specialties as EditableRow[]}
                   fields={[
@@ -261,6 +255,9 @@ export function CompanySettings({
                 <RegistrationSection
                   kind="professional"
                   title="Profissionais"
+                  itemLabel="Profissional"
+                  itemGender="masculine"
+                  modalForm
                   description="Profissionais assistenciais que terão agenda e atendimentos."
                   rows={data.professionals as EditableRow[]}
                   fields={[
@@ -308,6 +305,9 @@ export function CompanySettings({
                 <RegistrationSection
                   kind="procedure"
                   title="Procedimentos e serviços"
+                  itemLabel="Procedimento ou serviço"
+                  itemGender="masculine"
+                  modalForm
                   description="Itens que poderão ser agendados e cobrados."
                   rows={data.procedures as EditableRow[]}
                   fields={[
@@ -326,13 +326,13 @@ export function CompanySettings({
                     {
                       ...numberField(
                         "base_price",
-                        "Preço base (R$)",
+                        "Preço padrão particular (R$)",
                         0,
                         0,
                         undefined,
                         "0.01",
                       ),
-                      help: "Valor padrão usado quando nenhuma tabela de preço específica sobrescrever o procedimento.",
+                      help: "Valor padrão do procedimento para atendimentos particulares.",
                     },
                   ]}
                   summary={(row) =>
@@ -350,7 +350,10 @@ export function CompanySettings({
                 <RegistrationSection
                   kind="health_insurance"
                   title="Convênios"
-                  description="Cadastro inicial dos planos aceitos."
+                  itemLabel="Convênio"
+                  itemGender="masculine"
+                  modalForm
+                  description="Planos de saúde aceitos pela clínica. Atendimento particular não precisa ser cadastrado como convênio."
                   rows={data.healthInsurances as EditableRow[]}
                   fields={[
                     textField("name", "Nome", true, "Convênio"),
@@ -359,31 +362,6 @@ export function CompanySettings({
                   summary={(row) =>
                     String(row.document ?? "Sem CNPJ informado")
                   }
-                />
-                <RegistrationSection
-                  kind="price_table"
-                  title="Tabelas de preço"
-                  description="Listas particulares ou vinculadas a convênios."
-                  rows={data.priceTables as EditableRow[]}
-                  fields={[
-                    textField("name", "Nome", true, "Tabela particular"),
-                    selectField(
-                      "health_insurance_id",
-                      "Convênio",
-                      insuranceOptions,
-                    ),
-                  ]}
-                  summary={(row) =>
-                    optionLabel(
-                      insuranceOptions,
-                      String(row.health_insurance_id ?? ""),
-                    ) || "Particular"
-                  }
-                />
-                <PriceItemsSection
-                  rows={data.priceTableItems}
-                  priceTables={priceTableOptions}
-                  procedures={procedureOptions}
                 />
               </div>
             ),
@@ -952,6 +930,9 @@ function RegistrationSection({
   rows,
   fields,
   summary,
+  modalForm = false,
+  itemLabel = "Cadastro",
+  itemGender = "feminine",
 }: {
   kind: Exclude<RegistrationKind, "price_item">;
   title: string;
@@ -959,9 +940,28 @@ function RegistrationSection({
   rows: EditableRow[];
   fields: FieldDefinition[];
   summary: (row: EditableRow) => string;
+  modalForm?: boolean;
+  itemLabel?: string;
+  itemGender?: "feminine" | "masculine";
 }) {
   const [editing, setEditing] = useState<EditableRow | null>(null);
-  const finishEditing = useCallback(() => setEditing(null), []);
+  const [formOpen, setFormOpen] = useState(false);
+  const itemLabelLower = itemLabel.toLowerCase();
+  const feminineItem = itemGender === "feminine";
+  const finishEditing = useCallback(() => {
+    setEditing(null);
+    setFormOpen(false);
+  }, []);
+
+  function openNewRegistration() {
+    setEditing(null);
+    setFormOpen(true);
+  }
+
+  function openEditRegistration(row: EditableRow) {
+    setEditing(row);
+    setFormOpen(true);
+  }
 
   return (
     <Card>
@@ -971,24 +971,44 @@ function RegistrationSection({
             <h2 className="font-semibold">{title}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{description}</p>
           </div>
-          <Badge variant="neutral">{rows.length}</Badge>
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge variant="neutral">{rows.length}</Badge>
+            {modalForm ? (
+              <Button type="button" size="sm" onClick={openNewRegistration}>
+                <Plus className="size-3.5" aria-hidden="true" />
+                Adicionar
+              </Button>
+            ) : null}
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-5">
-        <RegistrationForm
-          key={editing?.id ?? "new"}
-          kind={kind}
-          fields={fields}
-          editing={editing}
-          onFinished={finishEditing}
-        />
+      <CardContent className={modalForm ? "grid gap-3 py-3" : "grid gap-5"}>
+        {!modalForm ? (
+          <RegistrationForm
+            key={editing?.id ?? "new"}
+            kind={kind}
+            fields={fields}
+            editing={editing}
+            onFinished={finishEditing}
+          />
+        ) : null}
 
-        <div className="grid gap-2">
+        <div
+          className={
+            rows.length && modalForm
+              ? "divide-y divide-border overflow-hidden rounded-md border border-border"
+              : "grid gap-2"
+          }
+        >
           {rows.length ? (
             rows.map((row) => (
               <div
                 key={row.id}
-                className="flex flex-col gap-3 rounded-md border border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className={
+                  modalForm
+                    ? "flex min-h-12 flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                    : "flex flex-col gap-3 rounded-md border border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                }
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -999,7 +1019,7 @@ function RegistrationSection({
                       {row.active ? "Ativo" : "Inativo"}
                     </Badge>
                   </div>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {summary(row)}
                   </p>
                 </div>
@@ -1008,7 +1028,9 @@ function RegistrationSection({
                     type="button"
                     size="sm"
                     variant="secondary"
-                    onClick={() => setEditing(row)}
+                    onClick={() =>
+                      modalForm ? openEditRegistration(row) : setEditing(row)
+                    }
                   >
                     <Pencil className="size-3.5" aria-hidden="true" />
                     Editar
@@ -1035,6 +1057,41 @@ function RegistrationSection({
           )}
         </div>
       </CardContent>
+
+      {modalForm ? (
+        <Modal
+          open={formOpen}
+          onClose={finishEditing}
+          title={
+            editing
+              ? `Editar ${itemLabelLower}`
+              : `${feminineItem ? "Nova" : "Novo"} ${itemLabelLower}`
+          }
+          description={
+            editing
+              ? `Atualize os dados de ${String(editing.name)}.`
+              : `Cadastre ${feminineItem ? "uma nova" : "um novo"} ${itemLabelLower} na estrutura da clínica.`
+          }
+          className={
+            kind === "unit"
+              ? "max-w-3xl"
+              : kind === "professional"
+                ? "max-w-2xl"
+                : kind === "specialty"
+                  ? "max-w-lg"
+                  : "max-w-xl"
+          }
+        >
+          <RegistrationForm
+            key={editing?.id ?? "new"}
+            kind={kind}
+            fields={fields}
+            editing={editing}
+            onFinished={finishEditing}
+            modal
+          />
+        </Modal>
+      ) : null}
     </Card>
   );
 }
@@ -1044,11 +1101,13 @@ function RegistrationForm({
   fields,
   editing,
   onFinished,
+  modal = false,
 }: {
   kind: Exclude<RegistrationKind, "price_item">;
   fields: FieldDefinition[];
   editing: EditableRow | null;
   onFinished: () => void;
+  modal?: boolean;
 }) {
   const boundAction = saveRegistration.bind(null, kind, editing?.id ?? null);
   const [state, action, pending] = useActionState(boundAction, initialState);
@@ -1063,25 +1122,53 @@ function RegistrationForm({
   return (
     <form
       action={action}
-      className="rounded-md border border-border bg-background p-4"
+      className={
+        modal
+          ? "grid gap-4"
+          : "rounded-md border border-border bg-background p-4"
+      }
     >
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold">
-          {editing ? `Editar ${String(editing.name)}` : "Novo cadastro"}
-        </p>
-        {editing ? (
-          <Button type="button" variant="ghost" size="sm" onClick={onFinished}>
-            Cancelar edição
-          </Button>
-        ) : null}
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {fields.map((field) => (
-          <DynamicField key={field.name} field={field} row={editing} />
+      {!modal ? (
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold">
+            {editing ? `Editar ${String(editing.name)}` : "Novo cadastro"}
+          </p>
+          {editing ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onFinished}
+            >
+              Cancelar edição
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <div
+        className={
+          modal
+            ? "grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+            : "grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+        }
+      >
+        {fields.map((field, index) => (
+          <DynamicField
+            key={field.name}
+            field={field}
+            row={editing}
+            compact={modal}
+            helpAlign={modal && index % 2 === 1 ? "end" : "start"}
+          />
         ))}
       </div>
       <FormError message={state.error} className="mt-3" />
-      <div className="mt-4 flex justify-end">
+      <div className="mt-2 flex justify-end gap-2 border-t border-border pt-4">
+        {modal ? (
+          <Button type="button" variant="secondary" onClick={onFinished}>
+            Cancelar
+          </Button>
+        ) : null}
         <Button type="submit" size="sm" disabled={pending}>
           {editing ? (
             <Save className="size-3.5" />
@@ -1102,9 +1189,13 @@ function RegistrationForm({
 function DynamicField({
   field,
   row,
+  compact = false,
+  helpAlign = "start",
 }: {
   field: FieldDefinition;
   row: EditableRow | null;
+  compact?: boolean;
+  helpAlign?: "start" | "end";
 }) {
   const value = row?.[field.name];
   const defaultValue = value == null ? "" : String(value);
@@ -1115,12 +1206,14 @@ function DynamicField({
       required={field.required}
       wide={field.wide}
       help={field.help}
+      helpAlign={helpAlign}
     >
       {field.type === "select" ? (
         <Select
           name={field.name}
           required={field.required}
           defaultValue={defaultValue}
+          className="min-w-0 w-full"
         >
           <option value="">Selecione</option>
           {field.options?.map((option) => (
@@ -1135,6 +1228,7 @@ function DynamicField({
           required={field.required}
           defaultValue={defaultValue}
           placeholder={field.placeholder}
+          className={compact ? "min-h-20 min-w-0 w-full" : "min-w-0 w-full"}
         />
       ) : (
         <Input
@@ -1148,172 +1242,10 @@ function DynamicField({
           min={field.min}
           max={field.max}
           step={field.step}
+          className="min-w-0 w-full"
         />
       )}
     </FormField>
-  );
-}
-
-function PriceItemsSection({
-  rows,
-  priceTables,
-  procedures,
-}: {
-  rows: PriceTableItemRow[];
-  priceTables: Option[];
-  procedures: Option[];
-}) {
-  const [editing, setEditing] = useState<PriceTableItemRow | null>(null);
-  const actionWithItem = saveRegistration.bind(
-    null,
-    "price_item",
-    editing?.id ?? null,
-  );
-  const [state, action, pending] = useActionState(actionWithItem, initialState);
-
-  useEffect(() => {
-    if (state.success) {
-      toast.success(state.success);
-    }
-  }, [state]);
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">Valores por tabela</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Sobrescreva o preço base por tabela ou convênio.
-            </p>
-          </div>
-          <Badge variant="neutral">{rows.length}</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="grid gap-5">
-        <form
-          key={editing?.id ?? "new"}
-          action={action}
-          className="grid gap-4 rounded-md border border-border bg-background p-4 md:grid-cols-3"
-        >
-          <FormField
-            label="Tabela"
-            required
-            help="A tabela define em qual contexto o valor específico será usado, como particular ou convênio."
-          >
-            <Select
-              name="price_table_id"
-              required
-              defaultValue={editing?.price_table_id ?? ""}
-            >
-              <option value="">Selecione</option>
-              {priceTables.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <FormField label="Procedimento" required>
-            <Select
-              name="procedure_id"
-              required
-              defaultValue={editing?.procedure_id ?? ""}
-            >
-              <option value="">Selecione</option>
-              {procedures.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-          <FormField
-            label="Valor (R$)"
-            required
-            help="Este valor substitui o preço base apenas para a combinação de tabela e procedimento selecionada."
-          >
-            <Input
-              name="price"
-              type="number"
-              min={0}
-              step="0.01"
-              required
-              defaultValue={editing?.price ?? ""}
-            />
-          </FormField>
-          <FormError message={state.error} className="md:col-span-3" />
-          <div className="flex justify-end gap-2 md:col-span-3">
-            {editing ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditing(null)}
-              >
-                Cancelar
-              </Button>
-            ) : null}
-            <Button
-              type="submit"
-              size="sm"
-              disabled={pending || !priceTables.length || !procedures.length}
-            >
-              <Plus className="size-3.5" />
-              {pending
-                ? "Salvando..."
-                : editing
-                  ? "Salvar valor"
-                  : "Adicionar valor"}
-            </Button>
-          </div>
-        </form>
-
-        <div className="grid gap-2">
-          {rows.map((row) => (
-            <div
-              key={row.id}
-              className="flex items-center justify-between gap-3 rounded-md border border-border px-4 py-3"
-            >
-              <div>
-                <p className="text-sm font-medium">
-                  {optionLabel(procedures, row.procedure_id)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {optionLabel(priceTables, row.price_table_id)} ·{" "}
-                  {formatCurrency(Number(row.price))}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setEditing(row)}
-                >
-                  <Pencil className="size-3.5" /> Editar
-                </Button>
-                <form action={deletePriceItem.bind(null, row.id)}>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    variant="ghost"
-                    aria-label="Excluir valor"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </form>
-              </div>
-            </div>
-          ))}
-          {!rows.length ? (
-            <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-              Nenhum valor específico cadastrado.
-            </p>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -1322,24 +1254,26 @@ function FormField({
   required,
   wide,
   help,
+  helpAlign = "start",
   children,
 }: {
   label: string;
   required?: boolean;
   wide?: boolean;
   help?: React.ReactNode;
+  helpAlign?: "start" | "end";
   children: React.ReactNode;
 }) {
   return (
     <label
-      className={`grid gap-2 text-sm font-medium ${wide ? "lg:col-span-2" : ""}`}
+      className={`grid min-w-0 gap-2 text-sm font-medium ${wide ? "md:col-span-2 lg:col-span-2" : ""}`}
     >
       <span className="inline-flex items-center gap-1">
         <span>
           {label}
           {required ? <RequiredMark /> : null}
         </span>
-        {help ? <HelpTooltip>{help}</HelpTooltip> : null}
+        {help ? <HelpTooltip align={helpAlign}>{help}</HelpTooltip> : null}
       </span>
       {children}
     </label>

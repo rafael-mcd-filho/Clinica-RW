@@ -7,7 +7,13 @@ import {
   useState,
   useTransition,
 } from "react";
-import { CreditCard, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import {
+  CreditCard,
+  PencilSimple as Pencil,
+  Plus,
+  FloppyDisk as Save,
+  Trash as Trash2,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   deletePaymentMethod,
@@ -28,6 +34,7 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
 import { FormError } from "@/components/ui/form-error";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
+import { Modal } from "@/components/ui/modal";
 import type {
   PaymentMethodFeeRow,
   PaymentMethodRow,
@@ -95,15 +102,23 @@ export function ProcedureCostsSection({
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
-        {editor ? (
-          <ProcedureCostForm
-            key={editor.row?.id ?? editor.procedureId ?? "new"}
-            procedures={procedures}
-            procedureId={editor.procedureId}
-            editing={editor.row}
-            onClose={() => setEditor(null)}
-          />
-        ) : null}
+        <Modal
+          open={Boolean(editor)}
+          onClose={() => setEditor(null)}
+          title={editor?.row ? "Editar custo" : "Novo custo"}
+          description="Configure o custo operacional vinculado ao procedimento."
+          className="max-w-2xl"
+        >
+          {editor ? (
+            <ProcedureCostForm
+              key={editor.row?.id ?? editor.procedureId ?? "new"}
+              procedures={procedures}
+              procedureId={editor.procedureId}
+              editing={editor.row}
+              onClose={() => setEditor(null)}
+            />
+          ) : null}
+        </Modal>
 
         {procedures.map((procedure) => {
           const procedureCosts = costsByProcedure.get(procedure.id) ?? [];
@@ -204,10 +219,7 @@ function ProcedureCostForm({
   }, [onClose, state.success]);
 
   return (
-    <form
-      action={action}
-      className="grid gap-4 rounded-md border border-primary/25 bg-primary-muted/30 p-4 md:grid-cols-2 xl:grid-cols-5"
-    >
+    <form action={action} className="grid min-w-0 gap-4 sm:grid-cols-2">
       <CatalogField label="Procedimento ou serviço" required>
         <Select
           name="procedure_id"
@@ -237,8 +249,12 @@ function ProcedureCostForm({
           required
           defaultValue={editing?.cost_type ?? "commission"}
         >
-          <option value="commission">Comissão</option>
-          <option value="location_fee">Taxa do local</option>
+          <option value="commission">Comissão profissional</option>
+          <option value="location_fee">Taxa da unidade/local</option>
+          <option value="materials">Materiais e insumos</option>
+          <option value="outsourced_service">Serviço terceirizado</option>
+          <option value="taxes">Taxas e impostos</option>
+          <option value="equipment">Equipamento</option>
           <option value="other">Outro</option>
         </Select>
       </CatalogField>
@@ -264,11 +280,8 @@ function ProcedureCostForm({
           defaultValue={editing?.value ?? ""}
         />
       </CatalogField>
-      <FormError
-        message={state.error}
-        className="md:col-span-2 xl:col-span-5"
-      />
-      <div className="flex justify-end gap-2 md:col-span-2 xl:col-span-5">
+      <FormError message={state.error} className="sm:col-span-2" />
+      <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
         <Button type="button" size="sm" variant="ghost" onClick={onClose}>
           Cancelar
         </Button>
@@ -348,26 +361,49 @@ export function PaymentMethodsSettings({
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
-        {showMethodForm ? (
-          <PaymentMethodForm
-            key={editingMethod?.id ?? "new"}
-            editing={editingMethod}
-            onClose={() => {
-              setShowMethodForm(false);
-              setEditingMethod(null);
-            }}
-          />
-        ) : null}
+        <Modal
+          open={showMethodForm}
+          onClose={() => {
+            setShowMethodForm(false);
+            setEditingMethod(null);
+          }}
+          title={
+            editingMethod
+              ? "Editar forma de pagamento"
+              : "Nova forma de pagamento"
+          }
+          description="Defina como esta forma será identificada na agenda e no financeiro."
+          className="max-w-xl"
+        >
+          {showMethodForm ? (
+            <PaymentMethodForm
+              key={editingMethod?.id ?? "new"}
+              editing={editingMethod}
+              onClose={() => {
+                setShowMethodForm(false);
+                setEditingMethod(null);
+              }}
+            />
+          ) : null}
+        </Modal>
 
-        {feeEditor ? (
-          <PaymentMethodFeeForm
-            key={feeEditor.row?.id ?? feeEditor.paymentMethodId}
-            methods={methods}
-            paymentMethodId={feeEditor.paymentMethodId}
-            editing={feeEditor.row}
-            onClose={() => setFeeEditor(null)}
-          />
-        ) : null}
+        <Modal
+          open={Boolean(feeEditor)}
+          onClose={() => setFeeEditor(null)}
+          title={feeEditor?.row ? "Editar taxa" : "Nova taxa"}
+          description="Configure uma taxa opcional para esta forma de pagamento."
+          className="max-w-2xl"
+        >
+          {feeEditor ? (
+            <PaymentMethodFeeForm
+              key={feeEditor.row?.id ?? feeEditor.paymentMethodId}
+              methods={methods}
+              paymentMethodId={feeEditor.paymentMethodId}
+              editing={feeEditor.row}
+              onClose={() => setFeeEditor(null)}
+            />
+          ) : null}
+        </Modal>
 
         <div className="grid gap-3 lg:grid-cols-2">
           {methods.map((method) => {
@@ -502,10 +538,7 @@ function PaymentMethodForm({
   }, [onClose, state.success]);
 
   return (
-    <form
-      action={action}
-      className="grid gap-4 rounded-md border border-primary/25 bg-primary-muted/30 p-4 md:grid-cols-2"
-    >
+    <form action={action} className="grid min-w-0 gap-4 sm:grid-cols-2">
       <CatalogField label="Nome" required>
         <Input
           name="name"
@@ -530,7 +563,7 @@ function PaymentMethodForm({
         </Select>
       </CatalogField>
       <FormError message={state.error} className="md:col-span-2" />
-      <div className="flex justify-end gap-2 md:col-span-2">
+      <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
         <Button type="button" size="sm" variant="ghost" onClick={onClose}>
           Cancelar
         </Button>
@@ -575,10 +608,7 @@ function PaymentMethodFeeForm({
   }, [onClose, state.success]);
 
   return (
-    <form
-      action={action}
-      className="grid gap-4 rounded-md border border-primary/25 bg-primary-muted/30 p-4 md:grid-cols-2 xl:grid-cols-4"
-    >
+    <form action={action} className="grid min-w-0 gap-4 sm:grid-cols-2">
       <CatalogField label="Forma de pagamento" required>
         <Select
           name="payment_method_id"
@@ -623,11 +653,8 @@ function PaymentMethodFeeForm({
           defaultValue={editing?.value ?? ""}
         />
       </CatalogField>
-      <FormError
-        message={state.error}
-        className="md:col-span-2 xl:col-span-4"
-      />
-      <div className="flex justify-end gap-2 md:col-span-2 xl:col-span-4">
+      <FormError message={state.error} className="sm:col-span-2" />
+      <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
         <Button type="button" size="sm" variant="ghost" onClick={onClose}>
           Cancelar
         </Button>
@@ -809,7 +836,7 @@ function CatalogField({
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-2 text-sm font-medium">
+    <label className="grid min-w-0 gap-2 text-sm font-medium">
       <span>
         {label}
         {required ? <span className="text-destructive"> *</span> : null}
@@ -821,8 +848,12 @@ function CatalogField({
 
 function procedureCostTypeLabel(type: ProcedureCostRow["cost_type"]) {
   return {
-    commission: "Comissão",
-    location_fee: "Taxa do local",
+    commission: "Comissão profissional",
+    location_fee: "Taxa da unidade/local",
+    materials: "Materiais e insumos",
+    outsourced_service: "Serviço terceirizado",
+    taxes: "Taxas e impostos",
+    equipment: "Equipamento",
     other: "Outro custo",
   }[type];
 }

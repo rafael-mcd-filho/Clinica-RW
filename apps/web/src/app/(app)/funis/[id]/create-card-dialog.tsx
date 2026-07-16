@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useId, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { createCard, createQuickPatientFromFunil } from "../actions";
 import { Button } from "@/components/ui/button";

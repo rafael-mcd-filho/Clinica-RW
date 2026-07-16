@@ -44,7 +44,15 @@ const procedureCostSchema = z
   .object({
     procedure_id: z.string().uuid("Selecione um procedimento ou serviço."),
     name: z.string().trim().min(2, "Informe o nome do custo.").max(80),
-    cost_type: z.enum(["commission", "location_fee", "other"]),
+    cost_type: z.enum([
+      "commission",
+      "location_fee",
+      "materials",
+      "outsourced_service",
+      "taxes",
+      "equipment",
+      "other",
+    ]),
   })
   .and(calculationSchema);
 

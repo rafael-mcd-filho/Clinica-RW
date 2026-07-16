@@ -15,17 +15,17 @@ import {
   YAxis,
 } from "recharts";
 import {
-  Ban,
-  CakeSlice,
-  CalendarClock,
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
+  Prohibit as Ban,
+  Cake as CakeSlice,
+  CalendarDots as CalendarClock,
+  CalendarDots as CalendarDays,
+  CheckCircle as CheckCircle2,
+  Clock as Clock3,
   CreditCard,
   Stethoscope,
-  UsersRound,
-  type LucideIcon,
-} from "lucide-react";
+  UsersThree as UsersRound,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { categoricalColors } from "@/lib/colors";

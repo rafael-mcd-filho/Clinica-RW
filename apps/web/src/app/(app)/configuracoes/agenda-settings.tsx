@@ -2,20 +2,20 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import {
-  Ban,
-  CalendarClock,
-  CalendarDays,
-  CirclePlus,
-  Clock3,
-  Globe2,
+  Prohibit as Ban,
+  CalendarDots as CalendarClock,
+  CalendarDots as CalendarDays,
+  PlusCircle as CirclePlus,
+  Clock as Clock3,
+  Globe as Globe2,
   MapPin,
-  MoreVertical,
-  Pencil,
+  DotsThreeVertical as MoreVertical,
+  PencilSimple as Pencil,
   Plus,
-  Save,
-  Trash2,
-  UserRound,
-} from "lucide-react";
+  FloppyDisk as Save,
+  Trash as Trash2,
+  UserCircle as UserRound,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   createScheduleBlock,
@@ -79,6 +79,7 @@ export type AgendaSettingsData = {
 type ScheduleItem = AgendaSettingsData["schedules"][number];
 type AvailabilityItem = AgendaSettingsData["availabilities"][number];
 type BlockItem = AgendaSettingsData["blocks"][number];
+type ScheduleEditorSection = "general" | "hours" | "online" | "blocks";
 type EditablePeriod = {
   key: string;
   weekday: number;
@@ -114,6 +115,8 @@ export function AgendaSettings({
       ? initialScheduleId
       : null,
   );
+  const [editorSection, setEditorSection] =
+    useState<ScheduleEditorSection>("general");
   const selectedSchedule =
     editor && editor !== "new"
       ? data.schedules.find((schedule) => schedule.id === editor)
@@ -147,7 +150,13 @@ export function AgendaSettings({
             </div>
           </div>
           {canConfigure ? (
-            <Button type="button" onClick={() => setEditor("new")}>
+            <Button
+              type="button"
+              onClick={() => {
+                setEditorSection("general");
+                setEditor("new");
+              }}
+            >
               <CirclePlus className="size-4" aria-hidden="true" />
               Nova agenda
             </Button>
@@ -169,7 +178,10 @@ export function AgendaSettings({
                 data={data}
                 canConfigure={canConfigure}
                 canBlock={canBlock}
-                onEdit={() => setEditor(schedule.id)}
+                onEdit={(section) => {
+                  setEditorSection(section);
+                  setEditor(schedule.id);
+                }}
               />
             ))}
             {!data.schedules.length ? (
@@ -192,6 +204,7 @@ export function AgendaSettings({
           schedule={selectedSchedule}
           canConfigure={canConfigure}
           canBlock={canBlock}
+          section={editor === "new" ? null : editorSection}
           onClose={() => setEditor(null)}
         />
       ) : null}
@@ -219,7 +232,7 @@ function ScheduleCard({
   data: AgendaSettingsData;
   canConfigure: boolean;
   canBlock: boolean;
-  onEdit: () => void;
+  onEdit: (section: ScheduleEditorSection) => void;
 }) {
   const professional = data.professionals.find(
     (item) => item.id === schedule.professional_id,
@@ -286,25 +299,45 @@ function ScheduleCard({
                 {(close) => (
                   <>
                     {canConfigure ? (
-                      <DropdownMenuItem
-                        icon={Pencil}
-                        onSelect={() => {
-                          close();
-                          onEdit();
-                        }}
-                      >
-                        Editar agenda
-                      </DropdownMenuItem>
+                      <>
+                        <DropdownMenuItem
+                          icon={Pencil}
+                          onSelect={() => {
+                            close();
+                            onEdit("general");
+                          }}
+                        >
+                          Dados gerais
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          icon={Clock3}
+                          onSelect={() => {
+                            close();
+                            onEdit("hours");
+                          }}
+                        >
+                          Horários
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          icon={Globe2}
+                          onSelect={() => {
+                            close();
+                            onEdit("online");
+                          }}
+                        >
+                          Agendamento online
+                        </DropdownMenuItem>
+                      </>
                     ) : null}
-                    {canBlock && !canConfigure ? (
+                    {canBlock ? (
                       <DropdownMenuItem
                         icon={Ban}
                         onSelect={() => {
                           close();
-                          onEdit();
+                          onEdit("blocks");
                         }}
                       >
-                        Gerenciar bloqueios
+                        Bloqueios
                       </DropdownMenuItem>
                     ) : null}
                   </>
@@ -373,12 +406,14 @@ function ScheduleConfigurationEditor({
   schedule,
   canConfigure,
   canBlock,
+  section,
   onClose,
 }: {
   data: AgendaSettingsData;
   schedule?: ScheduleItem;
   canConfigure: boolean;
   canBlock: boolean;
+  section: ScheduleEditorSection | null;
   onClose: () => void;
 }) {
   const scheduleRows = schedule
@@ -486,6 +521,7 @@ function ScheduleConfigurationEditor({
         />
 
         <EditorSection
+          hidden={section !== null && section !== "general"}
           title="Dados gerais"
           description="Identificação, profissional responsável e unidade de atendimento."
           icon={CalendarDays}
@@ -544,36 +580,35 @@ function ScheduleConfigurationEditor({
         </EditorSection>
 
         <EditorSection
+          hidden={section !== null && section !== "hours"}
           title="Horários de atendimento"
           description="Cadastre um ou mais períodos por dia. O espaço entre eles será a pausa de almoço ou outro intervalo."
           icon={Clock3}
         >
-          <label className="mb-4 grid max-w-xs gap-2 text-sm font-medium">
-            <span className="inline-flex items-center gap-1">
+          <label className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium">
+            <span className="inline-flex items-center gap-1.5">
               Intervalo entre opções
               <HelpTooltip>
                 Espaçamento entre os horários de início oferecidos. A duração do
                 procedimento continua sendo respeitada.
               </HelpTooltip>
             </span>
-            <div className="flex items-center gap-2">
-              <Input
-                name="slot_minutes"
-                type="number"
-                min="5"
-                max="480"
-                step="5"
-                defaultValue={schedule?.slot_minutes ?? 30}
-                disabled={!canConfigure || pending}
-                className="w-28"
-                required
-              />
-              <span className="text-sm font-normal text-muted-foreground">
-                minutos
-              </span>
-            </div>
+            <Input
+              name="slot_minutes"
+              type="number"
+              min="5"
+              max="480"
+              step="5"
+              defaultValue={schedule?.slot_minutes ?? 30}
+              disabled={!canConfigure || pending}
+              className="h-8 w-20"
+              required
+            />
+            <span className="text-xs font-normal text-muted-foreground">
+              minutos
+            </span>
           </label>
-          <div className="grid gap-3">
+          <div className="divide-y divide-border overflow-hidden rounded-md border border-border">
             {weekdays.map((day) => (
               <DayPeriodsEditor
                 key={day.weekday}
@@ -598,67 +633,69 @@ function ScheduleConfigurationEditor({
         </EditorSection>
 
         <EditorSection
+          hidden={section !== null && section !== "online"}
           title="Agendamento online"
           description="Defina se esta agenda aparece no portal e quais regras ela segue."
           icon={Globe2}
         >
-          <div className="rounded-md border border-border bg-muted/25 p-3">
-            <Switch
-              checked={onlineEnabled}
-              disabled={!canConfigure || pending || !active}
-              label="Permitir agendamento online nesta agenda"
-              onCheckedChange={setOnlineEnabled}
-            />
-            <p className="mt-1 pl-11 text-xs text-muted-foreground">
-              A publicação geral do portal continua sendo controlada na tela de
-              Agendamento online.
-            </p>
-          </div>
-
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
-            <NumberField
-              name="min_notice_hours"
-              label="Antecedência mínima"
-              suffix="horas"
-              min={0}
-              max={720}
-              defaultValue={schedule?.min_notice_hours ?? 24}
-              disabled={!canConfigure || pending}
-            />
-            <NumberField
-              name="max_days_ahead"
-              label="Janela máxima"
-              suffix="dias"
-              min={1}
-              max={365}
-              defaultValue={schedule?.max_days_ahead ?? 30}
-              disabled={!canConfigure || pending}
-            />
-            <NumberField
-              name="cancellation_notice_hours"
-              label="Prazo para cancelar"
-              suffix="horas"
-              min={0}
-              max={720}
-              defaultValue={schedule?.cancellation_notice_hours ?? 24}
-              disabled={!canConfigure || pending}
-            />
-          </div>
-
-          <div className="mt-5 border-t border-border pt-4">
+          <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/25 p-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
+              <Switch
+                checked={onlineEnabled}
+                disabled={!canConfigure || pending || !active}
+                label="Permitir agendamento online nesta agenda"
+                onCheckedChange={setOnlineEnabled}
+              />
+              <p className="mt-1 pl-11 text-xs text-muted-foreground">
+                A publicação geral continua sendo controlada na tela de
+                Agendamento online.
+              </p>
+            </div>
+            <div className="grid shrink-0 gap-2 sm:grid-cols-3">
+              <NumberField
+                name="min_notice_hours"
+                label="Antecedência mínima"
+                suffix="horas"
+                min={0}
+                max={720}
+                defaultValue={schedule?.min_notice_hours ?? 24}
+                disabled={!canConfigure || pending}
+              />
+              <NumberField
+                name="max_days_ahead"
+                label="Janela máxima"
+                suffix="dias"
+                min={1}
+                max={365}
+                defaultValue={schedule?.max_days_ahead ?? 30}
+                disabled={!canConfigure || pending}
+              />
+              <NumberField
+                name="cancellation_notice_hours"
+                label="Prazo para cancelar"
+                suffix="horas"
+                min={0}
+                max={720}
+                defaultValue={schedule?.cancellation_notice_hours ?? 24}
+                disabled={!canConfigure || pending}
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h4 className="text-sm font-semibold">
                 Procedimentos oferecidos
               </h4>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 O paciente verá somente os procedimentos marcados nesta agenda.
               </p>
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
               {data.procedures.map((procedure) => (
                 <div
                   key={procedure.id}
-                  className="flex min-w-0 items-start gap-2 rounded-md border border-border bg-background p-3"
+                  className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 py-2"
                 >
                   <Checkbox
                     checked={selectedProcedures.has(procedure.id)}
@@ -673,11 +710,11 @@ function ScheduleConfigurationEditor({
                       });
                     }}
                   />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">
+                  <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium">
                       {procedure.name}
                     </span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="shrink-0 text-xs text-muted-foreground">
                       {procedure.duration_minutes} min
                     </span>
                   </span>
@@ -693,6 +730,7 @@ function ScheduleConfigurationEditor({
         </EditorSection>
 
         <EditorSection
+          hidden={section !== null && section !== "blocks"}
           title="Bloqueios e exceções"
           description="Bloqueios sempre prevalecem sobre os horários recorrentes e também removem o período do portal online."
           icon={Ban}
@@ -726,7 +764,7 @@ function ScheduleConfigurationEditor({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          {canConfigure ? (
+          {canConfigure && section !== "blocks" ? (
             <Button
               type="submit"
               disabled={pending || Boolean(availabilityError)}
@@ -746,12 +784,14 @@ function ScheduleConfigurationEditor({
 }
 
 function EditorSection({
+  hidden,
   title,
   description,
   icon: Icon,
   action,
   children,
 }: {
+  hidden?: boolean;
   title: string;
   description: string;
   icon: typeof CalendarDays;
@@ -759,7 +799,10 @@ function EditorSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-background">
+    <section
+      hidden={hidden}
+      className="rounded-lg border border-border bg-background"
+    >
       <header className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
           <span className="grid size-8 shrink-0 place-items-center rounded-md bg-primary-muted text-primary">
@@ -798,21 +841,71 @@ function DayPeriodsEditor({
     left.start_time.localeCompare(right.start_time),
   );
   return (
-    <div className="rounded-md border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="grid size-8 place-items-center rounded-md bg-muted text-xs font-semibold sm:hidden">
-            {day.shortLabel}
+    <div className="grid min-h-14 gap-2 bg-background px-3 py-2 sm:grid-cols-[8.5rem_minmax(0,1fr)_auto] sm:items-center">
+      <div className="flex items-center gap-2">
+        <span className="grid size-7 place-items-center rounded bg-muted text-[11px] font-semibold sm:hidden">
+          {day.shortLabel}
+        </span>
+        <p className="hidden text-sm font-medium sm:block">{day.label}</p>
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+        {orderedPeriods.length ? (
+          orderedPeriods.map((period, index) => (
+            <div
+              key={period.key}
+              className="flex min-w-0 items-center gap-1 rounded-md border border-border bg-card p-1 shadow-[var(--shadow-soft)]"
+            >
+              <label className="sr-only" htmlFor={`${period.key}-start`}>
+                Início do período {index + 1} de {day.label}
+              </label>
+              <Input
+                id={`${period.key}-start`}
+                type="time"
+                value={period.start_time}
+                disabled={disabled}
+                onChange={(event) =>
+                  onChange(period.key, { start_time: event.target.value })
+                }
+                required
+                className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-xs shadow-none"
+              />
+              <span className="text-xs text-muted-foreground">–</span>
+              <label className="sr-only" htmlFor={`${period.key}-end`}>
+                Fim do período {index + 1} de {day.label}
+              </label>
+              <Input
+                id={`${period.key}-end`}
+                type="time"
+                value={period.end_time}
+                disabled={disabled}
+                onChange={(event) =>
+                  onChange(period.key, { end_time: event.target.value })
+                }
+                required
+                className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-xs shadow-none"
+              />
+              <Button
+                type="button"
+                variant="destructive-ghost"
+                size="icon-sm"
+                disabled={disabled}
+                onClick={() => onRemove(period.key)}
+                aria-label={`Remover período ${index + 1} de ${day.label}`}
+                className="size-8 shrink-0"
+              >
+                <Trash2 className="size-3.5" aria-hidden="true" />
+              </Button>
+            </div>
+          ))
+        ) : (
+          <span className="self-center text-xs text-muted-foreground">
+            Sem atendimento
           </span>
-          <p className="hidden min-w-32 text-sm font-medium sm:block">
-            {day.label}
-          </p>
-          <Badge variant={orderedPeriods.length ? "success" : "neutral"}>
-            {orderedPeriods.length
-              ? `${orderedPeriods.length} período${orderedPeriods.length === 1 ? "" : "s"}`
-              : "Sem atendimento"}
-          </Badge>
-        </div>
+        )}
+      </div>
+
+      <div className="flex justify-end">
         <Button
           type="button"
           variant="ghost"
@@ -824,57 +917,6 @@ function DayPeriodsEditor({
           Período
         </Button>
       </div>
-      {orderedPeriods.length ? (
-        <div className="mt-3 grid gap-2 border-t border-border pt-3">
-          {orderedPeriods.map((period, index) => (
-            <div
-              key={period.key}
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(8rem,1fr)_auto_minmax(8rem,1fr)_auto] sm:items-end"
-            >
-              <label className="grid min-w-0 gap-1 text-xs font-medium">
-                Início {index + 1}
-                <Input
-                  type="time"
-                  value={period.start_time}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    onChange(period.key, { start_time: event.target.value })
-                  }
-                  required
-                  className="min-w-0 w-full"
-                />
-              </label>
-              <span className="hidden pb-2 text-sm text-muted-foreground sm:block">
-                até
-              </span>
-              <label className="col-start-1 grid min-w-0 gap-1 text-xs font-medium sm:col-start-auto">
-                Fim {index + 1}
-                <Input
-                  type="time"
-                  value={period.end_time}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    onChange(period.key, { end_time: event.target.value })
-                  }
-                  required
-                  className="min-w-0 w-full"
-                />
-              </label>
-              <Button
-                type="button"
-                variant="destructive-ghost"
-                size="icon-sm"
-                disabled={disabled}
-                onClick={() => onRemove(period.key)}
-                aria-label={`Remover período ${index + 1} de ${day.label}`}
-                className="self-end"
-              >
-                <Trash2 className="size-4" aria-hidden="true" />
-              </Button>
-            </div>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -897,9 +939,9 @@ function NumberField({
   disabled: boolean;
 }) {
   return (
-    <label className="grid gap-2 text-sm font-medium">
+    <label className="grid gap-1 text-xs font-medium">
       {label}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <Input
           name={name}
           type="number"
@@ -908,7 +950,7 @@ function NumberField({
           defaultValue={defaultValue}
           disabled={disabled}
           required
-          className="min-w-0 flex-1"
+          className="h-8 w-20 min-w-0 px-2"
         />
         <span className="text-xs font-normal text-muted-foreground">
           {suffix}

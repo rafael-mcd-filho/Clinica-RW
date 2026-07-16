@@ -6,7 +6,7 @@ import {
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { PageHeader } from "@/components/ui/page-header";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { UsersRound } from "lucide-react";
+import { UsersThree as UsersRound } from "@phosphor-icons/react/dist/ssr";
 
 type PatientTagRow = { patient_id: string; tag_id: string };
 type LatestEncounterRow = {

@@ -13,7 +13,9 @@ export type MessageType =
   | "sticker"
   | "location"
   | "contact"
-  | "system";
+  | "system"
+  /** Nota interna da equipe — nunca enviada ao WhatsApp. */
+  | "note";
 
 export type MessageStatus =
   | "received"

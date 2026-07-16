@@ -49,7 +49,7 @@ export default async function AppLayout({
     <AppShell
       navItems={navItems}
       brandName={platformSettings.app_name}
-      brandLogoUrl={context.organization?.logo_url ?? platformSettings.logo_url}
+      brandLogoUrl={platformSettings.logo_url}
       sidebarSubtitle={sidebarSubtitle}
       userName={userName}
       userSubtitle={userSubtitle}
@@ -110,12 +110,45 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       "financeiro.ver_geral",
       "financeiro.ver_proprio_repasse",
       "financeiro.receber_pagamento",
+      "financeiro.gerenciar_contas_pagar",
     ])
   ) {
+    const financeChildren: NonNullable<AppShellNavItem["children"]> = [
+      { href: "/financeiro", label: "Visão geral" },
+    ];
+    if (
+      permissionCodes.has("financeiro.ver_geral") ||
+      permissionCodes.has("financeiro.receber_pagamento")
+    ) {
+      financeChildren.push(
+        { href: "/financeiro/contas-a-receber", label: "Contas a receber" },
+        { href: "/financeiro/movimentacoes", label: "Movimentações" },
+      );
+    }
+    if (
+      permissionCodes.has("financeiro.ver_geral") ||
+      permissionCodes.has("financeiro.gerenciar_contas_pagar")
+    ) {
+      financeChildren.push({
+        href: "/financeiro/contas-a-pagar",
+        label: "Contas a pagar",
+      });
+    }
+    if (
+      permissionCodes.has("financeiro.ver_geral") ||
+      permissionCodes.has("financeiro.ver_proprio_repasse") ||
+      permissionCodes.has("financeiro.gerenciar_contas_pagar")
+    ) {
+      financeChildren.push({ href: "/financeiro/repasses", label: "Repasses" });
+    }
+    if (permissionCodes.has("financeiro.ver_geral")) {
+      financeChildren.push({ href: "/financeiro/dre", label: "DRE" });
+    }
     navItems.push({
       href: "/financeiro",
       label: "Financeiro",
       icon: "financeiro",
+      children: financeChildren,
     });
   }
 

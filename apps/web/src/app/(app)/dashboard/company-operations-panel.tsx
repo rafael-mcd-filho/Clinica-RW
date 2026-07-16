@@ -2,19 +2,19 @@
 
 import { useActionState, useEffect } from "react";
 import {
-  Building2,
-  CalendarClock,
+  Buildings as Building2,
+  CalendarDots as CalendarClock,
   Check,
-  Clock3,
-  Globe2,
+  Clock as Clock3,
+  Globe as Globe2,
   ListPlus,
-  Mail,
-  MessageSquareText,
+  EnvelopeSimple as Mail,
+  ChatCenteredText as MessageSquareText,
   Phone,
   Stethoscope,
-  UserRound,
+  UserCircle as UserRound,
   X,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   confirmOnlineBookingRequest,

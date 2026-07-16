@@ -4,18 +4,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import {
-  Building2,
-  ChevronDown,
-  ChevronsUpDown,
-  ChevronUp,
-  Headphones,
-  MoreVertical,
+  Buildings as Building2,
+  CaretDown as ChevronDown,
+  CaretUpDown as ChevronsUpDown,
+  CaretUp as ChevronUp,
+  Headset as Headphones,
+  DotsThreeVertical as MoreVertical,
   Pause,
-  Pencil,
+  PencilSimple as Pencil,
   Play,
-  Search,
-  Trash2,
-} from "lucide-react";
+  MagnifyingGlass as Search,
+  Trash as Trash2,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   deleteEmpresa,

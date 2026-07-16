@@ -5,6 +5,8 @@ import { z } from "zod";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { uploadBrandingLogo } from "@/lib/storage/branding";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { encryptCredential } from "@/lib/whatsapp/credentials";
 
 export type PlatformSettingsState = {
   error?: string;
@@ -24,6 +26,13 @@ const platformSettingsSchema = z.object({
     .optional()
     .or(z.literal("")),
   support_whatsapp: z.string().trim().optional(),
+  evolution_api_url: z
+    .string()
+    .trim()
+    .url("URL da Evolution API inválida.")
+    .optional()
+    .or(z.literal("")),
+  evolution_api_key: z.string().trim().optional(),
 });
 
 function emptyToNull(value: string | undefined) {
@@ -45,6 +54,8 @@ export async function updatePlatformSettings(
     primary_color: formData.get("primary_color"),
     support_email: formData.get("support_email") ?? "",
     support_whatsapp: formData.get("support_whatsapp") ?? "",
+    evolution_api_url: formData.get("evolution_api_url") ?? "",
+    evolution_api_key: formData.get("evolution_api_key") ?? "",
   });
 
   if (!parsed.success) {
@@ -64,6 +75,20 @@ export async function updatePlatformSettings(
 
   const supabase = await createSupabaseServerClient();
   const settings = parsed.data;
+  const admin = createSupabaseAdminClient();
+  const { data: currentEvolution } = await admin
+    .from("platform_integration_settings")
+    .select("evolution_api_key_encrypted")
+    .eq("id", true)
+    .maybeSingle<{ evolution_api_key_encrypted: string | null }>();
+  if (
+    settings.evolution_api_url &&
+    !settings.evolution_api_key &&
+    !currentEvolution?.evolution_api_key_encrypted &&
+    !process.env.EVOLUTION_API_KEY
+  ) {
+    return { error: "Informe a API key global da Evolution." };
+  }
   const { error } = await supabase.from("platform_settings").upsert({
     id: true,
     app_name: settings.app_name,
@@ -76,6 +101,18 @@ export async function updatePlatformSettings(
   if (error) {
     return { error: error.message };
   }
+
+  const { error: evolutionError } = await admin
+    .from("platform_integration_settings")
+    .upsert({
+      id: true,
+      evolution_api_url: emptyToNull(settings.evolution_api_url),
+      evolution_api_key_encrypted: settings.evolution_api_key
+        ? encryptCredential(settings.evolution_api_key)
+        : (currentEvolution?.evolution_api_key_encrypted ?? null),
+      updated_at: new Date().toISOString(),
+    });
+  if (evolutionError) return { error: evolutionError.message };
 
   await supabase.from("audit_logs").insert({
     organization_id: null,

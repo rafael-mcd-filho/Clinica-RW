@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Headphones } from "lucide-react";
+import { Headset as Headphones } from "@phosphor-icons/react";
 import { ImpersonateDialog, type ImpersonateUser } from "../impersonate-dialog";
 import { Button } from "@/components/ui/button";
 

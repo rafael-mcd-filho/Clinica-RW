@@ -2,7 +2,13 @@
 
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Bold, Italic, List, ListOrdered, Pilcrow } from "lucide-react";
+import {
+  TextB as Bold,
+  TextItalic as Italic,
+  ListBullets as List,
+  ListNumbers as ListOrdered,
+  Paragraph as Pilcrow,
+} from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

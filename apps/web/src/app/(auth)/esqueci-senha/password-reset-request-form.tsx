@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { ArrowLeft, Mail } from "lucide-react";
+import { ArrowLeft, EnvelopeSimple as Mail } from "@phosphor-icons/react";
 import {
   requestPasswordReset,
   type PasswordResetRequestState,

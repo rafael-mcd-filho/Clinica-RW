@@ -2,7 +2,11 @@
 
 import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, Save, Settings2 } from "lucide-react";
+import {
+  CalendarDots as CalendarClock,
+  FloppyDisk as Save,
+  Faders as Settings2,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   saveWeeklyScheduleAvailability,

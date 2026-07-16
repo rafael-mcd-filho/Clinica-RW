@@ -3,7 +3,10 @@
 import { getRequestContext } from "@/lib/auth/context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { draftReply } from "@/lib/whatsapp/ai-draft";
-import { sendMediaMessage, sendTextMessage } from "@/lib/whatsapp/evolution-client";
+import {
+  sendMediaMessage,
+  sendTextMessage,
+} from "@/lib/whatsapp/evolution-client";
 import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest";
 import {
@@ -98,7 +101,9 @@ export async function sendMessageAction(
 
   const trimmed = text.trim();
   if (!trimmed) return { ok: false, error: "Mensagem vazia." };
-  const evolutionConfig = await getOrganizationEvolutionConfig(auth.organizationId);
+  const evolutionConfig = await getOrganizationEvolutionConfig(
+    auth.organizationId,
+  );
   if (!evolutionConfig) {
     return {
       ok: false,
@@ -123,7 +128,11 @@ export async function sendMessageAction(
 
   let waMessageId: string | null = null;
   try {
-    const result = await sendTextMessage(context.phone, trimmed, evolutionConfig);
+    const result = await sendTextMessage(
+      context.phone,
+      trimmed,
+      evolutionConfig,
+    );
     waMessageId = result.waMessageId;
   } catch (error) {
     return {
@@ -152,7 +161,9 @@ export async function sendMessageAction(
   if (insertError || !storedMessage) {
     return {
       ok: false,
-      error: insertError?.message ?? "A mensagem foi enviada, mas não pôde ser registrada.",
+      error:
+        insertError?.message ??
+        "A mensagem foi enviada, mas não pôde ser registrada.",
     };
   }
 
@@ -186,7 +197,9 @@ export async function sendMessageAction(
   };
 }
 
-export async function sendMediaMessageAction(formData: FormData): Promise<AttendanceResult> {
+export async function sendMediaMessageAction(
+  formData: FormData,
+): Promise<AttendanceResult> {
   const auth = await requireAttendant();
   if (!auth) return { ok: false, error: "Acesso negado." };
   const conversationId = String(formData.get("conversation_id") ?? "");
@@ -202,41 +215,87 @@ export async function sendMediaMessageAction(formData: FormData): Promise<Attend
     : file.type.startsWith("audio/")
       ? "audio"
       : "document";
-  const evolutionConfig = await getOrganizationEvolutionConfig(auth.organizationId);
-  if (!evolutionConfig) return { ok: false, error: "Integração do WhatsApp não configurada." };
+  const evolutionConfig = await getOrganizationEvolutionConfig(
+    auth.organizationId,
+  );
+  if (!evolutionConfig)
+    return { ok: false, error: "Integração do WhatsApp não configurada." };
   const supabase = await createSupabaseServerClient();
-  const context = await loadConversationContext(supabase, auth.organizationId, conversationId);
+  const context = await loadConversationContext(
+    supabase,
+    auth.organizationId,
+    conversationId,
+  );
   if (!context) return { ok: false, error: "Conversa não encontrada." };
   const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
   let waMessageId: string | null = null;
   try {
-    const result = await sendMediaMessage({
-      phone: context.phone,
-      mediaUrl: `data:${file.type || "application/octet-stream"};base64,${base64}`,
-      mediaType,
-      fileName: file.name,
-      caption: String(formData.get("caption") ?? "").trim() || undefined,
-    }, evolutionConfig);
+    const result = await sendMediaMessage(
+      {
+        phone: context.phone,
+        mediaUrl: `data:${file.type || "application/octet-stream"};base64,${base64}`,
+        mediaType,
+        fileName: file.name,
+        caption: String(formData.get("caption") ?? "").trim() || undefined,
+      },
+      evolutionConfig,
+    );
     waMessageId = result.waMessageId;
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Falha ao enviar arquivo." };
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "Falha ao enviar arquivo.",
+    };
   }
   const nowIso = new Date().toISOString();
-  const { data, error } = await supabase.from("whatsapp_messages").insert({
-    organization_id: auth.organizationId,
-    conversation_id: conversationId,
-    wa_message_id: waMessageId,
-    direction: "outbound",
-    sender_user_id: auth.userId,
-    message_type: mediaType,
-    body: file.name,
-    media_mime_type: file.type || null,
-    status: "sent",
-    sent_at: nowIso,
-  }).select("id, created_at").single<{ id: string; created_at: string }>();
-  if (error || !data) return { ok: false, error: error?.message ?? "Arquivo enviado, mas não registrado." };
-  await supabase.from("whatsapp_conversations").update({ status: "open", last_message_at: nowIso, last_message_preview: toMessagePreview(mediaType, file.name) }).eq("organization_id", auth.organizationId).eq("id", conversationId);
-  return { ok: true, message: { id: data.id, direction: "outbound", type: mediaType, body: file.name, mediaUrl: null, mediaMimeType: file.type || null, status: "sent", aiSuggested: false, senderUserName: null, createdAt: data.created_at, waMessageId, sentAt: nowIso } };
+  const { data, error } = await supabase
+    .from("whatsapp_messages")
+    .insert({
+      organization_id: auth.organizationId,
+      conversation_id: conversationId,
+      wa_message_id: waMessageId,
+      direction: "outbound",
+      sender_user_id: auth.userId,
+      message_type: mediaType,
+      body: file.name,
+      media_mime_type: file.type || null,
+      status: "sent",
+      sent_at: nowIso,
+    })
+    .select("id, created_at")
+    .single<{ id: string; created_at: string }>();
+  if (error || !data)
+    return {
+      ok: false,
+      error: error?.message ?? "Arquivo enviado, mas não registrado.",
+    };
+  await supabase
+    .from("whatsapp_conversations")
+    .update({
+      status: "open",
+      last_message_at: nowIso,
+      last_message_preview: toMessagePreview(mediaType, file.name),
+    })
+    .eq("organization_id", auth.organizationId)
+    .eq("id", conversationId);
+  return {
+    ok: true,
+    message: {
+      id: data.id,
+      direction: "outbound",
+      type: mediaType,
+      body: file.name,
+      mediaUrl: null,
+      mediaMimeType: file.type || null,
+      status: "sent",
+      aiSuggested: false,
+      senderUserName: null,
+      createdAt: data.created_at,
+      waMessageId,
+      sentAt: nowIso,
+    },
+  };
 }
 
 export async function assignToMeAction(
@@ -257,6 +316,77 @@ export async function assignToMeAction(
     };
   }
   return { ok: true };
+}
+
+/**
+ * Nota interna: registrada na conversa apenas para a equipe — não passa pela
+ * Evolution e não altera o preview/contador da conversa.
+ */
+export async function addInternalNoteAction(
+  conversationId: string,
+  text: string,
+): Promise<AttendanceResult> {
+  const auth = await requireAttendant();
+  if (!auth) return { ok: false, error: "Acesso negado." };
+
+  const trimmed = text.trim();
+  if (!trimmed) return { ok: false, error: "Nota vazia." };
+
+  const supabase = await createSupabaseServerClient();
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("whatsapp_messages")
+    .insert({
+      organization_id: auth.organizationId,
+      conversation_id: conversationId,
+      direction: "outbound",
+      sender_user_id: auth.userId,
+      message_type: "note",
+      body: trimmed,
+      status: "sent",
+      sent_at: nowIso,
+    })
+    .select("id, created_at")
+    .single<{ id: string; created_at: string }>();
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Falha ao salvar a nota." };
+  }
+
+  return {
+    ok: true,
+    message: {
+      id: data.id,
+      direction: "outbound",
+      type: "note",
+      body: trimmed,
+      mediaUrl: null,
+      mediaMimeType: null,
+      status: "sent",
+      aiSuggested: false,
+      senderUserName: null,
+      createdAt: data.created_at,
+      waMessageId: null,
+      sentAt: nowIso,
+    },
+  };
+}
+
+/** Transfere a conversa para outro atendente da equipe. */
+export async function transferConversationAction(
+  conversationId: string,
+  targetUserId: string,
+): Promise<AttendanceResult> {
+  const auth = await requireAttendant();
+  if (!auth) return { ok: false, error: "Acesso negado." };
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("whatsapp_conversations")
+    .update({ assigned_user_id: targetUserId, status: "open" })
+    .eq("organization_id", auth.organizationId)
+    .eq("id", conversationId);
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
 
 export async function setConversationStatusAction(
@@ -354,6 +484,7 @@ export async function suggestReplyAction(
     .select("direction, body, message_type, created_at")
     .eq("organization_id", auth.organizationId)
     .eq("conversation_id", conversationId)
+    .neq("message_type", "note")
     .order("created_at", { ascending: false })
     .limit(12)
     .returns<

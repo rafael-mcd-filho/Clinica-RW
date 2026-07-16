@@ -3,21 +3,21 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
 import {
-  AlertTriangle,
+  Warning as AlertTriangle,
   ArrowRight,
-  Banknote,
+  Money as Banknote,
   CalendarCheck,
-  Clock3,
+  Clock as Clock3,
   FileText,
   Percent,
   Receipt,
   Stethoscope,
   UserCheck,
-  UserX,
-  UsersRound,
-  WalletCards,
-  type LucideIcon,
-} from "lucide-react";
+  UserMinus as UserX,
+  UsersThree as UsersRound,
+  Wallet as WalletCards,
+  type Icon as LucideIcon,
+} from "@phosphor-icons/react";
 import { useMemo } from "react";
 import {
   Bar,

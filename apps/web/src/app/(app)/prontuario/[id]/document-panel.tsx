@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Printer } from "lucide-react";
+import { FileText, Printer } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";

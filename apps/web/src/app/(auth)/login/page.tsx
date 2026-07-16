@@ -1,4 +1,4 @@
-import { Activity } from "lucide-react";
+import { Pulse as Activity } from "@phosphor-icons/react/dist/ssr";
 import { redirect } from "next/navigation";
 import { LoginForm } from "./login-form";
 import { getAuthenticatedUser } from "@/lib/auth/session";
