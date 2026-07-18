@@ -369,6 +369,7 @@ export async function saveScheduleConfiguration(
     p_slot_minutes: parsed.data.slot_minutes,
     p_availability: parsed.data.availability,
     p_procedure_ids: parsed.data.procedure_ids,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
   });
   if (error) return { error: friendlyError(error.message, error.code) };
 
@@ -1417,6 +1418,7 @@ export async function confirmOnlineBookingRequest(
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.rpc("confirm_online_booking_request", {
     p_request_id: requestId,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
   });
 
   if (error) return { error: friendlyError(error.message, error.code) };
@@ -1441,6 +1443,7 @@ export async function rejectOnlineBookingRequest(
   const { error } = await supabase.rpc("reject_online_booking_request", {
     p_request_id: requestId,
     p_reason: parsed.success ? parsed.data.reason || null : null,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
   });
 
   if (error) return { error: friendlyError(error.message, error.code) };

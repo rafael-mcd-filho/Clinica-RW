@@ -206,6 +206,7 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
   }
 
   const canManageCompany = permissionCodes.has("config.geral");
+  const canManageUsers = permissionCodes.has("config.usuarios");
   const canConfigureAgenda = permissionCodes.has("agenda.configurar");
   const canBlockAgenda = permissionCodes.has("agenda.bloquear_horario");
   const canCreateClinicalTemplate = permissionCodes.has(
@@ -217,6 +218,13 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     configurationChildren.push({
       href: "/configuracoes/cadastros",
       label: "Cadastros e operação",
+    });
+  }
+
+  if (canManageUsers) {
+    configurationChildren.push({
+      href: "/configuracoes/usuarios-acessos",
+      label: "Usuários e acessos",
     });
   }
 

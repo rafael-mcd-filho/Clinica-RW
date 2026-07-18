@@ -6,6 +6,7 @@ import {
   GearSix as Settings,
   Tag as Tags,
   ChatCircle as MessageCircle,
+  UsersThree as UsersRound,
 } from "@phosphor-icons/react/dist/ssr";
 import type { Icon as LucideIcon } from "@phosphor-icons/react";
 import type {
@@ -27,6 +28,12 @@ const pageMetadata: Record<
     icon: Building2,
     description: (name) =>
       `Dados da clínica, estrutura, equipe e serviços de ${name}.`,
+  },
+  "usuarios-acessos": {
+    title: "Usuários e acessos",
+    icon: UsersRound,
+    description: (name) =>
+      `Contas, perfis, permissões e escopos de acesso de ${name}.`,
   },
   agenda: {
     title: "Agenda",

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { provisionCompanyUserAccess } from "@/lib/auth/company-user-admin";
 import { getRequestContext } from "@/lib/auth/context";
 import {
   removeOrganizationLogo,
@@ -18,6 +19,9 @@ import {
 export type CompanyActionState = {
   error?: string;
   success?: string;
+  warning?: string;
+  setupLink?: string;
+  accessEmail?: string;
   ok?: boolean;
 };
 
@@ -48,6 +52,50 @@ const optionalText = z.string().trim().optional();
 const optionalUuid = z
   .union([z.string().uuid(), z.literal("")])
   .transform((value) => value || null);
+
+const formBoolean = z.preprocess(
+  (value) => value === true || value === "true" || value === "on",
+  z.boolean(),
+);
+
+const professionalRegistrationSchema = z
+  .object({
+    user_id: optionalUuid.optional(),
+    specialty_id: optionalUuid,
+    name: z.string().trim().min(2, "Informe o nome do profissional."),
+    council_type: optionalText,
+    council_number: optionalText,
+    council_state: optionalText,
+    grant_system_access: formBoolean,
+    access_email: z
+      .string()
+      .trim()
+      .email("Informe um e-mail válido para o acesso.")
+      .transform((email) => email.toLowerCase())
+      .optional()
+      .or(z.literal("")),
+  })
+  .superRefine((data, context) => {
+    if (data.grant_system_access && !data.access_email) {
+      context.addIssue({
+        code: "custom",
+        path: ["access_email"],
+        message: "Informe o e-mail do novo usuário.",
+      });
+    }
+    if (data.grant_system_access && data.user_id) {
+      context.addIssue({
+        code: "custom",
+        path: ["user_id"],
+        message:
+          "Escolha entre vincular um usuário existente ou criar um novo acesso.",
+      });
+    }
+  });
+
+type ProfessionalRegistrationInput = z.infer<
+  typeof professionalRegistrationSchema
+>;
 
 function decimalValue(value: unknown) {
   if (typeof value !== "string") {
@@ -97,14 +145,7 @@ const registrationSchemas: Record<
     name: z.string().trim().min(2, "Informe a especialidade."),
     cbo_code: optionalText,
   }),
-  professional: z.object({
-    user_id: optionalUuid,
-    specialty_id: optionalUuid,
-    name: z.string().trim().min(2, "Informe o nome do profissional."),
-    council_type: optionalText,
-    council_number: optionalText,
-    council_state: optionalText,
-  }),
+  professional: professionalRegistrationSchema,
   procedure: z.object({
     name: z.string().trim().min(2, "Informe o procedimento."),
     code: optionalText,
@@ -506,10 +547,28 @@ export async function saveRegistration(
     return { error: "Você não pode alterar estes cadastros." };
   }
 
+  const rawValues = valuesFromFormData(formData);
   const schema = registrationSchemas[kind];
-  const parsed = schema.safeParse(valuesFromFormData(formData));
+  const parsed = schema.safeParse(rawValues);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  if (kind === "professional") {
+    const effectiveUserId = context.effectiveUser?.id;
+    if (!effectiveUserId) {
+      return { error: "Não foi possível identificar o usuário responsável." };
+    }
+
+    return saveProfessionalRegistration({
+      organizationId: context.organization.id,
+      effectiveUserId,
+      auditActorUserId: context.actor?.id ?? effectiveUserId,
+      canManageUsers: context.permissionCodes.has("config.usuarios"),
+      recordId,
+      input: parsed.data as ProfessionalRegistrationInput,
+      userFieldSubmitted: Object.hasOwn(rawValues, "user_id"),
+    });
   }
 
   const supabase = await createSupabaseServerClient();
@@ -534,6 +593,250 @@ export async function saveRegistration(
 
   refreshCompanySettings();
   return { success: recordId ? "Cadastro atualizado." : "Cadastro criado." };
+}
+
+async function saveProfessionalRegistration({
+  organizationId,
+  effectiveUserId,
+  auditActorUserId,
+  canManageUsers,
+  recordId,
+  input,
+  userFieldSubmitted,
+}: {
+  organizationId: string;
+  effectiveUserId: string;
+  auditActorUserId: string;
+  canManageUsers: boolean;
+  recordId: string | null;
+  input: ProfessionalRegistrationInput;
+  userFieldSubmitted: boolean;
+}): Promise<CompanyActionState> {
+  if (recordId && !z.string().uuid().safeParse(recordId).success) {
+    return { error: "Profissional inválido." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: currentProfessional, error: currentProfessionalError } =
+    recordId
+      ? await supabase
+          .from("professionals")
+          .select("id, user_id, active")
+          .eq("id", recordId)
+          .eq("organization_id", organizationId)
+          .maybeSingle<{
+            id: string;
+            user_id: string | null;
+            active: boolean;
+          }>()
+      : { data: null, error: null };
+
+  if (recordId && (currentProfessionalError || !currentProfessional)) {
+    return { error: "Profissional não encontrado nesta empresa." };
+  }
+
+  const previousUserId = currentProfessional?.user_id ?? null;
+  const requestedUserId = userFieldSubmitted
+    ? (input.user_id ?? null)
+    : previousUserId;
+  const linkChanged = requestedUserId !== previousUserId;
+
+  if (input.grant_system_access && previousUserId) {
+    return {
+      error:
+        "Este profissional já possui acesso vinculado. Desvincule o usuário antes de criar outro acesso.",
+    };
+  }
+
+  if ((input.grant_system_access || linkChanged) && !canManageUsers) {
+    return {
+      error:
+        "Você pode alterar o cadastro profissional, mas precisa da permissão config.usuarios para modificar o acesso ao sistema.",
+    };
+  }
+
+  if (
+    currentProfessional &&
+    !currentProfessional.active &&
+    (input.grant_system_access || (linkChanged && requestedUserId))
+  ) {
+    return {
+      error: "Reative o profissional antes de vincular ou criar um acesso.",
+    };
+  }
+
+  let professionalProfileId: string | null = null;
+  if (input.grant_system_access) {
+    const { data: professionalProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("name", "Profissional")
+      .eq("is_system_default", true)
+      .maybeSingle<{ id: string }>();
+
+    if (profileError || !professionalProfile) {
+      return {
+        error: "O perfil padrão Profissional não foi encontrado nesta empresa.",
+      };
+    }
+    professionalProfileId = professionalProfile.id;
+  }
+
+  if (linkChanged && requestedUserId) {
+    const [{ data: targetUser, error: targetUserError }, linkedProfessional] =
+      await Promise.all([
+        supabase
+          .from("app_users")
+          .select("id, status, is_super_admin")
+          .eq("id", requestedUserId)
+          .eq("organization_id", organizationId)
+          .eq("is_super_admin", false)
+          .maybeSingle<{
+            id: string;
+            status: "invited" | "active" | "suspended";
+            is_super_admin: boolean;
+          }>(),
+        supabase
+          .from("professionals")
+          .select("id")
+          .eq("organization_id", organizationId)
+          .eq("user_id", requestedUserId)
+          .neq("id", recordId ?? "00000000-0000-0000-0000-000000000000")
+          .limit(1)
+          .maybeSingle<{ id: string }>(),
+      ]);
+
+    if (targetUserError || !targetUser || targetUser.status !== "active") {
+      return { error: "O usuário selecionado não está ativo nesta empresa." };
+    }
+    if (linkedProfessional.error || linkedProfessional.data) {
+      return {
+        error: "O usuário selecionado já está vinculado a outro profissional.",
+      };
+    }
+  }
+
+  const grantSystemAccess = input.grant_system_access;
+  const accessEmail = input.access_email;
+  const professionalFields = {
+    specialty_id: input.specialty_id,
+    name: input.name,
+    council_type: input.council_type,
+    council_number: input.council_number,
+    council_state: input.council_state,
+  };
+  const payload = {
+    ...nullifyEmptyValues(professionalFields),
+    user_id: grantSystemAccess ? null : requestedUserId,
+    organization_id: organizationId,
+  };
+  let saveResult;
+  if (recordId) {
+    const updateQuery = supabase
+      .from("professionals")
+      .update(payload)
+      .eq("id", recordId)
+      .eq("organization_id", organizationId);
+    const guardedUpdate = previousUserId
+      ? updateQuery.eq("user_id", previousUserId)
+      : updateQuery.is("user_id", null);
+    saveResult = await guardedUpdate.select("id").maybeSingle<{ id: string }>();
+  } else {
+    saveResult = await supabase
+      .from("professionals")
+      .insert(payload)
+      .select("id")
+      .single<{ id: string }>();
+  }
+
+  if (saveResult.error || !saveResult.data) {
+    return {
+      error: saveResult.error
+        ? friendlyDatabaseError(saveResult.error.message)
+        : "O vínculo deste profissional foi alterado por outra pessoa. Recarregue a página e tente novamente.",
+    };
+  }
+
+  const professionalId = saveResult.data.id;
+
+  if (grantSystemAccess) {
+    const accessResult = await provisionCompanyUserAccess({
+      organizationId,
+      actorUserId: effectiveUserId,
+      auditActorUserId,
+      name: input.name,
+      email: accessEmail!,
+      profileId: professionalProfileId!,
+      professionalId,
+      initialAgendaScope: "own",
+    });
+
+    refreshCompanySettings();
+    if (!accessResult.ok) {
+      return {
+        success: accessResult.requiresManualReview
+          ? "Profissional salvo; o acesso precisa de revisão manual."
+          : recordId
+            ? "Profissional atualizado sem alterar o acesso."
+            : "Profissional cadastrado sem acesso ao sistema.",
+        warning: accessResult.error,
+      };
+    }
+
+    const { error: accessLinkAuditError } = await supabase
+      .from("audit_logs")
+      .insert({
+        organization_id: organizationId,
+        actor_user_id: auditActorUserId,
+        action: "professional.user_link_changed",
+        resource_type: "professional",
+        resource_id: professionalId,
+        metadata: {
+          previous_user_id: null,
+          user_id: accessResult.userId,
+          access_created: true,
+          effective_user_id: effectiveUserId,
+        },
+      });
+
+    return {
+      success: recordId
+        ? "Profissional atualizado e acesso criado."
+        : "Profissional cadastrado e acesso criado.",
+      warning: accessLinkAuditError
+        ? "O acesso foi criado, mas não foi possível registrar toda a auditoria do vínculo profissional."
+        : undefined,
+      setupLink: accessResult.setupLink,
+      accessEmail,
+    };
+  }
+
+  let linkAuditError: string | undefined;
+  if (linkChanged) {
+    const { error } = await supabase.from("audit_logs").insert({
+      organization_id: organizationId,
+      actor_user_id: auditActorUserId,
+      action: "professional.user_link_changed",
+      resource_type: "professional",
+      resource_id: professionalId,
+      metadata: {
+        previous_user_id: previousUserId,
+        user_id: requestedUserId,
+        effective_user_id: effectiveUserId,
+      },
+    });
+    if (error) {
+      linkAuditError =
+        "O vínculo foi salvo, mas não foi possível registrar sua auditoria.";
+    }
+  }
+
+  refreshCompanySettings();
+  return {
+    success: recordId ? "Profissional atualizado." : "Profissional cadastrado.",
+    warning: linkAuditError,
+  };
 }
 
 export async function createSettingsTag(

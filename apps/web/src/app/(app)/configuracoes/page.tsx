@@ -10,6 +10,8 @@ import { UnavailableConfigurationPage } from "./configuration-page";
 
 const legacyTabRoutes: Record<string, CompanyConfigurationRoute> = {
   cadastros: "cadastros",
+  usuarios: "usuarios-acessos",
+  "usuarios-acessos": "usuarios-acessos",
   agenda: "agenda",
   "agendamento-online": "agendamento-online",
   whatsapp: "whatsapp",

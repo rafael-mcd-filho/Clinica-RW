@@ -12,6 +12,7 @@ import {
   Buildings as Building2,
   CheckCircle as CheckCircle2,
   Clock as Clock3,
+  Copy,
   PencilSimple as Pencil,
   Plus,
   FloppyDisk as Save,
@@ -112,9 +113,11 @@ const brazilianStates = [
 export function CompanySettings({
   data,
   organizationLogoUrl,
+  canManageUsers,
 }: {
   data: CompanySettingsData;
   organizationLogoUrl: string | null;
+  canManageUsers: boolean;
 }) {
   const checklist = [
     { label: "Dados da clínica", done: Boolean(data.clinic.trade_name) },
@@ -260,6 +263,7 @@ export function CompanySettings({
                   modalForm
                   description="Profissionais assistenciais que terão agenda e atendimentos."
                   rows={data.professionals as EditableRow[]}
+                  canManageUsers={canManageUsers}
                   fields={[
                     {
                       ...selectField(
@@ -287,10 +291,15 @@ export function CompanySettings({
                     const council = [row.council_type, row.council_number]
                       .filter(Boolean)
                       .join(" ");
-                    return (
-                      [specialty, council].filter(Boolean).join(" · ") ||
-                      "Profissional"
+                    const linkedUser = data.users.find(
+                      (user) => user.id === row.user_id,
                     );
+                    const access = row.user_id
+                      ? `Acesso: ${linkedUser?.name ?? "usuário vinculado"}`
+                      : "Sem acesso ao sistema";
+                    return [specialty, council, access]
+                      .filter(Boolean)
+                      .join(" · ");
                   }}
                 />
               </div>
@@ -933,6 +942,7 @@ function RegistrationSection({
   modalForm = false,
   itemLabel = "Cadastro",
   itemGender = "feminine",
+  canManageUsers = false,
 }: {
   kind: Exclude<RegistrationKind, "price_item">;
   title: string;
@@ -943,6 +953,7 @@ function RegistrationSection({
   modalForm?: boolean;
   itemLabel?: string;
   itemGender?: "feminine" | "masculine";
+  canManageUsers?: boolean;
 }) {
   const [editing, setEditing] = useState<EditableRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -990,6 +1001,7 @@ function RegistrationSection({
             fields={fields}
             editing={editing}
             onFinished={finishEditing}
+            canManageUsers={canManageUsers}
           />
         ) : null}
 
@@ -1068,9 +1080,11 @@ function RegistrationSection({
               : `${feminineItem ? "Nova" : "Novo"} ${itemLabelLower}`
           }
           description={
-            editing
-              ? `Atualize os dados de ${String(editing.name)}.`
-              : `Cadastre ${feminineItem ? "uma nova" : "um novo"} ${itemLabelLower} na estrutura da clínica.`
+            kind === "professional"
+              ? "O cadastro assistencial é independente da conta de usuário. O acesso ao sistema é opcional."
+              : editing
+                ? `Atualize os dados de ${String(editing.name)}.`
+                : `Cadastre ${feminineItem ? "uma nova" : "um novo"} ${itemLabelLower} na estrutura da clínica.`
           }
           className={
             kind === "unit"
@@ -1089,6 +1103,7 @@ function RegistrationSection({
             editing={editing}
             onFinished={finishEditing}
             modal
+            canManageUsers={canManageUsers}
           />
         </Modal>
       ) : null}
@@ -1102,22 +1117,48 @@ function RegistrationForm({
   editing,
   onFinished,
   modal = false,
+  canManageUsers = false,
 }: {
   kind: Exclude<RegistrationKind, "price_item">;
   fields: FieldDefinition[];
   editing: EditableRow | null;
   onFinished: () => void;
   modal?: boolean;
+  canManageUsers?: boolean;
 }) {
   const boundAction = saveRegistration.bind(null, kind, editing?.id ?? null);
   const [state, action, pending] = useActionState(boundAction, initialState);
+  const professionalUserField =
+    kind === "professional"
+      ? fields.find((field) => field.name === "user_id")
+      : undefined;
+  const registrationFields = professionalUserField
+    ? fields.filter((field) => field.name !== "user_id")
+    : fields;
 
   useEffect(() => {
     if (state.success) {
       toast.success(state.success);
-      onFinished();
+      if (state.warning) {
+        toast.warning(state.warning);
+      }
+      if (!state.setupLink) {
+        onFinished();
+      }
     }
   }, [state, onFinished]);
+
+  if (state.success && state.setupLink) {
+    return (
+      <ProfessionalAccessCreatedPanel
+        success={state.success}
+        warning={state.warning}
+        email={state.accessEmail}
+        setupLink={state.setupLink}
+        onFinished={onFinished}
+      />
+    );
+  }
 
   return (
     <form
@@ -1152,7 +1193,7 @@ function RegistrationForm({
             : "grid gap-4 md:grid-cols-2 lg:grid-cols-3"
         }
       >
-        {fields.map((field, index) => (
+        {registrationFields.map((field, index) => (
           <DynamicField
             key={field.name}
             field={field}
@@ -1161,6 +1202,13 @@ function RegistrationForm({
             helpAlign={modal && index % 2 === 1 ? "end" : "start"}
           />
         ))}
+        {professionalUserField ? (
+          <ProfessionalAccessFields
+            editing={editing}
+            field={professionalUserField}
+            canManageUsers={canManageUsers}
+          />
+        ) : null}
       </div>
       <FormError message={state.error} className="mt-3" />
       <div className="mt-2 flex justify-end gap-2 border-t border-border pt-4">
@@ -1183,6 +1231,186 @@ function RegistrationForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function ProfessionalAccessFields({
+  editing,
+  field,
+  canManageUsers,
+}: {
+  editing: EditableRow | null;
+  field: FieldDefinition;
+  canManageUsers: boolean;
+}) {
+  const [selectedUserId, setSelectedUserId] = useState(
+    editing?.user_id ? String(editing.user_id) : "",
+  );
+  const [grantAccess, setGrantAccess] = useState(false);
+  const alreadyLinked = Boolean(editing?.user_id);
+
+  return (
+    <section className="grid gap-4 rounded-md border border-border bg-muted/30 p-4 sm:col-span-2">
+      <div>
+        <p className="text-sm font-semibold">Acesso ao sistema</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          O profissional é o cadastro assistencial usado em agendas e
+          atendimentos. A conta de usuário é separada e só é necessária para
+          entrar no sistema.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField
+          label="Usuário existente"
+          help={
+            canManageUsers
+              ? "Vincule uma conta já cadastrada nesta empresa. Cada usuário pode representar apenas um profissional."
+              : "É necessária a permissão config.usuarios para alterar este vínculo."
+          }
+        >
+          <Select
+            name="user_id"
+            value={selectedUserId}
+            disabled={!canManageUsers || grantAccess}
+            onValueChange={setSelectedUserId}
+            allowEmptyOption
+            className="min-w-0 w-full"
+          >
+            <option value="">Sem usuário vinculado</option>
+            {field.options?.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+
+        <div className="grid content-start gap-2 text-sm">
+          <span className="font-medium">Situação do acesso</span>
+          <p className="flex min-h-10 items-center rounded-md border border-border bg-card px-3 text-sm text-muted-foreground">
+            {alreadyLinked
+              ? "Conta vinculada. Para criar outra, desvincule e salve primeiro."
+              : selectedUserId
+                ? "Será usada a conta existente selecionada."
+                : "O profissional será salvo sem acesso ao sistema."}
+          </p>
+        </div>
+      </div>
+
+      {canManageUsers && !alreadyLinked ? (
+        <div className="grid gap-4 border-t border-border pt-4">
+          <Switch
+            name="grant_system_access"
+            label="Conceder acesso ao sistema para uma nova conta"
+            checked={grantAccess}
+            onCheckedChange={(checked) => {
+              setGrantAccess(checked);
+              if (checked) {
+                setSelectedUserId("");
+              }
+            }}
+          />
+
+          {grantAccess ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                label="E-mail de acesso"
+                required
+                help="Será criada uma conta separada e um link seguro para definir a senha."
+              >
+                <Input
+                  name="access_email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  placeholder="profissional@clinica.com.br"
+                />
+              </FormField>
+              <FormField
+                label="Perfil inicial"
+                help="O perfil define as ações permitidas; o vínculo limita o acesso assistencial ao próprio profissional."
+              >
+                <Input readOnly value="Profissional" aria-readonly="true" />
+              </FormField>
+            </div>
+          ) : null}
+        </div>
+      ) : !canManageUsers ? (
+        <p className="border-t border-border pt-3 text-xs text-muted-foreground">
+          Você pode salvar o cadastro profissional sem conceder acesso. Um
+          administrador de usuários poderá criar ou vincular a conta depois.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function ProfessionalAccessCreatedPanel({
+  success,
+  warning,
+  email,
+  setupLink,
+  onFinished,
+}: {
+  success: string;
+  warning?: string;
+  email?: string;
+  setupLink: string;
+  onFinished: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copySetupLink() {
+    try {
+      await navigator.clipboard.writeText(setupLink);
+      setCopied(true);
+      toast.success("Link copiado.");
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Não foi possível copiar. Selecione o link manualmente.");
+    }
+  }
+
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-md border border-success-muted bg-success-muted px-4 py-3 text-sm text-success-foreground">
+        {success}
+      </div>
+      <div className="grid gap-2">
+        <p className="text-sm font-medium">Link para definir a senha</p>
+        <p className="text-xs leading-5 text-muted-foreground">
+          Copie e envie este link para {email ?? "o profissional"}. A conta já
+          está vinculada ao cadastro assistencial com o perfil Profissional.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            readOnly
+            value={setupLink}
+            onFocus={(event) => event.currentTarget.select()}
+            className="flex-1 font-mono text-xs"
+          />
+          <Button type="button" variant="secondary" onClick={copySetupLink}>
+            {copied ? (
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+            ) : (
+              <Copy className="size-4" aria-hidden="true" />
+            )}
+            {copied ? "Copiado" : "Copiar"}
+          </Button>
+        </div>
+      </div>
+      {warning ? (
+        <p className="rounded-md border border-warning-muted bg-warning-muted px-3 py-2 text-sm text-warning-foreground">
+          {warning}
+        </p>
+      ) : null}
+      <div className="flex justify-end border-t border-border pt-4">
+        <Button type="button" onClick={onFinished}>
+          Concluir
+        </Button>
+      </div>
+    </div>
   );
 }
 

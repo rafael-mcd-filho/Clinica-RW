@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   web:
@@ -34,4 +34,3 @@ jobs:
 
       - name: Build
         run: npm run build
-

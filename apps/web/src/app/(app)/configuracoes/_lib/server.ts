@@ -76,6 +76,7 @@ type PatientAutomationRuleRow = {
 
 export type CompanyConfigurationRoute =
   | "cadastros"
+  | "usuarios-acessos"
   | "agenda"
   | "agendamento-online"
   | "whatsapp"
@@ -87,6 +88,7 @@ export const companyConfigurationPaths: Record<
   string
 > = {
   cadastros: "/configuracoes/cadastros",
+  "usuarios-acessos": "/configuracoes/usuarios-acessos",
   agenda: "/configuracoes/agenda",
   "agendamento-online": "/configuracoes/agendamento-online",
   whatsapp: "/configuracoes/whatsapp",
@@ -112,6 +114,7 @@ export type CompanyConfigurationAccess = {
   kind: "company";
   organization: Organization;
   canManageCompany: boolean;
+  canManageUsers: boolean;
   canConfigureAgenda: boolean;
   canBlockAgenda: boolean;
   canManageOnlineBooking: boolean;
@@ -124,8 +127,7 @@ type PlatformConfigurationAccess = {
 };
 
 export type ConfigurationAccess =
-  | CompanyConfigurationAccess
-  | PlatformConfigurationAccess;
+  CompanyConfigurationAccess | PlatformConfigurationAccess;
 
 export async function getConfigurationAccess(): Promise<ConfigurationAccess> {
   const context = await getRequestContext();
@@ -142,6 +144,7 @@ export async function getConfigurationAccess(): Promise<ConfigurationAccess> {
   }
 
   const canManageCompany = context.permissionCodes.has("config.geral");
+  const canManageUsers = context.permissionCodes.has("config.usuarios");
   const canConfigureAgenda = context.permissionCodes.has("agenda.configurar");
   const canBlockAgenda = context.permissionCodes.has("agenda.bloquear_horario");
 
@@ -149,6 +152,7 @@ export async function getConfigurationAccess(): Promise<ConfigurationAccess> {
     kind: "company",
     organization: context.organization,
     canManageCompany,
+    canManageUsers,
     canConfigureAgenda,
     canBlockAgenda,
     canManageOnlineBooking: canManageCompany || canConfigureAgenda,
@@ -164,6 +168,9 @@ export function getFirstCompanyConfigurationPath(
 ) {
   if (access.canManageCompany) {
     return companyConfigurationPaths.cadastros;
+  }
+  if (access.canManageUsers) {
+    return companyConfigurationPaths["usuarios-acessos"];
   }
   if (access.canConfigureAgenda || access.canBlockAgenda) {
     return companyConfigurationPaths.agenda;
@@ -186,6 +193,8 @@ export function canAccessCompanyConfigurationRoute(
     case "cadastros":
     case "tags-automacoes":
       return access.canManageCompany;
+    case "usuarios-acessos":
+      return access.canManageUsers;
     case "agenda":
       return access.canConfigureAgenda || access.canBlockAgenda;
     case "agendamento-online":

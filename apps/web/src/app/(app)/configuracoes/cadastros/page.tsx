@@ -16,6 +16,7 @@ export default async function CadastrosConfiguracoesPage() {
       <CompanySettings
         data={companyData}
         organizationLogoUrl={access.organization.logo_url}
+        canManageUsers={access.canManageUsers}
       />
     </CompanyConfigurationPage>
   );
