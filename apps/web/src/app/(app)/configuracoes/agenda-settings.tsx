@@ -843,7 +843,7 @@ function DayPeriodsEditor({
   return (
     <div className="grid min-h-14 gap-2 bg-background px-3 py-2 sm:grid-cols-[8.5rem_minmax(0,1fr)_auto] sm:items-center">
       <div className="flex items-center gap-2">
-        <span className="grid size-7 place-items-center rounded bg-muted text-[11px] font-semibold sm:hidden">
+        <span className="grid size-7 place-items-center rounded bg-muted text-caption font-semibold sm:hidden">
           {day.shortLabel}
         </span>
         <p className="hidden text-sm font-medium sm:block">{day.label}</p>

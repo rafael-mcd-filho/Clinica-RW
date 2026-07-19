@@ -13,9 +13,22 @@ import { isValidCPF, onlyDigits } from "@/lib/validation/br";
 
 export type PatientActionState = {
   error?: string;
+  /** Mensagem por campo (nome do input -> erro), para destacar o que corrigir. */
+  fieldErrors?: Record<string, string>;
   success?: string;
   ok?: boolean;
 };
+
+function fieldErrorsFromIssues(
+  issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>,
+): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
+  for (const issue of issues) {
+    const key = String(issue.path[0] ?? "");
+    if (key && !fieldErrors[key]) fieldErrors[key] = issue.message;
+  }
+  return fieldErrors;
+}
 
 const optionalText = z.string().trim().optional();
 const optionalEmail = z
@@ -163,7 +176,10 @@ export async function createPatient(
 
   const parsed = patientSchema.safeParse(formValues(formData));
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Dados inválidos.",
+      fieldErrors: fieldErrorsFromIssues(parsed.error.issues),
+    };
   }
 
   const supabase = await createSupabaseServerClient();
@@ -231,7 +247,10 @@ export async function updatePatient(
 
   const parsed = patientSchema.safeParse(formValues(formData));
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+    return {
+      error: parsed.error.issues[0]?.message ?? "Dados inválidos.",
+      fieldErrors: fieldErrorsFromIssues(parsed.error.issues),
+    };
   }
 
   const supabase = await createSupabaseServerClient();

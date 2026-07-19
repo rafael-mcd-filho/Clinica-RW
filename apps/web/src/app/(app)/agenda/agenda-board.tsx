@@ -1346,14 +1346,14 @@ function TimelineAppointmentItem({
         {patientName}
       </p>
       {item.height >= 52 ? (
-        <p className="mt-0.5 truncate text-[11px] font-normal leading-tight opacity-80">
+        <p className="mt-0.5 truncate text-caption font-normal leading-tight opacity-80">
           {procedure?.name ?? "Procedimento"}
           {professional ? ` · ${professional.name}` : ""}
         </p>
       ) : null}
       {item.height >= 34 ? (
         <div className="mt-0.5 flex items-center gap-1">
-          <span className="truncate text-[10px] font-medium tabular-nums opacity-70">
+          <span className="truncate text-caption font-medium tabular-nums opacity-70">
             {formatTime(appointment.start_at, timeZone)} -{" "}
             {formatTime(appointment.end_at, timeZone)}
           </span>

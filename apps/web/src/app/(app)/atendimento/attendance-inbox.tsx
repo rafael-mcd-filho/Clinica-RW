@@ -516,7 +516,7 @@ function ConversationListColumn({
         >
           <Archive className="size-4" />
           {counts.resolved > 0 ? (
-            <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
+            <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-primary px-1 text-caption leading-4 text-primary-foreground">
               {counts.resolved}
             </span>
           ) : null}

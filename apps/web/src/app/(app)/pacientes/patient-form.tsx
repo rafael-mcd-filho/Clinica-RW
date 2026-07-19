@@ -56,6 +56,7 @@ export function PatientForm({
   const editing = Boolean(patient);
   const action = patient ? updatePatient.bind(null, patient.id) : createPatient;
   const [state, formAction, pending] = useActionState(action, initialState);
+  const fieldErrors = state.fieldErrors ?? {};
 
   useEffect(() => {
     if (state.success) toast.success(state.success);
@@ -71,12 +72,13 @@ export function PatientForm({
           </p>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Field label="Nome completo" required wide>
+          <Field label="Nome completo" required wide error={fieldErrors.full_name}>
             <Input
               name="full_name"
               required
               defaultValue={patient?.full_name ?? ""}
               autoComplete="name"
+              aria-invalid={fieldErrors.full_name ? true : undefined}
             />
           </Field>
           <Field label="Nome social" wide>
@@ -104,13 +106,14 @@ export function PatientForm({
               <option value="not_informed">Prefere não informar</option>
             </Select>
           </Field>
-          <Field label="CPF">
+          <Field label="CPF" error={fieldErrors.cpf}>
             <MaskedInput
               name="cpf"
               inputMode="numeric"
               maskKind="cpf"
               defaultValue={patient?.cpf ?? ""}
               placeholder="000.000.000-00"
+              aria-invalid={fieldErrors.cpf ? true : undefined}
             />
           </Field>
           <Field label="RG">
@@ -131,28 +134,31 @@ export function PatientForm({
           <h2 className="font-semibold">Contato e comunicação</h2>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Field label="E-mail">
+          <Field label="E-mail" error={fieldErrors.email}>
             <Input
               name="email"
               type="email"
               defaultValue={patient?.email ?? ""}
               autoComplete="email"
+              aria-invalid={fieldErrors.email ? true : undefined}
             />
           </Field>
-          <Field label="Telefone">
+          <Field label="Telefone" error={fieldErrors.phone}>
             <MaskedInput
               name="phone"
               inputMode="tel"
               maskKind="phone"
               defaultValue={patient?.phone ?? ""}
+              aria-invalid={fieldErrors.phone ? true : undefined}
             />
           </Field>
-          <Field label="WhatsApp">
+          <Field label="WhatsApp" error={fieldErrors.whatsapp}>
             <MaskedInput
               name="whatsapp"
               inputMode="tel"
               maskKind="phone"
               defaultValue={patient?.whatsapp ?? ""}
+              aria-invalid={fieldErrors.whatsapp ? true : undefined}
             />
           </Field>
           <Field label="Canal preferido">
@@ -278,11 +284,13 @@ function Field({
   label,
   required,
   wide,
+  error,
   children,
 }: {
   label: string;
   required?: boolean;
   wide?: boolean;
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -294,6 +302,11 @@ function Field({
         {required ? <RequiredMark /> : null}
       </span>
       {children}
+      {error ? (
+        <span className="text-body-sm font-normal text-destructive">
+          {error}
+        </span>
+      ) : null}
     </label>
   );
 }
