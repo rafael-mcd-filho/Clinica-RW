@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
+  ArrowLeft,
   Checks as CheckCheck,
   Archive,
   Note,
@@ -44,6 +45,7 @@ import {
 } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
 import { Input, Textarea } from "@/components/ui/field";
@@ -387,6 +389,7 @@ export function AttendanceInbox({
         onSelect={openConversation}
         instance={instance}
         evolutionReady={evolutionReady}
+        mobileHidden={Boolean(selected)}
       />
 
       {selected ? (
@@ -399,6 +402,10 @@ export function AttendanceInbox({
           currentUserName={currentUserName}
           attendants={attendants}
           quickReplies={quickReplies}
+          onBack={() => {
+            selectedIdRef.current = null;
+            setSelectedId(null);
+          }}
           onToggleDetails={() => setDetailsOpen((value) => !value)}
           onOptimisticMessage={addOptimisticMessage}
           onMessageConfirmed={confirmOptimisticMessage}
@@ -426,6 +433,7 @@ export function AttendanceInbox({
         />
       ) : (
         <EmptyPanel
+          className="hidden lg:flex"
           icon={MessagesSquare}
           title="Selecione uma conversa"
           description={
@@ -461,6 +469,7 @@ function ConversationListColumn({
   onSelect,
   instance,
   evolutionReady,
+  mobileHidden,
 }: {
   tab: InboxView;
   counts: Record<InboxView, number>;
@@ -472,10 +481,17 @@ function ConversationListColumn({
   onSelect: (id: string) => void;
   instance: AttendanceInstance | null;
   evolutionReady: boolean;
+  /** No mobile (master-detail), a lista sai de cena quando há conversa aberta. */
+  mobileHidden?: boolean;
 }) {
   const connected = instance?.status === "connected";
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-card">
+    <aside
+      className={cn(
+        "flex min-h-0 flex-col overflow-hidden border-r border-border bg-card",
+        mobileHidden && "hidden lg:flex",
+      )}
+    >
       <div className="flex h-12 items-center justify-between gap-2 border-b border-border px-4">
         <span className="inline-flex items-center gap-1.5 text-label text-muted-foreground">
           {connected ? (
@@ -644,6 +660,7 @@ function ConversationThread({
   currentUserName,
   attendants,
   quickReplies,
+  onBack,
   onToggleDetails,
   onOptimisticMessage,
   onMessageConfirmed,
@@ -659,6 +676,8 @@ function ConversationThread({
   currentUserName: string | null;
   attendants: AttendantOption[];
   quickReplies: QuickReplyTemplate[];
+  /** Master-detail no mobile: volta para a lista de conversas. */
+  onBack: () => void;
   onToggleDetails: () => void;
   onOptimisticMessage: (message: ConversationMessage) => void;
   onMessageConfirmed: (tempId: string, message: ConversationMessage) => void;
@@ -723,15 +742,26 @@ function ConversationThread({
     <section className="flex min-h-0 flex-col overflow-hidden bg-card">
       <header className="flex min-h-16 items-center justify-between gap-3 border-b border-border px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onBack}
+            aria-label="Voltar para a lista de conversas"
+            className="-ml-2 shrink-0 lg:hidden"
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+          </Button>
           <ContactAvatar
             name={conversation.contactName}
             photoUrl={conversation.contactPhotoUrl}
             enlargeable
           />
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={onToggleDetails}
-            className="min-w-0 rounded-lg p-1.5 text-left hover:bg-muted/70"
+            className="h-auto min-w-0 justify-start p-1.5 text-left font-normal hover:bg-muted/70"
           >
             <div className="min-w-0">
               <p className="truncate text-body-sm font-semibold">
@@ -741,7 +771,7 @@ function ConversationThread({
                 {formatPhone(conversation.contactPhone)}
               </p>
             </div>
-          </button>
+          </Button>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {conversation.assignedUserName ? (
@@ -1000,14 +1030,15 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
           ) : (
             <p className="italic opacity-80">{labelForType(message.type)}</p>
           )}
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => setDetailsOpen(true)}
-            className="absolute -right-1 -top-1 rounded p-1 text-muted-foreground hover:bg-black/5"
+            className="absolute -right-1 -top-1 h-auto w-auto rounded p-1 text-muted-foreground hover:bg-foreground/5"
             aria-label="Detalhes da mensagem"
           >
             <MoreVertical className="size-3.5" />
-          </button>
+          </Button>
         </div>
         <p
           className={cn(
@@ -1285,14 +1316,15 @@ function MessageComposer({
             "👋",
             "🤝",
           ].map((emoji) => (
-            <button
+            <Button
               key={emoji}
               type="button"
+              variant="ghost"
               onClick={() => setText((value) => `${value}${emoji}`)}
-              className="rounded p-1.5 text-xl hover:bg-muted"
+              className="h-auto w-auto rounded p-1.5 text-xl"
             >
               {emoji}
-            </button>
+            </Button>
           ))}
         </div>
       ) : null}
@@ -1394,26 +1426,23 @@ function MessageComposer({
       </div>
       <div className="mt-1 flex items-center justify-between gap-3">
         {quickReplies.length && !isNoteMode ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => setShowTemplates((value) => !value)}
-            className="text-caption text-muted-foreground hover:text-foreground"
+            className="h-auto p-0 text-caption font-normal text-muted-foreground hover:bg-transparent hover:text-foreground"
           >
             {showTemplates ? "Ocultar" : "Respostas rápidas"}
-          </button>
+          </Button>
         ) : (
           <span />
         )}
         {!isNoteMode && currentUserName ? (
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-caption text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={signatureEnabled}
-              onChange={toggleSignature}
-              className="size-3.5 accent-primary"
-            />
-            Assinar como {currentUserName.split(" ")[0]}
-          </label>
+          <Checkbox
+            checked={signatureEnabled}
+            onChange={toggleSignature}
+            label={`Assinar como ${currentUserName.split(" ")[0]}`}
+          />
         ) : null}
       </div>
     </div>
@@ -1424,13 +1453,20 @@ function EmptyPanel({
   icon: Icon,
   title,
   description,
+  className,
 }: {
   icon: typeof Inbox;
   title: string;
   description: string;
+  className?: string;
 }) {
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+    <section
+      className={cn(
+        "flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]",
+        className,
+      )}
+    >
       <div className="flex flex-1 items-center justify-center p-6 text-center">
         <div>
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -1474,14 +1510,15 @@ function ContactAvatar({
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={() => setOpen(true)}
-        className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="h-auto w-auto shrink-0 rounded-full p-0 hover:bg-transparent"
         aria-label={`Ampliar foto de ${name}`}
       >
         {content}
-      </button>
+      </Button>
       <Modal
         open={open}
         onClose={() => setOpen(false)}

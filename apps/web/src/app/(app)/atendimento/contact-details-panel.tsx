@@ -110,7 +110,7 @@ export function ContactDetailsPanel({
         type="button"
         aria-label="Fechar detalhes do contato"
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-[1px] xl:hidden"
+        className="fixed inset-0 z-40 bg-foreground/35 backdrop-blur-[1px] xl:hidden"
       />
       <aside
         aria-label="Detalhes do contato"
