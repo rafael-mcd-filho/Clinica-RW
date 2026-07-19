@@ -66,8 +66,11 @@ Valores numéricos alinhados (dinheiro, contagens, horários em tabela): adicion
 - Semânticas: `success` (`#41D771`), `warning` (`#FBC163`), `destructive` (`#F75959`) —
   cada uma com par `*-muted` (fundo) e `*-foreground` (texto sobre o muted, contraste AA),
   ambos **derivados via `color-mix()`** a partir da cor base (mesmo mecanismo do primary).
-- Neutros seguem a escala: fundo/superfícies claras `#F9FAFB`, texto padrão `#212B30`,
-  texto secundário/ícone inativo `#90A4AE`, borda `#CFD8DC`, borda forte `#B0BEC5`.
+- Neutros seguem a escala fria: canvas `#F4F6FA` (cards brancos criam o plano),
+  texto padrão `#101828`, texto secundário `#667085` (AA sobre branco), muted
+  `#EEF1F6`, borda `#E4E9F0`, borda forte `#CBD5E4`.
+- Sidebar: o fundo é **tingido pelo primary** via `color-mix()` sobre uma base
+  escura — a shell acompanha o white-label; nunca fixar um slate estático.
 - Bordas: `border` (padrão) e `border-strong` (hover/ênfase). Nunca hex direto.
 - Não existe "secundária" saturada (verde ou outra) como cor de marca neste produto —
   `--secondary`/`--secondary-foreground` são neutros (texto/botão de baixa ênfase), não
@@ -79,8 +82,8 @@ Valores numéricos alinhados (dinheiro, contagens, horários em tabela): adicion
 
 | Token        | Valor | Onde                                             |
 | ------------ | ----- | ------------------------------------------------ |
-| `rounded-md` | 8px   | controles: botões, inputs, selects, badges, itens de menu |
-| `rounded-lg` | 12px  | superfícies: cards, painéis, modais, popovers    |
+| `rounded-md` | 10px  | controles: botões, inputs, selects, badges, itens de menu |
+| `rounded-lg` | 16px  | superfícies: cards, painéis, modais, popovers    |
 | `rounded-full` | —   | avatares, dots de status, switch                 |
 
 Sem exceção. `rounded-xl`+ não faz parte do sistema.
@@ -88,6 +91,12 @@ Sem exceção. `rounded-xl`+ não faz parte do sistema.
 ## Elevação (sombras)
 
 Sombra é funcional (comunica plano), nunca decorativa e **nunca colorida**.
+A família atual é difusa/"flutuante" (offsets negativos de spread) — ao criar
+elevação nova, derive destes tokens; nunca declare box-shadow avulso.
+
+Foco de teclado: `globals.css` define um anel global `:focus-visible`
+(2px `--ring` + offset) com especificidade zero via `:where()` — componentes
+com foco próprio continuam valendo; nenhum elemento interativo fica sem anel.
 
 | Token            | Uso                                      |
 | ---------------- | ---------------------------------------- |

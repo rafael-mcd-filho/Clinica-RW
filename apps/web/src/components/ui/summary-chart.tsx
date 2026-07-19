@@ -36,7 +36,11 @@ export function SummaryBarChart({
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="label" tickLine={false} />
               <YAxis allowDecimals={false} tickLine={false} width={36} />
-              <Tooltip cursor={{ fill: "rgba(148, 163, 184, 0.14)" }} />
+              <Tooltip
+                cursor={{
+                  fill: "color-mix(in srgb, var(--border-strong) 30%, transparent)",
+                }}
+              />
               <Bar
                 dataKey="value"
                 fill="var(--primary)"

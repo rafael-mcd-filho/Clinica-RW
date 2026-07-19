@@ -11,13 +11,14 @@
  * - Durações de animação saem apenas de --motion-*.
  */
 :root {
-  --background: #f9fafb;
-  --foreground: #212b30;
+  /* Canvas frio com cards brancos: profundidade sem bordas duras. */
+  --background: #f4f6fa;
+  --foreground: #101828;
 
   --card: #ffffff;
-  --card-foreground: #212b30;
+  --card-foreground: #101828;
   --popover: #ffffff;
-  --popover-foreground: #212b30;
+  --popover-foreground: #101828;
 
   /* Azul clínico profundo — sobrescrito por white-label quando configurado. */
   --primary: #0054c2;
@@ -27,14 +28,14 @@
   --primary-muted-hover: color-mix(in srgb, var(--primary) 14%, white);
   --primary-strong: color-mix(in srgb, var(--primary) 78%, black);
 
-  --secondary: #f9fafb;
-  --secondary-foreground: #455a64;
+  --secondary: #f4f6fa;
+  --secondary-foreground: #344054;
 
-  --muted: #f9fafb;
-  --muted-foreground: #90a4ae;
+  --muted: #eef1f6;
+  --muted-foreground: #667085;
 
-  --accent: #f9fafb;
-  --accent-foreground: #212b30;
+  --accent: #eef1f6;
+  --accent-foreground: #101828;
 
   --success: #41d771;
   --success-muted: color-mix(in srgb, var(--success) 16%, white);
@@ -50,23 +51,24 @@
   /* Superfície rebaixada: fundo de coluna de kanban, "wells". */
   --surface-sunken: color-mix(in srgb, var(--background) 65%, var(--border) 35%);
 
-  --border: #cfd8dc;
-  --border-strong: #b0bec5;
+  --border: #e4e9f0;
+  --border-strong: #cbd5e4;
   --input: var(--border);
   --ring: var(--primary);
   --placeholder: var(--muted-foreground);
 
   /* Radius: controles (botão/input/badge) = md; superfícies (card/modal) = lg. */
-  --radius: 0.75rem;
+  --radius: 1rem;
 
-  /* Elevação neutra e discreta — nunca colorida, nunca decorativa. */
+  /* Elevação neutra, difusa e "flutuante" — nunca colorida, nunca decorativa. */
   --shadow-soft:
-    0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.06);
+    0 1px 2px 0 rgba(16, 24, 40, 0.04), 0 1px 3px 0 rgba(16, 24, 40, 0.06);
   --shadow-hover:
-    0 2px 4px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.08);
+    0 4px 8px -2px rgba(16, 24, 40, 0.06), 0 8px 20px -4px rgba(16, 24, 40, 0.1);
   --shadow-md:
-    0 4px 12px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.16);
+    0 8px 16px -4px rgba(16, 24, 40, 0.08),
+    0 12px 32px -8px rgba(16, 24, 40, 0.12);
+  --shadow-lg: 0 20px 48px -12px rgba(16, 24, 40, 0.22);
 
   --motion-fast: 150ms;
   --motion-normal: 240ms;
@@ -75,15 +77,16 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* Subsistema deliberado: shell escura sobre canvas claro (padrão Vercel/Linear).
-     Estados ativos derivam do primary para acompanhar o white-label. */
-  --sidebar-bg: #0f172a;
-  --sidebar-bg-elevated: #182338;
-  --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-foreground: #e2e8f0;
-  --sidebar-muted-foreground: #8b9bb4;
-  --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
-  --sidebar-active-bg: color-mix(in srgb, var(--primary) 26%, transparent);
-  --sidebar-active-foreground: color-mix(in srgb, var(--primary) 40%, white);
+     O fundo é tingido pelo primary — a shell acompanha o white-label em vez
+     de ficar num slate genérico — e os estados ativos derivam do primary. */
+  --sidebar-bg: color-mix(in srgb, var(--primary) 18%, #0a101f);
+  --sidebar-bg-elevated: color-mix(in srgb, var(--primary) 24%, #101a2e);
+  --sidebar-border: rgba(255, 255, 255, 0.09);
+  --sidebar-foreground: #e7ecf5;
+  --sidebar-muted-foreground: #97a7c4;
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.07);
+  --sidebar-active-bg: color-mix(in srgb, var(--primary) 32%, transparent);
+  --sidebar-active-foreground: color-mix(in srgb, var(--primary) 25%, white);
 }
 
 @theme inline {
@@ -124,7 +127,7 @@
   --font-sans: var(--font-body);
   --font-heading: var(--font-display);
 
-  --radius-md: 0.5rem;
+  --radius-md: 0.625rem;
   --radius-lg: var(--radius);
 
   /*
@@ -233,6 +236,15 @@ input,
 select,
 textarea {
   outline-color: var(--ring);
+}
+
+/* Anel de foco visível e consistente para navegação por teclado. O :where()
+   zera a especificidade: componentes com foco próprio (inputs com borda/
+   sombra via outline-none, botões com focus-visible utilitário) continuam
+   valendo; todo o resto ganha este padrão. */
+:where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 /* Iconografia: Phosphor Icons (peso regular; duotone em nav/cabeçalhos). */
