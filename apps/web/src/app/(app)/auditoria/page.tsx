@@ -5,9 +5,11 @@ import {
   type AuditLogItem,
   type JsonValue,
 } from "./audit-log-table";
+import { ClockCounterClockwise as History } from "@phosphor-icons/react/dist/ssr";
 import { Button } from "@/components/ui/button";
 import { DateRangePickerInput } from "@/components/ui/date-picker-input";
 import { Select } from "@/components/ui/field";
+import { PageHeader } from "@/components/ui/page-header";
 import { getRequestContext } from "@/lib/auth/context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -210,12 +212,11 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
 
   return (
     <div className="grid gap-6">
-      <section>
-        <h1 className="text-xl font-semibold">Auditoria</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Acoes sensiveis registradas para rastreabilidade.
-        </p>
-      </section>
+      <PageHeader
+        icon={History}
+        title="Auditoria"
+        description="Ações sensíveis registradas para rastreabilidade."
+      />
 
       <form
         action="/auditoria"

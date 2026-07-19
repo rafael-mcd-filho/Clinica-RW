@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateRangePickerInput } from "@/components/ui/date-picker-input";
 import { Input, Select } from "@/components/ui/field";
+import { PageHeader } from "@/components/ui/page-header";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import {
   appointmentStatusOptions,
@@ -42,34 +43,32 @@ export default async function AppointmentSummaryPage({
 
   return (
     <div className="grid gap-5">
-      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
-            <CalendarDays className="size-5" aria-hidden="true" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold">Resumo dos agendamentos</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Consultas, servicos, convenio, pagamento e estado no periodo.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="secondary">
-            <Link href="/relatorios/atendimentos">
-              Indicadores de atendimentos
-            </Link>
-          </Button>
-          {canExport ? (
+      <PageHeader
+        icon={CalendarDays}
+        breadcrumbs={[
+          { label: "Relatórios", href: "/relatorios/visao-geral" },
+          { label: "Resumo dos agendamentos" },
+        ]}
+        title="Resumo dos agendamentos"
+        description="Consultas, serviços, convênio, pagamento e estado no período."
+        actions={
+          <>
             <Button asChild variant="secondary">
-              <Link href={`/relatorios/agendamentos/exportar?${exportQuery}`}>
-                <Download className="size-4" aria-hidden="true" />
-                Exportar dados
+              <Link href="/relatorios/atendimentos">
+                Indicadores de atendimentos
               </Link>
             </Button>
-          ) : null}
-        </div>
-      </section>
+            {canExport ? (
+              <Button asChild variant="secondary">
+                <Link href={`/relatorios/agendamentos/exportar?${exportQuery}`}>
+                  <Download className="size-4" aria-hidden="true" />
+                  Exportar dados
+                </Link>
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       <Card>
         <CardContent>

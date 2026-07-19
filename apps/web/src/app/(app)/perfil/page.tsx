@@ -4,6 +4,7 @@ import {
   ShieldCheck,
   UserCircle as UserRound,
 } from "@phosphor-icons/react/dist/ssr";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   getCurrentAppUser,
   requireAuthenticatedUser,
@@ -41,12 +42,11 @@ export default async function PerfilPage() {
 
   return (
     <div className="grid gap-6">
-      <section>
-        <h1 className="text-xl font-semibold">Meu perfil</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Dados da conta autenticada na plataforma.
-        </p>
-      </section>
+      <PageHeader
+        icon={UserRound}
+        title="Meu perfil"
+        description="Dados da conta autenticada na plataforma."
+      />
 
       <section className="rounded-lg border border-border bg-card">
         <div className="flex items-center gap-3 border-b border-border px-5 py-4">

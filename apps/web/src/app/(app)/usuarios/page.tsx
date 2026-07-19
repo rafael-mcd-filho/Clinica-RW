@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import { UserGear as UserCog } from "@phosphor-icons/react/dist/ssr";
 import { UsuariosTable, type UsuarioRow } from "./usuarios-table";
+import { PageHeader } from "@/components/ui/page-header";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -82,12 +84,11 @@ export default async function UsuariosPage() {
 
   return (
     <div className="grid gap-6">
-      <section>
-        <h1 className="text-xl font-semibold">Usuários</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Todos os usuários das empresas que utilizam a plataforma.
-        </p>
-      </section>
+      <PageHeader
+        icon={UserCog}
+        title="Usuários"
+        description="Todos os usuários das empresas que utilizam a plataforma."
+      />
 
       <UsuariosTable
         users={rows}
