@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const BUCKET = "patient-photos";
@@ -53,15 +54,27 @@ export async function deletePatientPhoto(path: string | null | undefined) {
   await supabaseAdmin.storage.from(BUCKET).remove([path]);
 }
 
+// createSignedUrl é um POST de rede ao Storage por foto. As URLs valem
+// 1h; o cache de 45min evita pagar esse round-trip a cada navegação.
+// O path muda a cada upload (uuid novo), então troca de foto nunca
+// serve URL antiga.
+const createCachedSignedUrl = unstable_cache(
+  async (path: string) => {
+    const supabaseAdmin = createSupabaseAdminClient();
+    const { data, error } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUrl(path, 60 * 60);
+
+    if (error) return null;
+    return data.signedUrl;
+  },
+  ["patient-photo-signed-url"],
+  { revalidate: 45 * 60 },
+);
+
 export async function createPatientPhotoSignedUrl(
   path: string | null | undefined,
 ) {
   if (!path) return null;
-  const supabaseAdmin = createSupabaseAdminClient();
-  const { data, error } = await supabaseAdmin.storage
-    .from(BUCKET)
-    .createSignedUrl(path, 60 * 60);
-
-  if (error) return null;
-  return data.signedUrl;
+  return createCachedSignedUrl(path);
 }

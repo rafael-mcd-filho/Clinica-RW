@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import {
   Pulse as Activity,
   ChartBar as BarChart3,
@@ -29,6 +29,7 @@ import { signOut } from "@/app/(auth)/login/actions";
 import { endImpersonation } from "@/app/(app)/suporte/actions";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { NavigationProgress } from "@/components/layout/navigation-progress";
 import { TodayAppointmentsRail } from "@/components/layout/today-appointments-rail";
 import { cn, initialsFromName } from "@/lib/utils";
 import { usePathname } from "next/navigation";
@@ -190,6 +191,8 @@ export function AppShell({
 
   return (
     <div className="min-h-screen min-w-0 w-full bg-background text-foreground">
+      <NavigationProgress />
+
       {sidebarPinned ? (
         <Sidebar
           navItems={navItems}
@@ -433,6 +436,25 @@ function Sidebar({
   );
 }
 
+// Indicador de "clique recebido" para links do menu. useLinkStatus fica
+// pending assim que o Link é clicado — antes de a navegação completar —,
+// então o item reage na hora em vez de esperar o usePathname mudar.
+// Espaço reservado (size-4 + ml-auto) para não gerar layout shift.
+function NavLinkPending() {
+  const { pending } = useLinkStatus();
+
+  return (
+    <span
+      aria-hidden="true"
+      className="ml-auto flex size-4 shrink-0 items-center justify-center"
+    >
+      {pending ? (
+        <span className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent opacity-60" />
+      ) : null}
+    </span>
+  );
+}
+
 function SidebarLink({
   item,
   onNavigate,
@@ -515,6 +537,7 @@ function SidebarLink({
                   <Link
                     key={child.href}
                     href={child.href}
+                    prefetch={true}
                     aria-current={childIsActive ? "page" : undefined}
                     tabIndex={expanded ? undefined : -1}
                     onClick={onNavigate}
@@ -526,6 +549,7 @@ function SidebarLink({
                     )}
                   >
                     {child.label}
+                    <NavLinkPending />
                   </Link>
                 );
               })}
@@ -537,8 +561,15 @@ function SidebarLink({
   }
 
   return (
+    // prefetch={true} busca a rota completa (dados incluídos) quando o link
+    // entra no viewport — como a sidebar é fixa, as telas do menu chegam
+    // prontas e o clique navega sem esperar o servidor. Só atua em produção
+    // (prefetch é desabilitado no dev) e o frescor é limitado pelo
+    // staleTimes.static (60s) no next.config.ts; hover re-prefetcha quando
+    // expirado.
     <Link
       href={item.href}
+      prefetch={true}
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
@@ -554,6 +585,7 @@ function SidebarLink({
         aria-hidden="true"
       />
       {item.label}
+      <NavLinkPending />
     </Link>
   );
 }
@@ -593,6 +625,7 @@ function SidebarAccount({
       <div className="mt-1 grid gap-0.5">
         <Link
           href="/perfil"
+          prefetch={true}
           onClick={onNavigate}
           className="flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-sidebar-hover hover:text-sidebar-foreground"
         >

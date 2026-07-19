@@ -31,7 +31,12 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  await supabase.auth.getUser();
+  // getClaims valida o JWT localmente (o projeto usa chave assimétrica
+  // ES256) e refresca a sessão quando o token está perto de expirar. É
+  // aqui, no proxy, que os cookies rotacionados conseguem ser persistidos
+  // — Server Components não podem escrever cookies. Evita o round-trip que
+  // getUser() faria a cada request.
+  await supabase.auth.getClaims();
 
   return response;
 }

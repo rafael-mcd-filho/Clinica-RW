@@ -5,7 +5,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const getRequestContext = cache(async function getRequestContext() {
-  const appUser = await getCurrentAppUser();
+  // O RPC de permissões resolve o usuário via auth.uid() no próprio
+  // Postgres e não depende do resultado de getCurrentAppUser, então os
+  // dois round-trips ao Supabase (~centenas de ms cada) correm em
+  // paralelo. Nos caminhos de super admin/impersonação o resultado do
+  // RPC próprio é simplesmente descartado.
+  const [appUser, ownPermissionCodes] = await Promise.all([
+    getCurrentAppUser(),
+    createSupabaseServerClient().then((supabase) =>
+      supabase.rpc("current_user_permission_codes"),
+    ),
+  ]);
   const impersonation = await getActiveImpersonation(appUser);
 
   if (impersonation && appUser) {
@@ -40,11 +50,6 @@ export const getRequestContext = cache(async function getRequestContext() {
     };
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data: permissionCodes } = appUser
-    ? await supabase.rpc("current_user_permission_codes")
-    : { data: [] as string[] };
-
   return {
     actor: appUser,
     effectiveUser: appUser,
@@ -52,7 +57,7 @@ export const getRequestContext = cache(async function getRequestContext() {
     impersonation: null,
     isSuperAdmin: false,
     permissionCodes: new Set<string>(
-      (permissionCodes as string[] | null) ?? [],
+      appUser ? ((ownPermissionCodes.data as string[] | null) ?? []) : [],
     ),
   };
 });

@@ -19,19 +19,25 @@ export type CurrentAppUser = {
   } | null;
 };
 
+// getClaims verifica o JWT localmente contra o JWKS do projeto quando a
+// assinatura é assimétrica (RS256/ECC), sem round-trip ao Auth server —
+// ao contrário de getUser(), que sempre faz uma chamada de rede. Como
+// isto roda em toda navegação (via getCurrentAppUser), o ganho é direto.
+// Com segredo simétrico, getClaims cai no mesmo comportamento de getUser
+// (chamada ao servidor), então continua seguro em qualquer configuração.
 export const getAuthenticatedUser = cache(
   async function getAuthenticatedUser() {
     const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
+    const { data, error } = await supabase.auth.getClaims();
 
-    if (error || !user) {
+    if (error || !data?.claims) {
       return null;
     }
 
-    return user;
+    return {
+      id: data.claims.sub,
+      email: typeof data.claims.email === "string" ? data.claims.email : null,
+    };
   },
 );
 

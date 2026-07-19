@@ -19,26 +19,11 @@ export default async function AgendaPage({
   const canSeeClinicalRecords =
     context.permissionCodes.has("clinico.ver_prontuario") ||
     context.permissionCodes.has("clinico.ver_prontuario_proprios");
-  const [{ data: organizationSettings }, requestedParams] = await Promise.all([
-    supabase
-      .from("organization_settings")
-      .select("timezone")
-      .eq("organization_id", organizationId)
-      .maybeSingle<{ timezone: string | null }>(),
-    searchParams,
-  ]);
-  const timeZone = normalizeAgendaTimeZone(organizationSettings?.timezone);
-  const selection = resolveAgendaSelection(requestedParams, { timeZone });
-  const requestedDate = firstParam(requestedParams.date);
-  const requestedView = firstParam(requestedParams.view);
-  if (requestedDate !== selection.date || requestedView !== selection.view) {
-    redirect(`/agenda?date=${selection.date}&view=${selection.view}`);
-  }
-  const visibleRange = resolveAgendaVisibleRange(selection, timeZone);
-  const rangeStart = visibleRange.startInclusive.toISOString();
-  const rangeEnd = visibleRange.endExclusive.toISOString();
-
+  // Onda única para settings + catálogos: nada aqui depende do período
+  // visível, então tudo compartilha o mesmo round-trip ao Supabase.
   const [
+    { data: organizationSettings },
+    requestedParams,
     schedules,
     professionals,
     specialties,
@@ -47,10 +32,14 @@ export default async function AgendaPage({
     procedures,
     insurances,
     paymentMethods,
-    appointments,
     availability,
-    blocks,
   ] = await Promise.all([
+    supabase
+      .from("organization_settings")
+      .select("timezone")
+      .eq("organization_id", organizationId)
+      .maybeSingle<{ timezone: string | null }>(),
+    searchParams,
     supabase
       .from("schedules")
       .select("id, professional_id, unit_id, name, color, active")
@@ -100,6 +89,33 @@ export default async function AgendaPage({
       .eq("active", true)
       .order("name"),
     supabase
+      .from("schedule_availability")
+      .select("id, schedule_id, weekday, start_time, end_time, slot_minutes")
+      .eq("organization_id", organizationId)
+      .order("weekday")
+      .order("start_time"),
+  ]);
+
+  const timeZone = normalizeAgendaTimeZone(organizationSettings?.timezone);
+  const selection = resolveAgendaSelection(requestedParams, { timeZone });
+  const requestedDate = firstParam(requestedParams.date);
+  const requestedView = firstParam(requestedParams.view);
+  // Redireciona apenas para normalizar params explícitos inválidos. A
+  // entrada sem params (clique no menu) renderiza direto com o padrão —
+  // o board grava date/view na URL na primeira interação, e evitar o
+  // redirect poupa uma execução completa da página.
+  if (
+    (requestedDate !== undefined && requestedDate !== selection.date) ||
+    (requestedView !== undefined && requestedView !== selection.view)
+  ) {
+    redirect(`/agenda?date=${selection.date}&view=${selection.view}`);
+  }
+  const visibleRange = resolveAgendaVisibleRange(selection, timeZone);
+  const rangeStart = visibleRange.startInclusive.toISOString();
+  const rangeEnd = visibleRange.endExclusive.toISOString();
+
+  const [appointments, blocks] = await Promise.all([
+    supabase
       .from("appointments")
       .select(
         "id, patient_id, professional_id, procedure_id, schedule_id, unit_id, room_id, health_insurance_id, payment_method_id, status, start_at, end_at, notes, is_extra",
@@ -108,12 +124,6 @@ export default async function AgendaPage({
       .gte("start_at", rangeStart)
       .lt("start_at", rangeEnd)
       .order("start_at"),
-    supabase
-      .from("schedule_availability")
-      .select("id, schedule_id, weekday, start_time, end_time, slot_minutes")
-      .eq("organization_id", organizationId)
-      .order("weekday")
-      .order("start_time"),
     supabase
       .from("schedule_blocks")
       .select("id, schedule_id, start_at, end_at, reason")

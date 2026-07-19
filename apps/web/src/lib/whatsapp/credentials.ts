@@ -136,9 +136,13 @@ export async function getOrganizationEvolutionConfig(
   | (EvolutionConfig & { webhookSecret: string; webhookUrl: string | null })
   | null
 > {
-  const row = await getStoredInstanceByOrganization(organizationId);
+  // As duas buscas são independentes; em paralelo custam um único
+  // round-trip em vez de dois encadeados.
+  const [row, platform] = await Promise.all([
+    getStoredInstanceByOrganization(organizationId),
+    getPlatformEvolutionConfig(),
+  ]);
   if (!row?.webhook_secret_encrypted) return null;
-  const platform = await getPlatformEvolutionConfig();
   const baseUrl =
     platform?.baseUrl ?? row.evolution_api_url?.replace(/\/+$/, "");
   const apiKey =
