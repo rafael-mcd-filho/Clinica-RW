@@ -10,21 +10,21 @@
 export const pdfTheme = {
   colors: {
     /** Texto corrente. */
-    foreground: "#1e293b",
+    foreground: "#212b30",
     /** Títulos e valores de destaque. */
-    heading: "#0f172a",
+    heading: "#212b30",
     /** Metadados, rodapés, legendas. */
-    muted: "#64748b",
+    muted: "#90a4ae",
     /** Texto secundário e réguas fortes. */
-    secondary: "#475569",
+    secondary: "#455a64",
     /** Bordas de tabela e divisores. */
-    border: "#e2e8f0",
+    border: "#cfd8dc",
     /** Bordas de destaque. */
-    borderStrong: "#cbd5e1",
+    borderStrong: "#b0bec5",
     /** Fundo de header de tabela / faixas. */
-    surface: "#f1f5f9",
+    surface: "#f9fafb",
     /** Acento institucional (default do white-label). */
-    primary: "#1e4fa3",
+    primary: "#0054c2",
   },
   font: {
     family: "Helvetica",

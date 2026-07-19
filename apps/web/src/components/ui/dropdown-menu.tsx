@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 type DropdownMenuProps = {
   trigger: React.ReactNode;
   triggerLabel: string;
+  triggerClassName?: string;
   align?: "start" | "end";
   children: (close: () => void) => React.ReactNode;
 };
@@ -25,6 +26,7 @@ type DropdownMenuProps = {
 export function DropdownMenu({
   trigger,
   triggerLabel,
+  triggerClassName,
   align = "end",
   children,
 }: DropdownMenuProps) {
@@ -102,7 +104,10 @@ export function DropdownMenu({
         aria-expanded={open}
         aria-label={triggerLabel}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-[background-color,color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 aria-expanded:bg-muted aria-expanded:text-foreground"
+        className={cn(
+          "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-[background-color,color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 aria-expanded:bg-muted aria-expanded:text-foreground",
+          triggerClassName,
+        )}
       >
         {trigger}
       </button>

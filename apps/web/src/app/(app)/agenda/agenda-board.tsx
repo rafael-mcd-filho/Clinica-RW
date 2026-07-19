@@ -1008,7 +1008,7 @@ function DayAgenda({
                   ))}
               </div>
               <div
-                className="relative overflow-hidden bg-background"
+                className="relative overflow-hidden bg-card"
                 style={{ height: totalHeight }}
               >
                 {slots.map((slot, index) => (
@@ -1159,7 +1159,7 @@ function WeekAgenda({
                 <div
                   key={dayKey}
                   className={`relative border-r border-border last:border-r-0 ${
-                    dayKey === today ? "bg-primary-muted/40" : "bg-background"
+                    dayKey === today ? "bg-primary-muted/40" : "bg-card"
                   }`}
                   style={{ height: totalHeight }}
                 >
@@ -1312,7 +1312,8 @@ function TimelineAppointmentItem({
 }) {
   const timeZone = useAgendaTimeZone();
   const patientName = patient?.social_name || patient?.full_name || "Paciente";
-  const colors = timelineScheduleColor(schedule?.color ?? defaultScheduleColor);
+  const scheduleColor = schedule?.color ?? defaultScheduleColor;
+  const colors = timelineScheduleColor(scheduleColor);
   const width = `calc(${100 / item.laneCount}% - 6px)`;
   const left = `calc(${(100 / item.laneCount) * item.lane}% + 3px)`;
 
@@ -1322,7 +1323,7 @@ function TimelineAppointmentItem({
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}
       onKeyDown={(event) => handleAppointmentCardKeyDown(event, onSelect)}
-      className={`absolute z-10 overflow-hidden rounded-md border px-2 py-1 text-xs shadow-[var(--shadow-soft)] ${
+      className={`absolute z-10 overflow-hidden rounded-md px-2 py-1 text-xs shadow-[var(--shadow-soft)] ${
         onSelect
           ? "cursor-pointer transition-shadow duration-[var(--motion-fast)] hover:shadow-[var(--shadow-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           : ""
@@ -1333,7 +1334,7 @@ function TimelineAppointmentItem({
         left,
         width,
         backgroundColor: colors.background,
-        borderColor: colors.border,
+        borderLeft: `3px solid ${scheduleColor}`,
         color: colors.text,
       }}
       title={`${formatTime(appointment.start_at, timeZone)} - ${formatTime(
@@ -1341,24 +1342,26 @@ function TimelineAppointmentItem({
         timeZone,
       )} · ${patientName}`}
     >
-      <div className="flex items-start justify-between gap-1">
-        <div className="min-w-0">
-          <p className="truncate font-semibold tabular-nums">
-            {formatTime(appointment.start_at, timeZone)} -{" "}
-            {formatTime(appointment.end_at, timeZone)}
-          </p>
-          <p className="truncate font-semibold uppercase">{patientName}</p>
-        </div>
-        {appointment.status === "confirmed" ||
-        appointment.status === "attended" ? (
-          <Check className="size-3.5 shrink-0" aria-hidden="true" />
-        ) : null}
-      </div>
-      {item.height >= 42 ? (
-        <p className="mt-0.5 truncate opacity-85">
+      <p className="truncate font-semibold leading-tight" title={patientName}>
+        {patientName}
+      </p>
+      {item.height >= 52 ? (
+        <p className="mt-0.5 truncate text-[11px] font-normal leading-tight opacity-80">
           {procedure?.name ?? "Procedimento"}
           {professional ? ` · ${professional.name}` : ""}
         </p>
+      ) : null}
+      {item.height >= 34 ? (
+        <div className="mt-0.5 flex items-center gap-1">
+          <span className="truncate text-[10px] font-medium tabular-nums opacity-70">
+            {formatTime(appointment.start_at, timeZone)} -{" "}
+            {formatTime(appointment.end_at, timeZone)}
+          </span>
+          {appointment.status === "confirmed" ||
+          appointment.status === "attended" ? (
+            <Check className="size-3 shrink-0 opacity-70" aria-hidden="true" />
+          ) : null}
+        </div>
       ) : null}
       {canEdit && item.height >= 96 ? (
         <div
@@ -3147,8 +3150,8 @@ function assignTimelineLanes(group: TimedWeekItem[]) {
 
 function timelineScheduleColor(color: string) {
   return {
-    background: `color-mix(in srgb, ${color} 14%, white)`,
-    border: `color-mix(in srgb, ${color} 58%, white)`,
+    background: `color-mix(in srgb, ${color} 10%, white)`,
+    border: `color-mix(in srgb, ${color} 50%, white)`,
     text: `color-mix(in srgb, ${color} 82%, black)`,
   };
 }

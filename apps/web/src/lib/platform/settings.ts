@@ -15,7 +15,7 @@ export type PlatformSettings = {
 const fallbackSettings: PlatformSettings = {
   id: true,
   app_name: "Hi Clinic",
-  primary_color: "#1E4FA3",
+  primary_color: "#0054C2",
   logo_url: null,
   support_email: null,
   support_phone: null,

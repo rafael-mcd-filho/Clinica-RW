@@ -38,7 +38,15 @@
       "Bash(psql --version)",
       "Bash(mkdir -p \"d:/Biblioteca/Documentos/Projetos/Clinica-RW/apps/web/src/app/\\(app\\)/funis/[id]\")",
       "Bash(npm ls *)",
-      "Bash(break)"
+      "Bash(break)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code} redirect=%{redirect_url}\\\\n\" -D - \"http://localhost:3001/agenda\")",
+      "Bash(curl -s -o /dev/null -w \"3000 status=%{http_code}\\\\n\" --max-time 8 \"http://localhost:3000/\")",
+      "Bash(curl -s -o /dev/null -w \"3001 status=%{http_code}\\\\n\" --max-time 8 \"http://localhost:3001/\")",
+      "Bash(netstat -ano)",
+      "Bash(tasklist //FI \"PID eq 12044\")",
+      "Bash(powershell -NoProfile -Command 'Get-CimInstance Win32_Process -Filter '\\\\''ProcessId=12044'\\\\'' | Select-Object ProcessId,ParentProcessId,@{n='\\\\''Cmd'\\\\'';e={$_.CommandLine}} | Format-List')",
+      "Skill(artifact-design)",
+      "Skill(artifact-design:*)"
     ],
     "additionalDirectories": [
       "d:\\Biblioteca\\Documentos\\Projetos\\Clinica-RW\\apps\\web\\src\\app\\(app)\\empresas\\[id]",

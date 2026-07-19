@@ -21,86 +21,96 @@ type ConversationRow = {
 };
 
 export type QuickReplyTemplate = { id: string; name: string; body: string };
+type AttendantRpcRow = { user_id: string; name: string; email: string };
 
 export default async function AtendimentoPage() {
   const context = await requireCompanyPermission(["atendimento.ver"]);
   const canAttend = context.permissionCodes.has("atendimento.atender");
   const canConfigure = context.permissionCodes.has("atendimento.configurar");
   const organizationId = context.organization.id;
-  const evolutionReady = Boolean(
-    await getOrganizationEvolutionConfig(organizationId),
-  );
   const currentUserId = context.effectiveUser?.id ?? null;
 
   const supabase = await createSupabaseServerClient();
 
-  const [{ data: conversationRows }, { data: tagRows }, { data: instanceRow }] =
-    await Promise.all([
-      supabase
-        .from("whatsapp_conversations")
-        .select(
-          "id, status, contact_id, assigned_user_id, funnel_card_id, unread_count, last_message_at, last_message_preview",
-        )
-        .eq("organization_id", organizationId)
-        .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(200)
-        .returns<ConversationRow[]>(),
-      supabase
-        .from("tags")
-        .select("id, name, color")
-        .eq("organization_id", organizationId)
-        .order("name")
-        .returns<ConversationTagView[]>(),
-      supabase
-        .from("whatsapp_instances")
-        .select("status, phone_number, display_name")
-        .eq("organization_id", organizationId)
-        .limit(1)
-        .maybeSingle<{
-          status: "disconnected" | "connecting" | "connected" | "error";
-          phone_number: string | null;
-          display_name: string | null;
-        }>(),
-    ]);
+  // Onda única para tudo que depende só da organização (a config do
+  // Evolution, os templates e os atendentes não dependem das conversas).
+  const [
+    evolutionConfig,
+    { data: conversationRows },
+    { data: tagRows },
+    { data: instanceRow },
+    { data: templates },
+    { data: attendants },
+  ] = await Promise.all([
+    getOrganizationEvolutionConfig(organizationId),
+    supabase
+      .from("whatsapp_conversations")
+      .select(
+        "id, status, contact_id, assigned_user_id, funnel_card_id, unread_count, last_message_at, last_message_preview",
+      )
+      .eq("organization_id", organizationId)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .limit(200)
+      .returns<ConversationRow[]>(),
+    supabase
+      .from("tags")
+      .select("id, name, color")
+      .eq("organization_id", organizationId)
+      .order("name")
+      .returns<ConversationTagView[]>(),
+    supabase
+      .from("whatsapp_instances")
+      .select("status, phone_number, display_name")
+      .eq("organization_id", organizationId)
+      .limit(1)
+      .maybeSingle<{
+        status: "disconnected" | "connecting" | "connected" | "error";
+        phone_number: string | null;
+        display_name: string | null;
+      }>(),
+    supabase
+      .from("message_templates")
+      .select("id, name, body_template")
+      .eq("organization_id", organizationId)
+      .eq("channel", "whatsapp")
+      .eq("active", true)
+      .order("name")
+      .returns<{ id: string; name: string; body_template: string }[]>(),
+    canAttend
+      ? supabase.rpc("list_whatsapp_attendants")
+      : Promise.resolve({ data: [] }),
+  ]);
+  const evolutionReady = Boolean(evolutionConfig);
 
   const conversations = conversationRows ?? [];
   const contactIds = [...new Set(conversations.map((row) => row.contact_id))];
   const conversationIds = conversations.map((row) => row.id);
 
-  const [{ data: contacts }, { data: conversationTags }, { data: templates }] =
-    await Promise.all([
-      contactIds.length
-        ? supabase
-            .from("whatsapp_contacts")
-            .select("id, phone, wa_name, patient_id")
-            .eq("organization_id", organizationId)
-            .in("id", contactIds)
-            .returns<
-              {
-                id: string;
-                phone: string;
-                wa_name: string | null;
-                patient_id: string | null;
-              }[]
-            >()
-        : Promise.resolve({ data: [] }),
-      conversationIds.length
-        ? supabase
-            .from("conversation_tags")
-            .select("conversation_id, tag_id")
-            .eq("organization_id", organizationId)
-            .in("conversation_id", conversationIds)
-            .returns<{ conversation_id: string; tag_id: string }[]>()
-        : Promise.resolve({ data: [] }),
-      supabase
-        .from("message_templates")
-        .select("id, name, body_template")
-        .eq("organization_id", organizationId)
-        .eq("channel", "whatsapp")
-        .eq("active", true)
-        .order("name")
-        .returns<{ id: string; name: string; body_template: string }[]>(),
-    ]);
+  const [{ data: contacts }, { data: conversationTags }] = await Promise.all([
+    contactIds.length
+      ? supabase
+          .from("whatsapp_contacts")
+          .select("id, phone, wa_name, patient_id")
+          .eq("organization_id", organizationId)
+          .in("id", contactIds)
+          .returns<
+            {
+              id: string;
+              phone: string;
+              wa_name: string | null;
+              patient_id: string | null;
+            }[]
+          >()
+      : Promise.resolve({ data: [] }),
+    conversationIds.length
+      ? supabase
+          .from("conversation_tags")
+          .select("conversation_id, tag_id")
+          .eq("organization_id", organizationId)
+          .in("conversation_id", conversationIds)
+          .returns<{ conversation_id: string; tag_id: string }[]>()
+      : Promise.resolve({ data: [] }),
+  ]);
 
   const contactById = new Map((contacts ?? []).map((c) => [c.id, c]));
   const patientIds = [
@@ -118,39 +128,31 @@ export default async function AtendimentoPage() {
     ),
   ];
 
-  const [{ data: patients }, { data: assignedUsers }, { data: attendants }] =
-    await Promise.all([
-      patientIds.length
-        ? supabase
-            .from("patients")
-            .select("id, full_name, social_name, photo_path")
-            .eq("organization_id", organizationId)
-            .in("id", patientIds)
-            .returns<
-              {
-                id: string;
-                full_name: string;
-                social_name: string | null;
-                photo_path: string | null;
-              }[]
-            >()
-        : Promise.resolve({ data: [] }),
-      assignedUserIds.length
-        ? supabase
-            .from("app_users")
-            .select("id, name")
-            .eq("organization_id", organizationId)
-            .in("id", assignedUserIds)
-            .returns<{ id: string; name: string }[]>()
-        : Promise.resolve({ data: [] }),
-      supabase
-        .from("app_users")
-        .select("id, name")
-        .eq("organization_id", organizationId)
-        .eq("status", "active")
-        .order("name")
-        .returns<{ id: string; name: string }[]>(),
-    ]);
+  const [{ data: patients }, { data: assignedUsers }] = await Promise.all([
+    patientIds.length
+      ? supabase
+          .from("patients")
+          .select("id, full_name, social_name, photo_path")
+          .eq("organization_id", organizationId)
+          .in("id", patientIds)
+          .returns<
+            {
+              id: string;
+              full_name: string;
+              social_name: string | null;
+              photo_path: string | null;
+            }[]
+          >()
+      : Promise.resolve({ data: [] }),
+    assignedUserIds.length
+      ? supabase
+          .from("app_users")
+          .select("id, name")
+          .eq("organization_id", organizationId)
+          .in("id", assignedUserIds)
+          .returns<{ id: string; name: string }[]>()
+      : Promise.resolve({ data: [] }),
+  ]);
 
   const patientById = new Map((patients ?? []).map((p) => [p.id, p]));
   const photoByPatientId = new Map(
@@ -215,7 +217,12 @@ export default async function AtendimentoPage() {
         organizationId={organizationId}
         currentUserId={currentUserId}
         currentUserName={context.effectiveUser?.name ?? null}
-        attendants={attendants ?? []}
+        attendants={((attendants ?? []) as AttendantRpcRow[]).map(
+          (attendant) => ({
+            id: attendant.user_id,
+            name: attendant.name,
+          }),
+        )}
         canAttend={canAttend}
         canConfigure={canConfigure}
         evolutionReady={evolutionReady}

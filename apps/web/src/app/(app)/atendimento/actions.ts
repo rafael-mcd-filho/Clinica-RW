@@ -1,6 +1,7 @@
 "use server";
 
 import { getRequestContext } from "@/lib/auth/context";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { draftReply } from "@/lib/whatsapp/ai-draft";
 import {
@@ -40,11 +41,20 @@ function onlyDigits(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+function mediaFileExtension(file: File): string {
+  const fromName = file.name.split(".").pop()?.toLowerCase();
+  if (fromName && /^[a-z0-9]{1,10}$/.test(fromName)) return fromName;
+  const fromMime = file.type.split("/")[1]?.split(";")[0]?.toLowerCase();
+  return fromMime?.replace(/[^a-z0-9]/g, "") || "bin";
+}
+
 type ConversationContext = {
   conversationId: string;
   contactId: string;
   phone: string;
   patientId: string | null;
+  status: ConversationStatus;
+  assignedUserId: string | null;
 };
 
 async function loadConversationContext(
@@ -54,10 +64,15 @@ async function loadConversationContext(
 ): Promise<ConversationContext | null> {
   const { data: conversation } = await supabase
     .from("whatsapp_conversations")
-    .select("id, contact_id")
+    .select("id, contact_id, status, assigned_user_id")
     .eq("organization_id", organizationId)
     .eq("id", conversationId)
-    .maybeSingle<{ id: string; contact_id: string }>();
+    .maybeSingle<{
+      id: string;
+      contact_id: string;
+      status: ConversationStatus;
+      assigned_user_id: string | null;
+    }>();
   if (!conversation) return null;
 
   const { data: contact } = await supabase
@@ -73,7 +88,22 @@ async function loadConversationContext(
     contactId: contact.id,
     phone: contact.phone,
     patientId: contact.patient_id,
+    status: conversation.status,
+    assignedUserId: conversation.assigned_user_id,
   };
+}
+
+function writableConversationError(
+  context: ConversationContext,
+  userId: string,
+): string | null {
+  if (context.status !== "open") {
+    return "Inicie o atendimento antes de enviar mensagens.";
+  }
+  if (context.assignedUserId !== userId) {
+    return "Somente o responsável pelo atendimento pode enviar mensagens.";
+  }
+  return null;
 }
 
 async function isOptedOut(
@@ -101,6 +131,17 @@ export async function sendMessageAction(
 
   const trimmed = text.trim();
   if (!trimmed) return { ok: false, error: "Mensagem vazia." };
+
+  const supabase = await createSupabaseServerClient();
+  const context = await loadConversationContext(
+    supabase,
+    auth.organizationId,
+    conversationId,
+  );
+  if (!context) return { ok: false, error: "Conversa não encontrada." };
+  const writeError = writableConversationError(context, auth.userId);
+  if (writeError) return { ok: false, error: writeError };
+
   const evolutionConfig = await getOrganizationEvolutionConfig(
     auth.organizationId,
   );
@@ -110,14 +151,6 @@ export async function sendMessageAction(
       error: "Integração do WhatsApp não configurada. Verifique o .env.local.",
     };
   }
-
-  const supabase = await createSupabaseServerClient();
-  const context = await loadConversationContext(
-    supabase,
-    auth.organizationId,
-    conversationId,
-  );
-  if (!context) return { ok: false, error: "Conversa não encontrada." };
 
   if (await isOptedOut(supabase, auth.organizationId, context.phone)) {
     return {
@@ -142,21 +175,22 @@ export async function sendMessageAction(
   }
 
   const nowIso = new Date().toISOString();
-  const { data: storedMessage, error: insertError } = await supabase
-    .from("whatsapp_messages")
-    .insert({
-      organization_id: auth.organizationId,
-      conversation_id: conversationId,
-      wa_message_id: waMessageId,
-      direction: "outbound",
-      sender_user_id: auth.userId,
-      message_type: "text",
-      body: trimmed,
-      status: "sent",
-      sent_at: nowIso,
-    })
-    .select("id, created_at")
-    .single<{ id: string; created_at: string }>();
+  const { data: storedMessage, error: insertError } =
+    await createSupabaseAdminClient()
+      .from("whatsapp_messages")
+      .insert({
+        organization_id: auth.organizationId,
+        conversation_id: conversationId,
+        wa_message_id: waMessageId,
+        direction: "outbound",
+        sender_user_id: auth.userId,
+        message_type: "text",
+        body: trimmed,
+        status: "sent",
+        sent_at: nowIso,
+      })
+      .select("id, created_at")
+      .single<{ id: string; created_at: string }>();
 
   if (insertError || !storedMessage) {
     return {
@@ -167,16 +201,17 @@ export async function sendMessageAction(
     };
   }
 
-  await supabase
-    .from("whatsapp_conversations")
-    .update({
-      status: "open",
-      unread_count: 0,
-      last_message_at: nowIso,
-      last_message_preview: toMessagePreview("text", trimmed),
-    })
-    .eq("organization_id", auth.organizationId)
-    .eq("id", conversationId);
+  const { error: activityError } = await supabase.rpc(
+    "record_whatsapp_outbound_activity",
+    {
+      p_conversation_id: conversationId,
+      p_preview: toMessagePreview("text", trimmed),
+      p_sent_at: nowIso,
+    },
+  );
+  if (activityError) {
+    console.error("[whatsapp outbound activity]", activityError.message);
+  }
 
   return {
     ok: true,
@@ -215,11 +250,6 @@ export async function sendMediaMessageAction(
     : file.type.startsWith("audio/")
       ? "audio"
       : "document";
-  const evolutionConfig = await getOrganizationEvolutionConfig(
-    auth.organizationId,
-  );
-  if (!evolutionConfig)
-    return { ok: false, error: "Integração do WhatsApp não configurada." };
   const supabase = await createSupabaseServerClient();
   const context = await loadConversationContext(
     supabase,
@@ -227,7 +257,17 @@ export async function sendMediaMessageAction(
     conversationId,
   );
   if (!context) return { ok: false, error: "Conversa não encontrada." };
-  const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+  const writeError = writableConversationError(context, auth.userId);
+  if (writeError) return { ok: false, error: writeError };
+
+  const evolutionConfig = await getOrganizationEvolutionConfig(
+    auth.organizationId,
+  );
+  if (!evolutionConfig)
+    return { ok: false, error: "Integração do WhatsApp não configurada." };
+
+  const fileBytes = Buffer.from(await file.arrayBuffer());
+  const base64 = fileBytes.toString("base64");
   let waMessageId: string | null = null;
   try {
     const result = await sendMediaMessage(
@@ -248,8 +288,19 @@ export async function sendMediaMessageAction(
         error instanceof Error ? error.message : "Falha ao enviar arquivo.",
     };
   }
+
+  const storagePath = `${auth.organizationId}/outbound/${crypto.randomUUID()}.${mediaFileExtension(file)}`;
+  const admin = createSupabaseAdminClient();
+  const { error: storageError } = await admin.storage
+    .from("whatsapp-media")
+    .upload(storagePath, fileBytes, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+  const persistedMediaPath = storageError ? null : storagePath;
+
   const nowIso = new Date().toISOString();
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("whatsapp_messages")
     .insert({
       organization_id: auth.organizationId,
@@ -259,6 +310,7 @@ export async function sendMediaMessageAction(
       sender_user_id: auth.userId,
       message_type: mediaType,
       body: file.name,
+      media_url: persistedMediaPath,
       media_mime_type: file.type || null,
       status: "sent",
       sent_at: nowIso,
@@ -270,15 +322,17 @@ export async function sendMediaMessageAction(
       ok: false,
       error: error?.message ?? "Arquivo enviado, mas não registrado.",
     };
-  await supabase
-    .from("whatsapp_conversations")
-    .update({
-      status: "open",
-      last_message_at: nowIso,
-      last_message_preview: toMessagePreview(mediaType, file.name),
-    })
-    .eq("organization_id", auth.organizationId)
-    .eq("id", conversationId);
+  const { error: activityError } = await supabase.rpc(
+    "record_whatsapp_outbound_activity",
+    {
+      p_conversation_id: conversationId,
+      p_preview: toMessagePreview(mediaType, file.name),
+      p_sent_at: nowIso,
+    },
+  );
+  if (activityError) {
+    console.error("[whatsapp outbound activity]", activityError.message);
+  }
   return {
     ok: true,
     message: {
@@ -286,7 +340,7 @@ export async function sendMediaMessageAction(
       direction: "outbound",
       type: mediaType,
       body: file.name,
-      mediaUrl: null,
+      mediaUrl: persistedMediaPath,
       mediaMimeType: file.type || null,
       status: "sent",
       aiSuggested: false,
@@ -333,8 +387,17 @@ export async function addInternalNoteAction(
   if (!trimmed) return { ok: false, error: "Nota vazia." };
 
   const supabase = await createSupabaseServerClient();
+  const context = await loadConversationContext(
+    supabase,
+    auth.organizationId,
+    conversationId,
+  );
+  if (!context) return { ok: false, error: "Conversa não encontrada." };
+  const writeError = writableConversationError(context, auth.userId);
+  if (writeError) return { ok: false, error: writeError };
+
   const nowIso = new Date().toISOString();
-  const { data, error } = await supabase
+  const { data, error } = await createSupabaseAdminClient()
     .from("whatsapp_messages")
     .insert({
       organization_id: auth.organizationId,
@@ -381,12 +444,14 @@ export async function transferConversationAction(
   if (!auth) return { ok: false, error: "Acesso negado." };
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
-    .from("whatsapp_conversations")
-    .update({ assigned_user_id: targetUserId, status: "open" })
-    .eq("organization_id", auth.organizationId)
-    .eq("id", conversationId);
-  return error ? { ok: false, error: error.message } : { ok: true };
+  const { data, error } = await supabase.rpc("transfer_whatsapp_conversation", {
+    p_conversation_id: conversationId,
+    p_target_user_id: targetUserId,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data
+    ? { ok: true }
+    : { ok: false, error: "Não foi possível transferir o atendimento." };
 }
 
 export async function setConversationStatusAction(
@@ -397,12 +462,27 @@ export async function setConversationStatusAction(
   if (!auth) return { ok: false, error: "Acesso negado." };
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
-    .from("whatsapp_conversations")
-    .update({ status })
-    .eq("organization_id", auth.organizationId)
-    .eq("id", conversationId);
-  return error ? { ok: false, error: error.message } : { ok: true };
+  if (status === "open") {
+    return {
+      ok: false,
+      error: "Use a ação de iniciar ou transferir para abrir o atendimento.",
+    };
+  }
+  if (status !== "pending" && status !== "resolved") {
+    return { ok: false, error: "Status de atendimento inválido." };
+  }
+
+  const functionName =
+    status === "resolved"
+      ? "complete_whatsapp_conversation"
+      : "reopen_whatsapp_conversation";
+  const { data, error } = await supabase.rpc(functionName, {
+    p_conversation_id: conversationId,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data
+    ? { ok: true }
+    : { ok: false, error: "Não foi possível atualizar o atendimento." };
 }
 
 export async function markConversationReadAction(
@@ -412,12 +492,12 @@ export async function markConversationReadAction(
   if (!auth) return { ok: false, error: "Acesso negado." };
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
-    .from("whatsapp_conversations")
-    .update({ unread_count: 0 })
-    .eq("organization_id", auth.organizationId)
-    .eq("id", conversationId);
-  return error ? { ok: false, error: error.message } : { ok: true };
+  const { data, error } = await supabase.rpc(
+    "mark_whatsapp_conversation_read",
+    { p_conversation_id: conversationId },
+  );
+  if (error) return { ok: false, error: error.message };
+  return data ? { ok: true } : { ok: false, error: "Conversa não encontrada." };
 }
 
 export async function setConversationTagAction(
@@ -479,6 +559,15 @@ export async function suggestReplyAction(
   if (!auth) return { ok: false, error: "Acesso negado." };
 
   const supabase = await createSupabaseServerClient();
+  const context = await loadConversationContext(
+    supabase,
+    auth.organizationId,
+    conversationId,
+  );
+  if (!context) return { ok: false, error: "Conversa não encontrada." };
+  const writeError = writableConversationError(context, auth.userId);
+  if (writeError) return { ok: false, error: writeError };
+
   const { data: messages } = await supabase
     .from("whatsapp_messages")
     .select("direction, body, message_type, created_at")

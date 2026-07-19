@@ -22,9 +22,18 @@ Componentes base vivem em `apps/web/src/components/ui/`.
 
 ## Tipografia
 
-Fonte: **IBM Plex Sans** (400/500/600), carregada em `app/layout.tsx` via
-`next/font/google` (`--font-plex`). Uma única família em todo o produto —
-hierarquia se faz com tamanho e peso, não com fontes extras.
+Duas famílias, carregadas em `app/layout.tsx` via `next/font/google`:
+
+- **Inter** (400/500/600/700, variável `--font-body`) — corpo, UI, controles,
+  tabelas. É o `font-sans` padrão do produto; hierarquia dentro dela se faz
+  com tamanho e peso.
+- **Quicksand** (600/700, variável `--font-display`) — só nos dois maiores
+  degraus da escala tipográfica (`text-heading-lg`, `text-display`: título de
+  página, números de dashboard/hero — os "H1/H2"). Aplicada automaticamente
+  nesses utilitários via regra em `globals.css`, não precisa de classe extra
+  no componente. Disponível também como utilitário solto `font-heading` para
+  uso pontual fora da escala. Todo o resto da UI (cards, dialogs, labels)
+  continua em Inter.
 
 Escala fechada (utilitários Tailwind gerados pelos tokens `--text-*`):
 
@@ -48,15 +57,23 @@ Valores numéricos alinhados (dinheiro, contagens, horários em tabela): adicion
 ## Cor
 
 - `--primary` **é configurável por white-label** (`platform_settings.primary_color`,
-  injetado no `<body>` pelo layout). Default: azul clínico `#1E4FA3`.
+  injetado no `<body>` pelo layout). Default: azul `#0054C2`.
 - Por isso, `--primary-hover`, `--primary-muted`, `--primary-muted-hover`,
   `--ring` e os estados ativos da sidebar são **derivados via `color-mix()`**
   dentro de `globals.css`. Não criar derivado estático de primary em lugar nenhum.
 - Cor saturada só comunica **ação ou estado** (CTA, seleção, status). Nunca decorativa,
   nunca gradiente decorativo.
-- Semânticas: `success` (verde), `warning` (âmbar), `destructive` (vermelho) — cada uma
-  com par `*-muted` (fundo) e `*-foreground` (texto sobre o muted, contraste AA).
+- Semânticas: `success` (`#41D771`), `warning` (`#FBC163`), `destructive` (`#F75959`) —
+  cada uma com par `*-muted` (fundo) e `*-foreground` (texto sobre o muted, contraste AA),
+  ambos **derivados via `color-mix()`** a partir da cor base (mesmo mecanismo do primary).
+- Neutros seguem a escala: fundo/superfícies claras `#F9FAFB`, texto padrão `#212B30`,
+  texto secundário/ícone inativo `#90A4AE`, borda `#CFD8DC`, borda forte `#B0BEC5`.
 - Bordas: `border` (padrão) e `border-strong` (hover/ênfase). Nunca hex direto.
+- Não existe "secundária" saturada (verde ou outra) como cor de marca neste produto —
+  `--secondary`/`--secondary-foreground` são neutros (texto/botão de baixa ênfase), não
+  um segundo CTA. Se surgir a necessidade de um segundo acento saturado (ex.: um CTA
+  paralelo ao primary), definir aqui primeiro, com o estado/ação que ele representa,
+  antes de introduzir no componente.
 
 ## Radius
 

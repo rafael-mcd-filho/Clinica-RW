@@ -130,8 +130,9 @@ export async function ingestInboundMessage(
         unread_count: current.unread_count + 1,
         last_message_at: nowIso,
         last_message_preview: preview,
-        // Uma mensagem nova reabre uma conversa concluída.
+        // Uma nova mensagem devolve a conversa concluída à fila sem responsável.
         status: current.status === "resolved" ? "pending" : current.status,
+        assigned_user_id: current.status === "resolved" ? null : undefined,
       })
       .eq("organization_id", organizationId)
       .eq("id", conversationId);

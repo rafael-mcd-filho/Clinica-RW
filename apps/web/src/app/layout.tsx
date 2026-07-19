@@ -1,15 +1,21 @@
 import type { CSSProperties } from "react";
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { IBM_Plex_Sans } from "next/font/google";
+import { Inter, Quicksand } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { PerformanceMonitor } from "@/components/observability/performance-monitor";
 import { getPlatformSettings } from "@/lib/platform/settings";
 
-const plexSans = IBM_Plex_Sans({
-  variable: "--font-plex",
-  weight: ["400", "500", "600"],
+const inter = Inter({
+  variable: "--font-body",
+  weight: ["400", "500", "600", "700"],
+  subsets: ["latin"],
+});
+
+const quicksand = Quicksand({
+  variable: "--font-display",
+  weight: ["600", "700"],
   subsets: ["latin"],
 });
 
@@ -36,7 +42,10 @@ export default async function RootLayout({
   const settings = await getPlatformSettings();
 
   return (
-    <html lang="pt-BR" className={`${plexSans.variable} h-full antialiased`}>
+    <html
+      lang="pt-BR"
+      className={`${inter.variable} ${quicksand.variable} h-full antialiased`}
+    >
       <body
         className="min-h-full"
         style={
