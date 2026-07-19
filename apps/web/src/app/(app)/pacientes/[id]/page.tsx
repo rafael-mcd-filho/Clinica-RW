@@ -20,6 +20,7 @@ import {
 import { type ClinicalSummary, type TagRow } from "./patient-detail-panels";
 import { PatientPhotoForm } from "./patient-photo-form";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -317,7 +318,14 @@ export default async function PatientDetailsPage({
 
   return (
     <div className="grid gap-6">
-      <section className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <section className="grid min-w-0 gap-2">
+        <Breadcrumb
+          items={[
+            { label: "Pacientes", href: "/pacientes" },
+            { label: displayName },
+          ]}
+        />
+        <div className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div className="flex min-w-0 items-center gap-3">
           <Button asChild variant="secondary" size="icon">
             <Link href="/pacientes" aria-label="Voltar para pacientes">
@@ -326,7 +334,7 @@ export default async function PatientDetailsPage({
           </Button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-semibold">{displayName}</h1>
+              <h1 className="truncate text-heading-lg">{displayName}</h1>
               <Badge variant={patient.deleted_at ? "neutral" : "success"}>
                 {patient.deleted_at ? "Arquivado" : "Ativo"}
               </Badge>
@@ -344,6 +352,7 @@ export default async function PatientDetailsPage({
             </Link>
           </Button>
         ) : null}
+        </div>
       </section>
 
       <div className="grid min-w-0 gap-6 lg:grid-cols-[19rem_minmax(0,1fr)]">

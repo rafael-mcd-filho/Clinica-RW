@@ -526,19 +526,13 @@ function CheckboxGrid({
       {options.length ? (
         <div className="grid gap-2 md:grid-cols-2">
           {options.map((option) => (
-            <label
+            <Checkbox
               key={option.id}
-              className="flex items-center gap-2 text-sm text-secondary-foreground"
-            >
-              <input
-                type="checkbox"
-                name={name}
-                value={option.id}
-                defaultChecked={selected.includes(option.id)}
-                className="size-4 rounded border-border accent-primary"
-              />
-              <span>{option.name}</span>
-            </label>
+              name={name}
+              value={option.id}
+              defaultChecked={selected.includes(option.id)}
+              label={option.name}
+            />
           ))}
         </div>
       ) : (

@@ -25,6 +25,7 @@ import {
 } from "../patient-detail-panels";
 import { PatientForm, type PatientFormValues } from "../../patient-form";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
@@ -292,7 +293,15 @@ export default async function PatientDetailsPage({
 
   return (
     <div className="grid gap-6">
-      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+      <section className="grid min-w-0 gap-2">
+        <Breadcrumb
+          items={[
+            { label: "Pacientes", href: "/pacientes" },
+            { label: displayName, href: `/pacientes/${id}` },
+            { label: "Editar" },
+          ]}
+        />
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div className="flex min-w-0 items-center gap-3">
           <Button asChild variant="secondary" size="icon">
             <Link href={`/pacientes/${id}`} aria-label="Voltar para o resumo">
@@ -301,7 +310,7 @@ export default async function PatientDetailsPage({
           </Button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-semibold">{displayName}</h1>
+              <h1 className="truncate text-heading-lg">{displayName}</h1>
               <Badge variant={patient.deleted_at ? "neutral" : "success"}>
                 {patient.deleted_at ? "Arquivado" : "Ativo"}
               </Badge>
@@ -312,6 +321,7 @@ export default async function PatientDetailsPage({
               </p>
             ) : null}
           </div>
+        </div>
         </div>
       </section>
 

@@ -10,6 +10,7 @@ import { EmpresaDetailsForm } from "./empresa-details-form";
 import { OwnerDetailsForm } from "./owner-details-form";
 import { ImpersonateButton } from "./impersonate-button";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { getCurrentAppUser } from "@/lib/auth/session";
@@ -213,7 +214,14 @@ export default async function EmpresaDetailsPage({
 
   return (
     <div className="grid gap-6">
-      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+      <section className="grid min-w-0 gap-2">
+        <Breadcrumb
+          items={[
+            { label: "Empresas", href: "/empresas" },
+            { label: organization.name },
+          ]}
+        />
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div className="flex min-w-0 items-start gap-3">
           <Button asChild variant="secondary" size="icon">
             <Link href="/empresas" aria-label="Voltar para empresas">
@@ -221,7 +229,7 @@ export default async function EmpresaDetailsPage({
             </Link>
           </Button>
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold">
+            <h1 className="truncate text-heading-lg">
               {organization.name}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -237,6 +245,7 @@ export default async function EmpresaDetailsPage({
           organizationName={organization.name}
           users={orgUsers}
         />
+        </div>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1fr_20rem]">

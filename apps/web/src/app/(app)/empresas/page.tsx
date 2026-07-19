@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Plus } from "@phosphor-icons/react/dist/ssr";
+import { Buildings as Building2, Plus } from "@phosphor-icons/react/dist/ssr";
 import { EmpresasTable, type EmpresaRow } from "./empresas-table";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type OrganizationRow = {
@@ -60,20 +61,19 @@ export default async function EmpresasPage() {
 
   return (
     <div className="grid gap-6">
-      <section className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-xl font-semibold">Empresas</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Clientes que utilizam a plataforma Hi Clinic.
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/empresas/nova">
-            <Plus className="size-4" aria-hidden="true" />
-            Nova empresa
-          </Link>
-        </Button>
-      </section>
+      <PageHeader
+        icon={Building2}
+        title="Empresas"
+        description="Clientes que utilizam a plataforma Hi Clinic."
+        actions={
+          <Button asChild>
+            <Link href="/empresas/nova">
+              <Plus className="size-4" aria-hidden="true" />
+              Nova empresa
+            </Link>
+          </Button>
+        }
+      />
 
       {error ? (
         <div className="rounded-lg border border-border bg-card px-5 py-8 text-sm text-destructive shadow-[var(--shadow-soft)]">

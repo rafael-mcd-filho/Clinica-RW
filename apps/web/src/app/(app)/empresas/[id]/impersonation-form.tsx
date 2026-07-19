@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { Headset as Headphones } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import {
   startImpersonation,
   type ImpersonationActionState,
 } from "@/app/(app)/suporte/actions";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 import { Input } from "@/components/ui/field";
 
 const initialState: ImpersonationActionState = {};
@@ -27,6 +29,10 @@ export function ImpersonationForm({
     initialState,
   );
 
+  useEffect(() => {
+    if (state.error) toast.error(state.error);
+  }, [state]);
+
   return (
     <form
       action={action}
@@ -43,9 +49,7 @@ export function ImpersonationForm({
         />
       </label>
 
-      {state.error ? (
-        <p className="text-xs text-destructive">{state.error}</p>
-      ) : null}
+      <FormError message={state.error} />
 
       <Button type="submit" variant="secondary" disabled={pending}>
         <Headphones className="size-4" aria-hidden="true" />

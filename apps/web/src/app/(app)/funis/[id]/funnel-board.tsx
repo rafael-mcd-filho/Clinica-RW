@@ -42,6 +42,7 @@ import { moveCard } from "../actions";
 import { CardPanel } from "./card-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Select } from "@/components/ui/field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -572,41 +573,29 @@ function FilterPanel({
           </Select>
         </label>
 
-        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={filters.onlyStagnant}
-            onChange={(event) =>
-              onFiltersChange({ onlyStagnant: event.target.checked })
-            }
-            className="size-4 rounded border-border"
-          />
-          Apenas cards parados
-        </label>
+        <Checkbox
+          checked={filters.onlyStagnant}
+          onChange={(event) =>
+            onFiltersChange({ onlyStagnant: event.target.checked })
+          }
+          label="Apenas cards parados"
+        />
 
-        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={filters.onlyWithValue}
-            onChange={(event) =>
-              onFiltersChange({ onlyWithValue: event.target.checked })
-            }
-            className="size-4 rounded border-border"
-          />
-          Apenas cards com valor
-        </label>
+        <Checkbox
+          checked={filters.onlyWithValue}
+          onChange={(event) =>
+            onFiltersChange({ onlyWithValue: event.target.checked })
+          }
+          label="Apenas cards com valor"
+        />
 
-        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={filters.showArchived}
-            onChange={(event) =>
-              onFiltersChange({ showArchived: event.target.checked })
-            }
-            className="size-4 rounded border-border"
-          />
-          Exibir cards arquivados
-        </label>
+        <Checkbox
+          checked={filters.showArchived}
+          onChange={(event) =>
+            onFiltersChange({ showArchived: event.target.checked })
+          }
+          label="Exibir cards arquivados"
+        />
 
         <div className="rounded-md border border-border bg-muted/30 p-3">
           <p className="text-sm font-medium">Contato</p>

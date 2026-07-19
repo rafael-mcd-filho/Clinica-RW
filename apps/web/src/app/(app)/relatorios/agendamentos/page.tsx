@@ -8,6 +8,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DateRangePickerInput } from "@/components/ui/date-picker-input";
 import { Input, Select } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
@@ -230,21 +231,13 @@ function FilterGroup({
       <legend className="mb-2 text-sm font-semibold">{title}</legend>
       <div className="grid gap-2">
         {options.map((option) => (
-          <label
+          <Checkbox
             key={option.value}
-            className="flex items-start gap-2 text-sm text-secondary-foreground"
-          >
-            <input
-              type="checkbox"
-              name={name}
-              value={option.value}
-              defaultChecked={
-                !selected.length || selected.includes(option.value)
-              }
-              className="mt-0.5 size-4 rounded border-border accent-primary"
-            />
-            <span>{option.label}</span>
-          </label>
+            name={name}
+            value={option.value}
+            defaultChecked={!selected.length || selected.includes(option.value)}
+            label={option.label}
+          />
         ))}
       </div>
     </fieldset>

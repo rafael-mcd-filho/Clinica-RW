@@ -15,6 +15,7 @@ import {
   type PayoutRow,
   type ReceivableRow,
 } from "./finance-panel";
+import { PageHeader } from "@/components/ui/page-header";
 import { getRequestContext, hasAnyPermission } from "@/lib/auth/context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
@@ -383,12 +384,11 @@ async function SuperAdminFinanceView() {
 
   return (
     <div className="grid gap-6">
-      <section>
-        <h1 className="text-xl font-semibold">Financeiro</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Visão do faturamento SaaS da plataforma.
-        </p>
-      </section>
+      <PageHeader
+        icon={WalletCards}
+        title="Financeiro"
+        description="Visão do faturamento SaaS da plataforma."
+      />
 
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)]">

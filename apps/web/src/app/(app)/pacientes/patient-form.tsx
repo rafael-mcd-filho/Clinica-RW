@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
+import { FormError } from "@/components/ui/form-error";
 import { Input, Select } from "@/components/ui/field";
 import { MaskedInput } from "@/components/ui/masked-input";
 import { RequiredMark } from "@/components/ui/required-mark";
@@ -253,11 +254,7 @@ export function PatientForm({
         </Card>
       ) : null}
 
-      {state.error ? (
-        <p className="rounded-md border border-destructive-muted bg-destructive-muted px-3 py-2 text-sm text-destructive-foreground">
-          {state.error}
-        </p>
-      ) : null}
+      <FormError message={state.error} />
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>

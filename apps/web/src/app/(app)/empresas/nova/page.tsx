@@ -1,24 +1,19 @@
-import Link from "next/link";
-import { ArrowLeft } from "@phosphor-icons/react/dist/ssr";
 import { EmpresaForm } from "./empresa-form";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 
 export default function NovaEmpresaPage() {
   return (
     <div className="grid gap-6">
-      <div className="flex items-center gap-3">
-        <Button asChild variant="secondary" size="icon" aria-label="Voltar">
-          <Link href="/empresas">
-            <ArrowLeft className="size-4" aria-hidden="true" />
-          </Link>
-        </Button>
-        <div>
-          <h1 className="text-xl font-semibold">Nova empresa</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Cadastro inicial da empresa cliente e do admin responsável.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        backHref="/empresas"
+        backLabel="Voltar para empresas"
+        breadcrumbs={[
+          { label: "Empresas", href: "/empresas" },
+          { label: "Nova empresa" },
+        ]}
+        title="Nova empresa"
+        description="Cadastro inicial da empresa cliente e do admin responsável."
+      />
 
       <section className="animate-panel-enter rounded-lg border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
         <EmpresaForm />

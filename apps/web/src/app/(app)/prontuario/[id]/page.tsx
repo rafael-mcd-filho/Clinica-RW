@@ -12,6 +12,7 @@ import {
 } from "./document-panel";
 import { EncounterEditor } from "./encounter-editor";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireCompanyPermission } from "@/lib/authz/guards";
@@ -389,14 +390,26 @@ export default async function EncounterPage({
 
   return (
     <div className="grid gap-6">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+      <div className="grid min-w-0 gap-2">
+        <Breadcrumb
+          items={[
+            { label: "Pacientes", href: "/pacientes" },
+            {
+              label:
+                patientResult.data.social_name || patientResult.data.full_name,
+              href: `/pacientes/${patientResult.data.id}`,
+            },
+            { label: "Prontuário" },
+          ]}
+        />
+        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
         <div>
           <Button asChild variant="secondary" size="sm">
             <Link href={backDestination.href}>
               <ArrowLeft className="size-4" /> {backDestination.label}
             </Link>
           </Button>
-          <h1 className="mt-4 text-xl font-semibold">
+          <h1 className="mt-4 text-heading-lg">
             {patientResult.data.social_name || patientResult.data.full_name}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -409,6 +422,7 @@ export default async function EncounterPage({
         >
           {encounter.status === "finalized" ? "Finalizado" : "Rascunho"}
         </Badge>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

@@ -8,6 +8,7 @@ import {
   CheckCircle as CheckCircle2,
   ClipboardText as ClipboardCheck,
   ShieldWarning as ShieldAlert,
+  SquaresFour as LayoutDashboard,
   TrendUp as TrendingUp,
   UserPlus,
   UsersThree as UsersRound,
@@ -281,6 +282,12 @@ export default async function DashboardPage({
 
   return (
     <div className="grid gap-6">
+      <PageHeader
+        icon={LayoutDashboard}
+        title="Painel da plataforma"
+        description="Visão geral das empresas e da operação SaaS."
+      />
+
       {!context.actor ? (
         <section className="rounded border border-amber-200 bg-amber-50 p-5 text-amber-900">
           <div className="flex items-start gap-3">

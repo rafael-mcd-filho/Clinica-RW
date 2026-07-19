@@ -23,6 +23,7 @@ import {
 } from "@/app/(app)/agenda/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
 
@@ -184,7 +185,7 @@ function OnlineRequestsCard({
         {!requests.length ? (
           <EmptyState
             icon={CalendarClock}
-            text="Nenhuma solicitação online pendente."
+            title="Nenhuma solicitação online pendente."
           />
         ) : null}
       </CardContent>
@@ -316,25 +317,13 @@ function WaitlistCard({ entries }: { entries: DashboardWaitlistEntry[] }) {
           </div>
         ))}
         {!entries.length ? (
-          <EmptyState icon={ListPlus} text="Nenhum paciente aguardando vaga." />
+          <EmptyState
+            icon={ListPlus}
+            title="Nenhum paciente aguardando vaga."
+          />
         ) : null}
       </CardContent>
     </Card>
-  );
-}
-
-function EmptyState({
-  icon: Icon,
-  text,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  text: string;
-}) {
-  return (
-    <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-      <Icon className="mx-auto mb-2 size-5" aria-hidden="true" />
-      {text}
-    </div>
   );
 }
 
