@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { createStage, deleteStage, updateStage } from "../actions";
 import { defaultStageColor } from "@/lib/colors";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 
@@ -71,6 +72,7 @@ function StageRow({ funnelId, stage }: { funnelId: string; stage: StageRow }) {
     updateStage.bind(null, stage.id),
     {},
   );
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     if (state.success) {
@@ -128,11 +130,22 @@ function StageRow({ funnelId, stage }: { funnelId: string; stage: StageRow }) {
           variant="ghost"
           size="icon"
           aria-label="Excluir etapa"
-          onClick={handleDelete}
+          onClick={() => setConfirmingDelete(true)}
         >
           <Trash2 className="size-4" aria-hidden="true" />
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        title="Excluir etapa?"
+        description={`A etapa "${stage.name}" será excluída permanentemente do funil.`}
+        destructive
+        confirmLabel="Excluir etapa"
+        pendingLabel="Excluindo..."
+        onConfirm={handleDelete}
+      />
     </form>
   );
 }

@@ -15,7 +15,9 @@ export function Tooltip({
       <span
         role="tooltip"
         className={cn(
-          "pointer-events-none absolute left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded bg-slate-950 px-2.5 py-1.5 text-xs text-white opacity-0 shadow transition-opacity delay-300 duration-[var(--motion-fast)] group-hover:opacity-100 group-focus-within:opacity-100",
+          // Dica curta de alto contraste (inverso do tema) — irmã do
+          // HelpTooltip, que usa superfície popover para conteúdo rico.
+          "pointer-events-none absolute left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2.5 py-1.5 text-caption font-medium text-background opacity-0 shadow-[var(--shadow-md)] transition-opacity delay-300 duration-[var(--motion-fast)] group-hover:opacity-100 group-focus-within:opacity-100",
           side === "top" ? "bottom-full mb-2" : "top-full mt-2",
         )}
       >

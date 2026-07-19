@@ -1,4 +1,6 @@
 import * as React from "react";
+import { HelpTooltip } from "@/components/ui/help-tooltip";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { cn } from "@/lib/utils";
 
 export { MultiSelect, Select } from "@/components/ui/select";
@@ -33,3 +35,55 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
 );
 
 export const fieldClasses = fieldClassName;
+
+// Monta a estrutura padrão de um campo de formulário: label (+ marca de
+// obrigatório + ajuda contextual), o controle e a mensagem de erro do
+// campo. Com `htmlFor` a associação é explícita (passe o mesmo id no
+// controle); sem, o label envolve o controle (associação implícita, o
+// padrão predominante no app).
+export function FormField({
+  label,
+  required,
+  help,
+  error,
+  htmlFor,
+  className,
+  children,
+}: {
+  label: React.ReactNode;
+  required?: boolean;
+  help?: React.ReactNode;
+  error?: string;
+  htmlFor?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const labelContent = (
+    <span className="flex items-center gap-1 text-body-sm font-medium">
+      {label}
+      {required ? <RequiredMark /> : null}
+      {help ? <HelpTooltip>{help}</HelpTooltip> : null}
+    </span>
+  );
+
+  return (
+    <div className={cn("grid min-w-0 content-start gap-1.5", className)}>
+      {htmlFor ? (
+        <>
+          <label htmlFor={htmlFor}>{labelContent}</label>
+          {children}
+        </>
+      ) : (
+        <label className="grid min-w-0 gap-1.5">
+          {labelContent}
+          {children}
+        </label>
+      )}
+      {error ? (
+        <p role="alert" className="text-body-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}

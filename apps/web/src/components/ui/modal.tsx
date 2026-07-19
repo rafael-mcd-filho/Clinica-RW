@@ -40,7 +40,7 @@ export function Modal({
     >
       <Dialog.Portal>
         <div className="fixed inset-0 z-50 grid place-items-center p-4">
-          <Dialog.Overlay className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
+          <Dialog.Overlay className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
           <Dialog.Content
             data-select-portal-root
             className={cn(
@@ -50,12 +50,12 @@ export function Modal({
           >
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4">
               <div>
-                <Dialog.Title className="text-base font-semibold">
+                <Dialog.Title className="text-heading-sm font-semibold">
                   {title}
                 </Dialog.Title>
                 <Dialog.Description
                   className={cn(
-                    "mt-1 text-sm text-muted-foreground",
+                    "mt-1 text-body-sm text-muted-foreground",
                     description ? "" : "sr-only",
                   )}
                 >

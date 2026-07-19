@@ -26,7 +26,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { FormDialog } from "@/components/ui/dialog";
+import { ConfirmDialog, FormDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
 import { categoricalColors } from "@/lib/colors";
 
@@ -578,6 +578,7 @@ function RuleRow({
   const actionType = rule.action_type ?? "add_tag";
   const hasScheduleScope = Boolean(rule.config.schedule_id);
   const hasProfessionalScope = Boolean(rule.config.professional_id);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   return (
     <article className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center">
@@ -625,17 +626,27 @@ function RuleRow({
             {rule.active ? "Desativar" : "Ativar"}
           </Button>
         </form>
-        <form action={deletePatientTagRule.bind(null, rule.id)}>
-          <Button
-            type="submit"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Remover automação ${rule.name}`}
-          >
-            <Trash2 className="size-4" aria-hidden />
-          </Button>
-        </form>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Remover automação ${rule.name}`}
+          onClick={() => setConfirmingDelete(true)}
+        >
+          <Trash2 className="size-4" aria-hidden />
+        </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        title="Remover automação?"
+        description={`A automação "${rule.name}" deixará de ser aplicada aos pacientes e será removida permanentemente.`}
+        destructive
+        confirmLabel="Remover automação"
+        pendingLabel="Removendo..."
+        formAction={deletePatientTagRule.bind(null, rule.id)}
+      />
     </article>
   );
 }

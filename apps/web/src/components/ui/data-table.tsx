@@ -14,10 +14,13 @@ import {
   CaretDown as ChevronDown,
   CaretUpDown as ChevronsUpDown,
   CaretUp as ChevronUp,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/field";
+import { Skeleton } from "@/components/ui/loader";
 import { cn } from "@/lib/utils";
 
 export type DataTableColumnMeta = {
@@ -42,8 +45,13 @@ type DataTableProps<TData> = {
   emptyTitle?: string;
   enableSorting?: boolean;
   globalFilter?: string;
+  /** Mostra linhas skeleton enquanto os dados chegam (sem dados ainda). */
+  loading?: boolean;
   pageSize?: number;
   renderMobileRow?: (row: TData) => React.ReactNode;
+  /** Renderiza um campo de busca embutido ligado ao filtro global. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
   serverPagination?: {
     page: number;
     pageSize: number;
@@ -60,11 +68,17 @@ export function DataTable<TData>({
   emptyTitle = "Nenhum registro encontrado",
   enableSorting = true,
   globalFilter,
+  loading,
   pageSize = 10,
   renderMobileRow,
+  searchable,
+  searchPlaceholder = "Buscar...",
   serverPagination,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [internalFilter, setInternalFilter] = useState("");
+  const effectiveFilter = searchable ? internalFilter : globalFilter;
+  const showLoadingState = Boolean(loading) && !data.length;
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     columns,
@@ -76,7 +90,7 @@ export function DataTable<TData>({
     getSortedRowModel: getSortedRowModel(),
     initialState: { pagination: { pageSize } },
     onSortingChange: setSorting,
-    state: { globalFilter, sorting },
+    state: { globalFilter: effectiveFilter, sorting },
   });
   const rows = table.getRowModel().rows;
   const pageCount = table.getPageCount();
@@ -113,6 +127,23 @@ export function DataTable<TData>({
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+      {searchable ? (
+        <div className="border-b border-border px-4 py-3">
+          <div className="relative max-w-xs">
+            <MagnifyingGlass
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              value={internalFilter}
+              onChange={(event) => setInternalFilter(event.target.value)}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              className="h-9 pl-9"
+            />
+          </div>
+        </div>
+      ) : null}
       <div
         className={cn("overflow-x-auto", renderMobileRow && "hidden md:block")}
       >
@@ -166,6 +197,20 @@ export function DataTable<TData>({
             ))}
           </thead>
           <tbody>
+            {showLoadingState
+              ? Array.from({ length: 5 }).map((_, index) => (
+                  <tr key={`skeleton-${index}`}>
+                    {table.getAllLeafColumns().map((column) => (
+                      <td
+                        key={column.id}
+                        className="border-b border-border px-4 py-3"
+                      >
+                        <Skeleton className="h-4 w-full max-w-32" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              : null}
             {rows.map((row) => (
               <tr
                 key={row.id}
@@ -187,6 +232,16 @@ export function DataTable<TData>({
           </tbody>
         </table>
       </div>
+      {renderMobileRow && showLoadingState ? (
+        <div className="divide-y divide-border md:hidden">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={`mobile-skeleton-${index}`} className="grid gap-2 p-4">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          ))}
+        </div>
+      ) : null}
       {renderMobileRow && rows.length ? (
         <div className="divide-y divide-border md:hidden">
           {rows.map((row) => (
@@ -196,7 +251,7 @@ export function DataTable<TData>({
           ))}
         </div>
       ) : null}
-      {!rows.length ? (
+      {!rows.length && !showLoadingState ? (
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : null}
       <div className="flex flex-col gap-3 px-4 py-4 text-label text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
