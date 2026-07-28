@@ -23,7 +23,9 @@ import { setPatientArchived } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
+import { PatientCompletenessRing } from "@/components/patients/patient-completeness-ring";
 import { initialsFromName } from "@/lib/utils";
 import { formatPhoneBR } from "@/lib/validation/br";
 
@@ -34,15 +36,24 @@ export type PatientListRow = {
   full_name: string;
   social_name: string | null;
   birth_date: string | null;
+  sex_at_birth: string | null;
   cpf?: string | null;
+  rg?: string | null;
   email?: string | null;
   phone?: string | null;
   whatsapp?: string | null;
+  preferred_contact: string;
+  allow_whatsapp: boolean;
+  allow_email: boolean;
   status: string;
   source: string | null;
+  deceased_at: string | null;
   deleted_at: string | null;
   created_at: string;
   tagIds: string[];
+  completenessAvailable: boolean;
+  completenessMissing: string[];
+  completenessPercentage: number;
   lastEncounterId: string | null;
   lastEncounterAt: string | null;
   lastEncounterStatus: string | null;
@@ -71,7 +82,7 @@ export function PatientsTable({
   filters: {
     query: string;
     sort: "name" | "newest" | "oldest";
-    status: "active" | "archived" | "all";
+    status: "active" | "archived" | "deceased" | "all";
     tagId: string;
   };
   pagination: { page: number; pageSize: number; total: number };
@@ -121,48 +132,61 @@ export function PatientsTable({
           const visibleTags = patient.tagIds
             .map((id) => tagById.get(id))
             .filter((tag): tag is PatientTagOption => Boolean(tag))
-            .slice(0, 4);
-          const remainingTags = Math.max(0, patient.tagIds.length - 4);
+            .slice(0, 2);
+          const remainingTags = Math.max(0, patient.tagIds.length - 2);
 
           const displayName = patient.social_name || patient.full_name;
 
           return (
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-muted text-xs font-semibold text-primary">
-                {initialsFromName(displayName)}
-              </div>
+            <div className="flex min-w-0 items-center gap-3">
+              <PatientListAvatar patient={patient} size="sm" />
               <div className="min-w-0">
-                <div className="mb-1 flex min-w-0 flex-wrap items-center gap-1">
-                  {visibleTags.map((tag) => (
-                    <span
-                      key={tag.id}
-                      className="inline-flex h-5 max-w-20 items-center rounded px-1.5 text-caption font-semibold uppercase leading-none text-white"
-                      style={{ backgroundColor: tag.color }}
-                    >
-                      <span className="truncate">{tag.name}</span>
-                    </span>
-                  ))}
-                  {remainingTags > 0 ? (
-                    <span className="inline-flex h-5 items-center rounded bg-muted px-1.5 text-caption font-semibold leading-none text-muted-foreground">
-                      +{remainingTags}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="font-mono text-caption uppercase text-muted-foreground">
-                    #{patient.id.slice(0, 8)}
-                  </span>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Link
                     href={`/pacientes/${patient.id}`}
-                    className="block truncate text-sm font-semibold hover:text-primary"
+                    className="block truncate text-[15px] font-semibold text-foreground hover:text-primary"
                   >
                     {displayName}
                   </Link>
+                  {patient.deceased_at ? (
+                    <Badge
+                      variant="destructive"
+                      className="h-5 px-1.5 text-[10px]"
+                    >
+                      Óbito
+                    </Badge>
+                  ) : !patient.deleted_at && patient.status !== "active" ? (
+                    <Badge variant="neutral" className="h-5 px-1.5 text-[10px]">
+                      Inativo
+                    </Badge>
+                  ) : null}
                 </div>
                 {patient.social_name ? (
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {patient.full_name}
                   </p>
+                ) : null}
+                {visibleTags.length ? (
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+                    {visibleTags.map((tag) => (
+                      <span
+                        key={tag.id}
+                        className="inline-flex h-[18px] max-w-24 items-center rounded-full border px-1.5 text-[10px] font-medium leading-none"
+                        style={{
+                          borderColor: `${tag.color}55`,
+                          color: tag.color,
+                          backgroundColor: `${tag.color}0D`,
+                        }}
+                      >
+                        <span className="truncate">{tag.name}</span>
+                      </span>
+                    ))}
+                    {remainingTags > 0 ? (
+                      <span className="inline-flex h-[18px] items-center rounded-full bg-muted px-1.5 text-[10px] font-medium leading-none text-muted-foreground">
+                        +{remainingTags}
+                      </span>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -191,7 +215,12 @@ export function PatientsTable({
             <div>
               <p>{formatDate(row.original.birth_date)}</p>
               <p className="text-xs text-muted-foreground">
-                {calculateAge(row.original.birth_date)} anos
+                {row.original.deceased_at
+                  ? `Falecido aos ${calculateAge(
+                      row.original.birth_date,
+                      row.original.deceased_at,
+                    )} anos`
+                  : `${calculateAge(row.original.birth_date)} anos`}
               </p>
             </div>
           ) : (
@@ -275,24 +304,11 @@ export function PatientsTable({
                 </Button>
               ) : null}
               {canArchive ? (
-                <form
-                  action={setPatientArchived.bind(null, patient.id, !archived)}
-                >
-                  <Button
-                    type="submit"
-                    size="icon"
-                    variant="ghost"
-                    aria-label={
-                      archived ? "Restaurar paciente" : "Arquivar paciente"
-                    }
-                  >
-                    {archived ? (
-                      <RotateCcw className="size-4" />
-                    ) : (
-                      <Archive className="size-4" />
-                    )}
-                  </Button>
-                </form>
+                <PatientArchiveButton
+                  patient={patient}
+                  archived={archived}
+                  compact
+                />
               ) : null}
             </div>
           );
@@ -308,14 +324,13 @@ export function PatientsTable({
     const visibleTags = patient.tagIds
       .map((id) => tagById.get(id))
       .filter((tag): tag is PatientTagOption => Boolean(tag))
-      .slice(0, 3);
+      .slice(0, 2);
+    const remainingTags = Math.max(0, patient.tagIds.length - 2);
 
     return (
       <article className="grid gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-xs font-semibold text-primary">
-            {initialsFromName(displayName)}
-          </div>
+          <PatientListAvatar patient={patient} size="md" />
           <div className="min-w-0 flex-1">
             <Link
               href={`/pacientes/${patient.id}`}
@@ -329,19 +344,34 @@ export function PatientsTable({
                 : "Sem telefone"}
             </p>
           </div>
-          {archived ? <Badge variant="neutral">Arquivado</Badge> : null}
+          {patient.deceased_at ? (
+            <Badge variant="destructive">Óbito</Badge>
+          ) : archived ? (
+            <Badge variant="neutral">Arquivado</Badge>
+          ) : patient.status !== "active" ? (
+            <Badge variant="neutral">Inativo</Badge>
+          ) : null}
         </div>
         {visibleTags.length ? (
           <div className="flex flex-wrap gap-1.5">
             {visibleTags.map((tag) => (
               <span
                 key={tag.id}
-                className="inline-flex h-5 max-w-28 items-center rounded px-1.5 text-caption font-semibold uppercase text-white"
-                style={{ backgroundColor: tag.color }}
+                className="inline-flex h-[18px] max-w-28 items-center rounded-full border px-1.5 text-[10px] font-medium"
+                style={{
+                  borderColor: `${tag.color}55`,
+                  color: tag.color,
+                  backgroundColor: `${tag.color}0D`,
+                }}
               >
                 <span className="truncate">{tag.name}</span>
               </span>
             ))}
+            {remainingTags > 0 ? (
+              <span className="inline-flex h-[18px] items-center rounded-full bg-muted px-1.5 text-[10px] font-medium leading-none text-muted-foreground">
+                +{remainingTags}
+              </span>
+            ) : null}
           </div>
         ) : null}
         <dl className="grid grid-cols-2 gap-3 rounded-md bg-muted/40 p-3 text-xs">
@@ -365,11 +395,7 @@ export function PatientsTable({
             <Link href={`/pacientes/${patient.id}`}>Abrir paciente</Link>
           </Button>
           {canArchive ? (
-            <form action={setPatientArchived.bind(null, patient.id, !archived)}>
-              <Button type="submit" size="sm" variant="ghost">
-                {archived ? "Restaurar" : "Arquivar"}
-              </Button>
-            </form>
+            <PatientArchiveButton patient={patient} archived={archived} />
           ) : null}
         </div>
       </article>
@@ -389,8 +415,8 @@ export function PatientsTable({
             onChange={(event) => setQuery(event.target.value)}
             placeholder={
               canSeeSensitive
-                ? "Buscar por nome, código, CPF, telefone ou e-mail"
-                : "Buscar por nome, código, telefone ou e-mail"
+                ? "Buscar por nome, CPF, telefone ou e-mail"
+                : "Buscar por nome, telefone ou e-mail"
             }
             className="w-full pl-9"
             aria-label="Buscar pacientes"
@@ -406,6 +432,7 @@ export function PatientsTable({
           className="lg:w-44"
         >
           <option value="active">Ativos</option>
+          <option value="deceased">Óbito</option>
           <option value="archived">Arquivados</option>
           <option value="all">Todos</option>
         </Select>
@@ -484,17 +511,114 @@ export function PatientsTable({
   );
 }
 
+function PatientListAvatar({
+  patient,
+  size,
+}: {
+  patient: PatientListRow;
+  size: "sm" | "md";
+}) {
+  const displayName = patient.social_name || patient.full_name;
+  const avatar = (
+    <span
+      className={`flex ${
+        size === "sm" ? "size-9" : "size-10"
+      } items-center justify-center rounded-full bg-primary-muted text-xs font-semibold text-primary`}
+    >
+      {initialsFromName(displayName)}
+    </span>
+  );
+
+  if (patient.completenessAvailable || patient.deceased_at) {
+    return (
+      <PatientCompletenessRing
+        percentage={patient.completenessPercentage}
+        missing={patient.completenessMissing}
+        deceased={Boolean(patient.deceased_at)}
+      >
+        {avatar}
+      </PatientCompletenessRing>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex shrink-0 rounded-full border-[3px] border-border bg-card p-0.5"
+      title="Completude disponível para perfis com acesso aos dados cadastrais"
+    >
+      {avatar}
+    </span>
+  );
+}
+
+function PatientArchiveButton({
+  archived,
+  compact = false,
+  patient,
+}: {
+  archived: boolean;
+  compact?: boolean;
+  patient: PatientListRow;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const patientName = patient.social_name || patient.full_name;
+
+  if (archived) {
+    return (
+      <form action={setPatientArchived.bind(null, patient.id, false)}>
+        <Button
+          type="submit"
+          size={compact ? "icon" : "sm"}
+          variant="ghost"
+          aria-label={compact ? "Restaurar paciente" : undefined}
+        >
+          {compact ? <RotateCcw className="size-4" /> : "Restaurar"}
+        </Button>
+      </form>
+    );
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        size={compact ? "icon" : "sm"}
+        variant="ghost"
+        aria-label={compact ? "Arquivar paciente" : undefined}
+        onClick={() => setConfirming(true)}
+      >
+        {compact ? <Archive className="size-4" /> : "Arquivar"}
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="Arquivar paciente?"
+        description={`${patientName} deixará de aparecer nas listas e buscas ativas. O histórico será preservado e poderá ser restaurado depois.`}
+        confirmLabel="Arquivar paciente"
+        pendingLabel="Arquivando..."
+        destructive
+        onConfirm={() => setPatientArchived(patient.id, true)}
+      />
+    </>
+  );
+}
+
 function formatDate(value: string) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00`)
+    : new Date(value);
   return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(new Date(value));
+  }).format(date);
 }
 
-function calculateAge(value: string) {
+function calculateAge(value: string, referenceDate?: string) {
   const birthDate = new Date(`${value}T00:00:00`);
-  const today = new Date();
+  const today = referenceDate
+    ? new Date(`${referenceDate}T00:00:00`)
+    : new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const hadBirthday =
     today.getMonth() > birthDate.getMonth() ||

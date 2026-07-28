@@ -47,7 +47,9 @@ export function NavigationProgress() {
         setProgress(0.08);
         trickleRef.current = window.setInterval(() => {
           // avança desacelerando; nunca completa sozinho (para em 90%)
-          setProgress((p) => (p >= 0.9 ? p : Math.min(0.9, p + (1 - p) * 0.06)));
+          setProgress((p) =>
+            p >= 0.9 ? p : Math.min(0.9, p + (1 - p) * 0.06),
+          );
         }, TRICKLE_MS);
       }, SHOW_DELAY_MS);
       timeoutsRef.current.push(showTimer);

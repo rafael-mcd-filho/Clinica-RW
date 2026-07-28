@@ -421,7 +421,7 @@ function Sidebar({
         </Tooltip>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4 [scrollbar-gutter:stable]">
         {navItems.map((item) => (
           <SidebarLink key={item.href} item={item} onNavigate={onNavigate} />
         ))}

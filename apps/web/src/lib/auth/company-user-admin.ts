@@ -62,7 +62,8 @@ export type ProvisionCompanyUserAccessResult =
   | { ok: false; error: string; requiresManualReview?: boolean };
 
 export type CompanyUserSetupLinkResult =
-  { ok: true; link: string } | { ok: false; error: string };
+  | { ok: true; link: string }
+  | { ok: false; error: string };
 
 type ActorRow = {
   id: string;

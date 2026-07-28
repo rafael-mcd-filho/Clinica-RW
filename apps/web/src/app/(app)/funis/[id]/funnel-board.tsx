@@ -43,6 +43,7 @@ import { CardPanel } from "./card-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Select } from "@/components/ui/field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -122,6 +123,13 @@ export function FunnelBoard({
   const receivedDataRef = useRef({ cards, stages });
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [pendingFailureMove, setPendingFailureMove] = useState<{
+    cardId: string;
+    cardName: string;
+    stageId: string;
+    stageName: string;
+    snapshot: Record<string, FunnelBoardCard[]>;
+  } | null>(null);
   const [view, setView] = useState<"kanban" | "list">("kanban");
   const [filters, setFilters] = useState<BoardFilters>(initialFilters);
   const dragOriginStageRef = useRef<string | null>(null);
@@ -278,6 +286,21 @@ export function FunnelBoard({
       return resetDragState();
     }
 
+    if (targetStage?.stage_type === "failure" && snapshot) {
+      const movedCard = Object.values(snapshot)
+        .flat()
+        .find((card) => card.id === cardId);
+      setPendingFailureMove({
+        cardId,
+        cardName: movedCard?.patient_name ?? "este card",
+        stageId: finalStageId,
+        stageName: targetStage.name,
+        snapshot,
+      });
+      resetDragState();
+      return;
+    }
+
     setCardsByStage((current) =>
       moveCardBetweenStages(current, cardId, finalStageId),
     );
@@ -390,6 +413,33 @@ export function FunnelBoard({
           onClose={() => setSelectedCardId(null)}
         />
       ) : null}
+      <ConfirmDialog
+        open={Boolean(pendingFailureMove)}
+        onClose={() => {
+          if (pendingFailureMove) setCardsByStage(pendingFailureMove.snapshot);
+          setPendingFailureMove(null);
+        }}
+        title="Mover card para etapa de perda?"
+        description={`${pendingFailureMove?.cardName ?? "O card"} será movido para “${pendingFailureMove?.stageName ?? "etapa de perda"}”. Essa mudança ficará registrada no histórico.`}
+        confirmLabel="Confirmar perda"
+        pendingLabel="Movendo..."
+        destructive
+        onConfirm={async () => {
+          if (!pendingFailureMove) return false;
+          const result = await moveCard(
+            pendingFailureMove.cardId,
+            pendingFailureMove.stageId,
+          );
+          if (result.error) {
+            toast.error(result.error);
+            setCardsByStage(pendingFailureMove.snapshot);
+            return false;
+          }
+          toast.success(result.success);
+          setPendingFailureMove(null);
+          return false;
+        }}
+      />
     </div>
   );
 }

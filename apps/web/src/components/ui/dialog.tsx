@@ -16,6 +16,7 @@ type BaseProps = {
   pendingLabel?: string;
   confirmDisabled?: boolean;
   icon?: ComponentType<{ className?: string }>;
+  onSubmit?: React.FormEventHandler<HTMLFormElement>;
 };
 
 /**
@@ -35,6 +36,7 @@ export function FormDialog({
   pendingLabel = "Salvando...",
   confirmDisabled,
   icon: Icon,
+  onSubmit,
 }: BaseProps & {
   /** Server action (or any handler) bound to the form. */
   formAction: (formData: FormData) => void | Promise<void>;
@@ -46,7 +48,11 @@ export function FormDialog({
       title={title}
       description={description}
     >
-      <form action={formAction} className="grid min-w-0 gap-4">
+      <form
+        action={formAction}
+        className="grid min-w-0 gap-4"
+        onSubmit={onSubmit}
+      >
         {children}
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -78,7 +84,11 @@ type ConfirmActionProps =
        * action form, e.g. handlers that already do their own toast). The
        * dialog manages its own pending state and closes when it resolves.
        */
-      onConfirm: () => void | Promise<void>;
+      /**
+       * Return `false` to keep the dialog open (for example, when the action
+       * returns a validation error).
+       */
+      onConfirm: () => boolean | void | Promise<boolean | void>;
     };
 
 /**
@@ -108,8 +118,8 @@ export function ConfirmDialog({
     if (!onConfirm) return;
     setCallbackPending(true);
     try {
-      await onConfirm();
-      onClose();
+      const shouldClose = await onConfirm();
+      if (shouldClose !== false) onClose();
     } finally {
       setCallbackPending(false);
     }

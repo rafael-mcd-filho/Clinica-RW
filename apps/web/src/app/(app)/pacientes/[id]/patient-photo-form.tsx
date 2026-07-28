@@ -11,6 +11,9 @@ import {
 import { toast } from "sonner";
 import { updatePatientPhoto, type PatientActionState } from "../actions";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
+import { PatientCompletenessRing } from "@/components/patients/patient-completeness-ring";
+import type { PatientCompleteness } from "@/lib/patients/completeness";
 
 const initialState: PatientActionState = {};
 
@@ -19,22 +22,41 @@ export function PatientPhotoForm({
   photoUrl,
   initials,
   canEdit,
+  completeness,
+  deceased,
 }: {
   patientId: string;
   photoUrl: string | null;
   initials: string;
   canEdit: boolean;
+  completeness: PatientCompleteness | null;
+  deceased: boolean;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedPreview, setSelectedPreview] = useState<string | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
   const [state, formAction, pending] = useActionState(
     updatePatientPhoto.bind(null, patientId),
     initialState,
   );
   const preview = removePhoto ? null : (selectedPreview ?? photoUrl);
   const hasChange = Boolean(selectedPreview) || removePhoto;
+  const avatar = (
+    <div className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-heading-lg font-semibold text-primary sm:size-20 lg:size-24">
+      {preview ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={preview}
+          alt="Foto do paciente"
+          className="size-full object-cover"
+        />
+      ) : (
+        initials
+      )}
+    </div>
+  );
 
   useEffect(() => {
     if (state.success) {
@@ -63,18 +85,17 @@ export function PatientPhotoForm({
       className="grid min-w-0 justify-items-center gap-3"
     >
       <div className="relative">
-        <div className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-heading-lg font-semibold text-primary sm:size-20 lg:size-24">
-          {preview ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={preview}
-              alt="Foto do paciente"
-              className="size-full object-cover"
-            />
-          ) : (
-            initials
-          )}
-        </div>
+        {completeness || deceased ? (
+          <PatientCompletenessRing
+            deceased={deceased}
+            percentage={completeness?.percentage ?? 0}
+            missing={completeness?.missing ?? []}
+          >
+            {avatar}
+          </PatientCompletenessRing>
+        ) : (
+          avatar
+        )}
         {canEdit ? (
           <Button
             type="button"
@@ -120,7 +141,7 @@ export function PatientPhotoForm({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={handleRemove}
+                onClick={() => setConfirmingRemoval(true)}
               >
                 <Trash2 className="size-4" aria-hidden="true" />
                 Remover
@@ -136,6 +157,15 @@ export function PatientPhotoForm({
           <p className="max-w-48 text-center text-xs text-muted-foreground">
             PNG, JPG ou WEBP até 2 MB.
           </p>
+          <ConfirmDialog
+            open={confirmingRemoval}
+            onClose={() => setConfirmingRemoval(false)}
+            title="Remover foto do paciente?"
+            description="A foto será marcada para remoção e apagada quando você salvar."
+            confirmLabel="Remover foto"
+            destructive
+            onConfirm={handleRemove}
+          />
         </>
       ) : null}
     </form>

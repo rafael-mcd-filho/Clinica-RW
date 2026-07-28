@@ -2,13 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getWebhookSecret } from "@/lib/whatsapp/config";
 import {
   ingestInboundMessage,
+  ingestOutboundMessage,
   updateInstanceConnection,
   updateMessageStatus,
 } from "@/lib/whatsapp/ingest";
-import { type MessageStatus, type MessageType } from "@/lib/whatsapp/types";
+import { type MessageStatus } from "@/lib/whatsapp/types";
 import { getInstanceWebhookSecret } from "@/lib/whatsapp/credentials";
 import { getEvolutionConfigByInstance } from "@/lib/whatsapp/credentials";
 import { getMediaMessageBase64 } from "@/lib/whatsapp/evolution-client";
+import { parseEvolutionUpsertMessage } from "@/lib/whatsapp/webhook-message";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -61,7 +63,7 @@ async function handleEvent(payload: EvolutionEvent): Promise<void> {
   if (!instanceName) return;
 
   if (eventName === "messages.upsert") {
-    const parsed = parseInboundMessage(instanceName, payload.data);
+    const parsed = parseEvolutionUpsertMessage(instanceName, payload.data);
     if (parsed) {
       if (
         parsed.type !== "text" &&
@@ -75,7 +77,12 @@ async function handleEvent(payload: EvolutionEvent): Promise<void> {
           payload.data,
         );
       }
-      await ingestInboundMessage(parsed);
+      const { direction, ...message } = parsed;
+      if (direction === "outbound") {
+        await ingestOutboundMessage(message);
+      } else {
+        await ingestInboundMessage(message);
+      }
     }
     return;
   }
@@ -148,93 +155,6 @@ function extensionForMimeType(mimeType: string) {
   );
 }
 
-function parseInboundMessage(
-  instanceName: string,
-  data: unknown,
-): Parameters<typeof ingestInboundMessage>[0] | null {
-  const record = asRecord(data);
-  if (!record) return null;
-
-  const key = asRecord(record.key);
-  const remoteJid = key ? readString(key, "remoteJid") : null;
-  if (!remoteJid || remoteJid.endsWith("@g.us")) return null; // ignora grupos
-  if (key && readBoolean(key, "fromMe")) return null; // ignora eco do próprio envio
-
-  const phone = remoteJid.split("@")[0]?.replace(/\D/g, "") ?? "";
-  if (!phone) return null;
-
-  const message = asRecord(record.message);
-  const { type, body, mediaMimeType } = extractContent(message);
-  const timestampSeconds = readNumber(record, "messageTimestamp");
-
-  return {
-    instanceName,
-    phone,
-    waName: readString(record, "pushName"),
-    waMessageId: key ? readString(key, "id") : null,
-    type,
-    body,
-    mediaUrl: null,
-    mediaMimeType,
-    timestampMs: timestampSeconds ? timestampSeconds * 1000 : null,
-  };
-}
-
-function extractContent(message: Record<string, unknown> | null): {
-  type: MessageType;
-  body: string | null;
-  mediaMimeType: string | null;
-} {
-  if (!message) return { type: "system", body: null, mediaMimeType: null };
-
-  if (typeof message.conversation === "string") {
-    return { type: "text", body: message.conversation, mediaMimeType: null };
-  }
-  const extended = asRecord(message.extendedTextMessage);
-  if (extended && typeof extended.text === "string") {
-    return { type: "text", body: extended.text, mediaMimeType: null };
-  }
-  const image = asRecord(message.imageMessage);
-  if (image) {
-    return {
-      type: "image",
-      body: readString(image, "caption"),
-      mediaMimeType: readString(image, "mimetype"),
-    };
-  }
-  const video = asRecord(message.videoMessage);
-  if (video) {
-    return {
-      type: "video",
-      body: readString(video, "caption"),
-      mediaMimeType: readString(video, "mimetype"),
-    };
-  }
-  const audio = asRecord(message.audioMessage);
-  if (audio) {
-    return {
-      type: "audio",
-      body: null,
-      mediaMimeType: readString(audio, "mimetype"),
-    };
-  }
-  const document = asRecord(message.documentMessage);
-  if (document) {
-    return {
-      type: "document",
-      body: readString(document, "fileName"),
-      mediaMimeType: readString(document, "mimetype"),
-    };
-  }
-  if (asRecord(message.stickerMessage)) {
-    return { type: "sticker", body: null, mediaMimeType: null };
-  }
-  if (asRecord(message.locationMessage)) {
-    return { type: "location", body: null, mediaMimeType: null };
-  }
-  return { type: "system", body: null, mediaMimeType: null };
-}
-
 function parseStatusUpdate(
   instanceName: string,
   data: unknown,
@@ -296,16 +216,4 @@ function readString(
 ): string | null {
   const value = record[key];
   return typeof value === "string" && value ? value : null;
-}
-
-function readNumber(
-  record: Record<string, unknown>,
-  key: string,
-): number | null {
-  const value = record[key];
-  return typeof value === "number" ? value : null;
-}
-
-function readBoolean(record: Record<string, unknown>, key: string): boolean {
-  return record[key] === true;
 }

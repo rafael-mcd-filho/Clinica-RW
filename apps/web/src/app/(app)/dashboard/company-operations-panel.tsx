@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   Buildings as Building2,
   CalendarDots as CalendarClock,
@@ -23,6 +23,7 @@ import {
 } from "@/app/(app)/agenda/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
@@ -218,6 +219,8 @@ function OnlineRequestActions({
     rejectActionForRequest,
     initialState,
   );
+  const [rejectReason, setRejectReason] = useState("");
+  const [confirmingReject, setConfirmingReject] = useState(false);
   const pending = confirmPending || rejectPending;
 
   useToastState(confirmState);
@@ -234,22 +237,38 @@ function OnlineRequestActions({
         </form>
       ) : null}
       {canReject ? (
-        <form action={rejectAction} className="grid gap-2">
+        <div className="grid gap-2">
           <Input
-            name="reason"
+            value={rejectReason}
+            onChange={(event) => setRejectReason(event.target.value)}
             placeholder="Motivo da rejeição (opcional)"
             aria-label="Motivo da rejeição"
           />
           <Button
-            type="submit"
+            type="button"
             disabled={pending}
             variant="secondary"
             className="w-full"
+            onClick={() => setConfirmingReject(true)}
           >
             <X className="size-4" />
-            {rejectPending ? "Rejeitando..." : "Rejeitar"}
+            Rejeitar
           </Button>
-        </form>
+          <ConfirmDialog
+            open={confirmingReject && !rejectState.success}
+            onClose={() => setConfirmingReject(false)}
+            title="Rejeitar solicitação?"
+            description="A solicitação de agendamento será rejeitada e o horário voltará a ficar disponível."
+            confirmLabel="Rejeitar solicitação"
+            pendingLabel="Rejeitando..."
+            destructive
+            pending={rejectPending}
+            error={rejectState.error}
+            formAction={rejectAction}
+          >
+            <input type="hidden" name="reason" value={rejectReason} />
+          </ConfirmDialog>
+        </div>
       ) : null}
       {confirmState.error || rejectState.error ? (
         <p className="rounded-md border border-destructive-muted bg-destructive-muted/40 px-3 py-2 text-sm text-destructive">

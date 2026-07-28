@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -37,6 +38,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 import { MaskedInput } from "@/components/ui/masked-input";
 import { FormError } from "@/components/ui/form-error";
@@ -956,6 +958,8 @@ function RegistrationSection({
   canManageUsers?: boolean;
 }) {
   const [editing, setEditing] = useState<EditableRow | null>(null);
+  const [confirmingDeactivate, setConfirmingDeactivate] =
+    useState<EditableRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const itemLabelLower = itemLabel.toLowerCase();
   const feminineItem = itemGender === "feminine";
@@ -1047,18 +1051,29 @@ function RegistrationSection({
                     <Pencil className="size-3.5" aria-hidden="true" />
                     Editar
                   </Button>
-                  <form
-                    action={setRegistrationActive.bind(
-                      null,
-                      kind,
-                      row.id,
-                      !row.active,
-                    )}
-                  >
-                    <Button type="submit" size="sm" variant="ghost">
-                      {row.active ? "Desativar" : "Ativar"}
+                  {row.active ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setConfirmingDeactivate(row)}
+                    >
+                      Desativar
                     </Button>
-                  </form>
+                  ) : (
+                    <form
+                      action={setRegistrationActive.bind(
+                        null,
+                        kind,
+                        row.id,
+                        true,
+                      )}
+                    >
+                      <Button type="submit" size="sm" variant="ghost">
+                        Ativar
+                      </Button>
+                    </form>
+                  )}
                 </div>
               </div>
             ))
@@ -1069,6 +1084,20 @@ function RegistrationSection({
           )}
         </div>
       </CardContent>
+
+      <ConfirmDialog
+        open={Boolean(confirmingDeactivate)}
+        onClose={() => setConfirmingDeactivate(null)}
+        title={`Desativar ${itemLabelLower}?`}
+        description={`${String(confirmingDeactivate?.name ?? "Este cadastro")} deixará de estar disponível para novos registros. O histórico existente será preservado.`}
+        confirmLabel="Desativar"
+        pendingLabel="Desativando..."
+        destructive
+        onConfirm={async () => {
+          if (!confirmingDeactivate) return false;
+          await setRegistrationActive(kind, confirmingDeactivate.id, false);
+        }}
+      />
 
       {modalForm ? (
         <Modal
@@ -1126,6 +1155,9 @@ function RegistrationForm({
   modal?: boolean;
   canManageUsers?: boolean;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const confirmedUnlinkRef = useRef(false);
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false);
   const boundAction = saveRegistration.bind(null, kind, editing?.id ?? null);
   const [state, action, pending] = useActionState(boundAction, initialState);
   const professionalUserField =
@@ -1161,76 +1193,104 @@ function RegistrationForm({
   }
 
   return (
-    <form
-      action={action}
-      className={
-        modal
-          ? "grid gap-4"
-          : "rounded-md border border-border bg-background p-4"
-      }
-    >
-      {!modal ? (
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold">
-            {editing ? `Editar ${String(editing.name)}` : "Novo cadastro"}
-          </p>
-          {editing ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onFinished}
-            >
-              Cancelar edição
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-      <div
+    <>
+      <form
+        ref={formRef}
+        action={action}
+        onSubmit={(event) => {
+          const userId = new FormData(event.currentTarget).get("user_id");
+          if (
+            kind === "professional" &&
+            editing?.user_id &&
+            !userId &&
+            !confirmedUnlinkRef.current
+          ) {
+            event.preventDefault();
+            setConfirmingUnlink(true);
+          }
+        }}
         className={
           modal
-            ? "grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
-            : "grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+            ? "grid gap-4"
+            : "rounded-md border border-border bg-background p-4"
         }
       >
-        {registrationFields.map((field, index) => (
-          <DynamicField
-            key={field.name}
-            field={field}
-            row={editing}
-            compact={modal}
-            helpAlign={modal && index % 2 === 1 ? "end" : "start"}
-          />
-        ))}
-        {professionalUserField ? (
-          <ProfessionalAccessFields
-            editing={editing}
-            field={professionalUserField}
-            canManageUsers={canManageUsers}
-          />
+        {!modal ? (
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold">
+              {editing ? `Editar ${String(editing.name)}` : "Novo cadastro"}
+            </p>
+            {editing ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onFinished}
+              >
+                Cancelar edição
+              </Button>
+            ) : null}
+          </div>
         ) : null}
-      </div>
-      <FormError message={state.error} className="mt-3" />
-      <div className="mt-2 flex justify-end gap-2 border-t border-border pt-4">
-        {modal ? (
-          <Button type="button" variant="secondary" onClick={onFinished}>
-            Cancelar
+        <div
+          className={
+            modal
+              ? "grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+              : "grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+          }
+        >
+          {registrationFields.map((field, index) => (
+            <DynamicField
+              key={field.name}
+              field={field}
+              row={editing}
+              compact={modal}
+              helpAlign={modal && index % 2 === 1 ? "end" : "start"}
+            />
+          ))}
+          {professionalUserField ? (
+            <ProfessionalAccessFields
+              editing={editing}
+              field={professionalUserField}
+              canManageUsers={canManageUsers}
+            />
+          ) : null}
+        </div>
+        <FormError message={state.error} className="mt-3" />
+        <div className="mt-2 flex justify-end gap-2 border-t border-border pt-4">
+          {modal ? (
+            <Button type="button" variant="secondary" onClick={onFinished}>
+              Cancelar
+            </Button>
+          ) : null}
+          <Button type="submit" size="sm" disabled={pending}>
+            {editing ? (
+              <Save className="size-3.5" />
+            ) : (
+              <Plus className="size-3.5" />
+            )}
+            {pending
+              ? "Salvando..."
+              : editing
+                ? "Salvar alterações"
+                : "Adicionar"}
           </Button>
-        ) : null}
-        <Button type="submit" size="sm" disabled={pending}>
-          {editing ? (
-            <Save className="size-3.5" />
-          ) : (
-            <Plus className="size-3.5" />
-          )}
-          {pending
-            ? "Salvando..."
-            : editing
-              ? "Salvar alterações"
-              : "Adicionar"}
-        </Button>
-      </div>
-    </form>
+        </div>
+      </form>
+      <ConfirmDialog
+        open={confirmingUnlink}
+        onClose={() => setConfirmingUnlink(false)}
+        title="Desvincular usuário do profissional?"
+        description="O profissional continuará cadastrado, mas a conta atualmente vinculada perderá a associação assistencial."
+        confirmLabel="Desvincular usuário"
+        destructive
+        onConfirm={() => {
+          confirmedUnlinkRef.current = true;
+          formRef.current?.requestSubmit();
+          confirmedUnlinkRef.current = false;
+        }}
+      />
+    </>
   );
 }
 

@@ -131,6 +131,28 @@ async function getAgendaTimeZone(
   return normalizeAgendaTimeZone(data?.timezone);
 }
 
+async function patientSchedulingError(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  organizationId: string,
+  patientId: string,
+) {
+  const { data, error } = await supabase
+    .from("patients")
+    .select("deceased_at")
+    .eq("organization_id", organizationId)
+    .eq("id", patientId)
+    .maybeSingle<{ deceased_at: string | null }>();
+
+  if (error) {
+    return "Não foi possível validar a situação do paciente. Tente novamente.";
+  }
+  if (!data) return "Paciente não encontrado.";
+  if (data.deceased_at) {
+    return "Paciente com óbito registrado não pode receber novos agendamentos.";
+  }
+  return null;
+}
+
 async function revalidateOnlineBookingPortal(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   organizationId: string,
@@ -1004,6 +1026,13 @@ export async function createWaitlistEntry(
   if (!parsed.success) return { error: "Selecione o paciente e o período." };
 
   const supabase = await createSupabaseServerClient();
+  const eligibilityError = await patientSchedulingError(
+    supabase,
+    context.organization.id,
+    parsed.data.patient_id,
+  );
+  if (eligibilityError) return { error: eligibilityError };
+
   const { error } = await supabase.from("waitlist_entries").insert({
     organization_id: context.organization.id,
     patient_id: parsed.data.patient_id,
@@ -1054,8 +1083,8 @@ export async function createAppointment(
   }
 
   const supabase = await createSupabaseServerClient();
-  const [{ data: schedule }, { data: procedure }, timeZone] = await Promise.all(
-    [
+  const [{ data: schedule }, { data: procedure }, eligibilityError, timeZone] =
+    await Promise.all([
       supabase
         .from("schedules")
         .select("professional_id, unit_id")
@@ -1068,9 +1097,14 @@ export async function createAppointment(
         .eq("id", parsed.data.procedure_id)
         .eq("organization_id", context.organization.id)
         .single<{ duration_minutes: number }>(),
+      patientSchedulingError(
+        supabase,
+        context.organization.id,
+        parsed.data.patient_id,
+      ),
       getAgendaTimeZone(supabase, context.organization.id),
-    ],
-  );
+    ]);
+  if (eligibilityError) return { error: eligibilityError };
   if (!schedule || !procedure)
     return { error: "Agenda ou procedimento inválido." };
 
@@ -1160,18 +1194,26 @@ export async function rescheduleAppointment(
 
   const { data: appointment } = await supabase
     .from("appointments")
-    .select("procedure_id")
+    .select("patient_id, procedure_id")
     .eq("id", appointmentId)
     .eq("organization_id", context.organization.id)
-    .single<{ procedure_id: string }>();
+    .single<{ patient_id: string; procedure_id: string }>();
   if (!appointment) return { error: "Agendamento não encontrado." };
 
-  const { data: procedure } = await supabase
-    .from("procedures")
-    .select("duration_minutes")
-    .eq("id", appointment.procedure_id)
-    .eq("organization_id", context.organization.id)
-    .single<{ duration_minutes: number }>();
+  const [{ data: procedure }, eligibilityError] = await Promise.all([
+    supabase
+      .from("procedures")
+      .select("duration_minutes")
+      .eq("id", appointment.procedure_id)
+      .eq("organization_id", context.organization.id)
+      .single<{ duration_minutes: number }>(),
+    patientSchedulingError(
+      supabase,
+      context.organization.id,
+      appointment.patient_id,
+    ),
+  ]);
+  if (eligibilityError) return { error: eligibilityError };
   if (!procedure) return { error: "Procedimento não encontrado." };
 
   const endAt = new Date(
@@ -1192,18 +1234,22 @@ export async function rescheduleAppointment(
 export async function changeAppointmentStatus(
   appointmentId: string,
   nextStatus: string,
-): Promise<void> {
+  _state: AgendaActionState,
+): Promise<AgendaActionState> {
+  void _state;
   const context = await requireAgendaPermission("agenda.editar_agendamento");
-  if (!context?.organization) return;
+  if (!context?.organization) return { error: "Acesso negado." };
   const supabase = await createSupabaseServerClient();
-  await supabase.rpc("transition_appointment_status", {
+  const { error } = await supabase.rpc("transition_appointment_status", {
     p_appointment_id: appointmentId,
     p_to_status: nextStatus,
     p_reason: nextStatus === "cancelled" ? "Cancelado pela agenda" : null,
   });
+  if (error) return { error: friendlyError(error.message, error.code) };
   revalidatePath("/agenda");
   revalidatePath("/dashboard");
   revalidatePath("/relatorios/agendamentos");
+  return { success: "Status do agendamento atualizado." };
 }
 
 export async function startAppointmentEncounter(

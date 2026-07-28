@@ -23,12 +23,21 @@ type ConversationRow = {
 export type QuickReplyTemplate = { id: string; name: string; body: string };
 type AttendantRpcRow = { user_id: string; name: string; email: string };
 
-export default async function AtendimentoPage() {
+export default async function AtendimentoPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const context = await requireCompanyPermission(["atendimento.ver"]);
   const canAttend = context.permissionCodes.has("atendimento.atender");
   const canConfigure = context.permissionCodes.has("atendimento.configurar");
   const organizationId = context.organization.id;
   const currentUserId = context.effectiveUser?.id ?? null;
+  const rawConversationId = (await searchParams)?.conversation;
+  const requestedConversationId =
+    typeof rawConversationId === "string" && isUuid(rawConversationId)
+      ? rawConversationId
+      : null;
 
   const supabase = await createSupabaseServerClient();
 
@@ -82,7 +91,24 @@ export default async function AtendimentoPage() {
   ]);
   const evolutionReady = Boolean(evolutionConfig);
 
-  const conversations = conversationRows ?? [];
+  let conversations = conversationRows ?? [];
+  if (
+    requestedConversationId &&
+    !conversations.some((row) => row.id === requestedConversationId)
+  ) {
+    const { data: requestedConversation } = await supabase
+      .from("whatsapp_conversations")
+      .select(
+        "id, status, contact_id, assigned_user_id, funnel_card_id, unread_count, last_message_at, last_message_preview",
+      )
+      .eq("organization_id", organizationId)
+      .eq("id", requestedConversationId)
+      .maybeSingle<ConversationRow>();
+
+    if (requestedConversation) {
+      conversations = [requestedConversation, ...conversations];
+    }
+  }
   const contactIds = [...new Set(conversations.map((row) => row.contact_id))];
   const conversationIds = conversations.map((row) => row.id);
 
@@ -214,6 +240,7 @@ export default async function AtendimentoPage() {
   return (
     <div className="min-h-0">
       <AttendanceInbox
+        key={requestedConversationId ?? "attendance-inbox"}
         organizationId={organizationId}
         currentUserId={currentUserId}
         currentUserName={context.effectiveUser?.name ?? null}
@@ -227,6 +254,12 @@ export default async function AtendimentoPage() {
         canConfigure={canConfigure}
         evolutionReady={evolutionReady}
         initialConversations={items}
+        initialConversationId={
+          requestedConversationId &&
+          items.some((item) => item.id === requestedConversationId)
+            ? requestedConversationId
+            : null
+        }
         availableTags={tagRows ?? []}
         quickReplies={quickReplies}
         instance={
@@ -240,5 +273,11 @@ export default async function AtendimentoPage() {
         }
       />
     </div>
+  );
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
   );
 }

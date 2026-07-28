@@ -49,6 +49,7 @@ import { ClinicalFormRenderer } from "@/components/clinical/clinical-form-render
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuItem,
@@ -254,6 +255,7 @@ function TemplateListItem({
   onEdit: () => void;
   onDuplicate: () => void;
 }) {
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
   const [statusState, statusAction, statusPending] = useActionState(
     setClinicalTemplateStatus,
     initialActionState,
@@ -342,33 +344,56 @@ function TemplateListItem({
                   </form>
                 ) : null}
                 <DropdownMenuSeparator />
-                <form
-                  action={statusAction}
-                  onSubmit={close}
-                  className="contents"
-                >
-                  <input type="hidden" name="template_id" value={template.id} />
-                  <input
-                    type="hidden"
-                    name="status"
-                    value={template.status === "active" ? "archived" : "active"}
-                  />
-                  <DropdownSubmitItem
-                    icon={
-                      template.status === "active" ? Archive : ArchiveRestore
-                    }
-                    disabled={statusPending}
-                    label={
-                      template.status === "active" ? "Arquivar" : "Reativar"
-                    }
-                    destructive={template.status === "active"}
-                  />
-                </form>
+                {template.status === "active" ? (
+                  <DropdownMenuItem
+                    icon={Archive}
+                    variant="destructive"
+                    onSelect={() => {
+                      close();
+                      setConfirmingArchive(true);
+                    }}
+                  >
+                    Arquivar
+                  </DropdownMenuItem>
+                ) : (
+                  <form
+                    action={statusAction}
+                    onSubmit={close}
+                    className="contents"
+                  >
+                    <input
+                      type="hidden"
+                      name="template_id"
+                      value={template.id}
+                    />
+                    <input type="hidden" name="status" value="active" />
+                    <DropdownSubmitItem
+                      icon={ArchiveRestore}
+                      disabled={statusPending}
+                      label="Reativar"
+                    />
+                  </form>
+                )}
               </>
             )}
           </DropdownMenu>
         </div>
       </CardContent>
+      <ConfirmDialog
+        open={confirmingArchive && !statusState.success}
+        onClose={() => setConfirmingArchive(false)}
+        title="Arquivar modelo clínico?"
+        description={`${template.name} não poderá ser usado em novos atendimentos. Versões e prontuários existentes serão preservados.`}
+        confirmLabel="Arquivar modelo"
+        pendingLabel="Arquivando..."
+        destructive
+        pending={statusPending}
+        error={statusState.error}
+        formAction={statusAction}
+      >
+        <input type="hidden" name="template_id" value={template.id} />
+        <input type="hidden" name="status" value="archived" />
+      </ConfirmDialog>
     </Card>
   );
 }
@@ -699,16 +724,12 @@ function SortableSectionEditor({
             />
           </label>
         </div>
-        <Button
-          type="button"
-          variant="destructive-ghost"
-          size="icon"
-          aria-label={`Remover seção ${section.title}`}
+        <ConfirmRemovalButton
+          label={`Remover seção ${section.title}`}
+          description={`A seção “${section.title}” e todos os seus campos serão removidos deste modelo.`}
           disabled={!canRemove}
-          onClick={onRemove}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+          onConfirm={onRemove}
+        />
       </div>
 
       <div className="ml-0 mt-3 grid min-w-0 gap-3 sm:ml-10">
@@ -859,16 +880,12 @@ function SortableFieldEditor({
           </div>
           <FieldSettings field={field} onChange={onChange} />
         </div>
-        <Button
-          type="button"
-          variant="destructive-ghost"
-          size="icon"
-          aria-label={`Remover campo ${field.label}`}
+        <ConfirmRemovalButton
+          label={`Remover campo ${field.label}`}
+          description={`O campo “${field.label}” será removido desta seção.`}
           disabled={!canRemove}
-          onClick={onRemove}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+          onConfirm={onRemove}
+        />
       </div>
     </div>
   );
@@ -1032,21 +1049,17 @@ function ChoiceFieldSettings({
             }
             required
           />
-          <Button
-            type="button"
-            variant="destructive-ghost"
-            size="icon"
-            aria-label={`Remover opção ${option.label}`}
+          <ConfirmRemovalButton
+            label={`Remover opção ${option.label}`}
+            description={`A opção “${option.label}” será removida deste campo.`}
             disabled={field.options.length <= 1}
-            onClick={() =>
+            onConfirm={() =>
               onChange({
                 ...field,
                 options: field.options.filter((item) => item.id !== option.id),
               })
             }
-          >
-            <Trash2 className="size-4" />
-          </Button>
+          />
         </div>
       ))}
       <Button
@@ -1069,6 +1082,44 @@ function ChoiceFieldSettings({
         <Plus className="size-4" /> Opção
       </Button>
     </div>
+  );
+}
+
+function ConfirmRemovalButton({
+  description,
+  disabled,
+  label,
+  onConfirm,
+}: {
+  description: string;
+  disabled?: boolean;
+  label: string;
+  onConfirm: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="destructive-ghost"
+        size="icon"
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
+        <Trash2 className="size-4" />
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`${label}?`}
+        description={description}
+        confirmLabel="Remover"
+        destructive
+        onConfirm={onConfirm}
+      />
+    </>
   );
 }
 

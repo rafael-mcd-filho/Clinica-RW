@@ -51,7 +51,9 @@ export function Alert({
 
   return (
     <div
-      role={variant === "destructive" || variant === "warning" ? "alert" : "status"}
+      role={
+        variant === "destructive" || variant === "warning" ? "alert" : "status"
+      }
       className={cn(
         "flex items-start gap-3 rounded-lg border px-4 py-3 text-body-sm leading-5",
         variantClassName,

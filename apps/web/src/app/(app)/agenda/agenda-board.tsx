@@ -34,7 +34,6 @@ import {
   Stethoscope,
   UserCheck,
   UserCircle as UserRound,
-  Wallet as WalletCards,
   X,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -55,6 +54,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input, MultiSelect, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/ui/page-header";
 import { PatientSearchField } from "@/components/patient-search-field";
 import {
@@ -66,6 +66,7 @@ import {
 } from "@/lib/agenda/range";
 import { defaultScheduleColor } from "@/lib/colors";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { cn } from "@/lib/utils";
 import { formatCPF, formatPhoneBR } from "@/lib/validation/br";
 import { useCoalescedRouterRefresh } from "@/hooks/use-coalesced-router-refresh";
 
@@ -361,10 +362,6 @@ function AgendaCalendarView({
     () => new Map(data.insurances.map((item) => [item.id, item])),
     [data.insurances],
   );
-  const paymentMethod = useMemo(
-    () => new Map(data.paymentMethods.map((item) => [item.id, item])),
-    [data.paymentMethods],
-  );
   const encounterByAppointment = useMemo(
     () =>
       new Map(
@@ -641,7 +638,7 @@ function AgendaCalendarView({
               <Input
                 value={patientQuery}
                 onChange={(event) => setPatientQuery(event.target.value)}
-                placeholder="Buscar paciente por nome, telefone, e-mail ou código interno"
+                placeholder="Buscar paciente por nome, telefone ou e-mail"
                 className="w-full pl-9"
                 aria-label="Buscar paciente na agenda"
               />
@@ -763,11 +760,6 @@ function AgendaCalendarView({
           insurance={
             selectedAppointment.health_insurance_id
               ? insurance.get(selectedAppointment.health_insurance_id)
-              : undefined
-          }
-          paymentMethod={
-            selectedAppointment.payment_method_id
-              ? paymentMethod.get(selectedAppointment.payment_method_id)
               : undefined
           }
           paymentMethods={data.paymentMethods}
@@ -1685,7 +1677,6 @@ function AppointmentDetailsModal({
   unit,
   room,
   insurance,
-  paymentMethod,
   paymentMethods,
   encounter,
   canEdit,
@@ -1703,7 +1694,6 @@ function AppointmentDetailsModal({
   unit?: AgendaData["units"][number];
   room?: AgendaData["rooms"][number];
   insurance?: AgendaData["insurances"][number];
-  paymentMethod?: AgendaData["paymentMethods"][number];
   paymentMethods: AgendaData["paymentMethods"];
   encounter?: AgendaData["encounters"][number];
   canEdit: boolean;
@@ -1718,9 +1708,7 @@ function AppointmentDetailsModal({
   const appointmentStatus =
     statusLabel[appointment.status] ?? appointment.status;
   const canStartClinicalEncounter =
-    canStartEncounter &&
-    !encounter &&
-    !["attended", "no_show", "cancelled"].includes(appointment.status);
+    canStartEncounter && !encounter && appointment.status === "waiting";
 
   return (
     <Modal
@@ -1772,26 +1760,58 @@ function AppointmentDetailsModal({
             <SummaryItem
               label="Telefone"
               value={
-                patient?.phone
-                  ? formatPhoneBR(patient.phone)
-                  : patient?.whatsapp
-                    ? formatPhoneBR(patient.whatsapp)
-                    : "Nao informado"
+                patient?.phone ? (
+                  <a
+                    className="hover:text-primary hover:underline"
+                    href={`tel:${patient.phone}`}
+                  >
+                    {formatPhoneBR(patient.phone)}
+                  </a>
+                ) : patient?.whatsapp ? (
+                  <a
+                    className="hover:text-primary hover:underline"
+                    href={`tel:${patient.whatsapp}`}
+                  >
+                    {formatPhoneBR(patient.whatsapp)}
+                  </a>
+                ) : (
+                  "Nao informado"
+                )
               }
               icon={Phone}
             />
             <SummaryItem
               label="WhatsApp"
               value={
-                patient?.whatsapp
-                  ? formatPhoneBR(patient.whatsapp)
-                  : "Nao informado"
+                patient?.whatsapp ? (
+                  <a
+                    className="hover:text-primary hover:underline"
+                    href={`https://wa.me/${patient.whatsapp.replace(/\D/g, "")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {formatPhoneBR(patient.whatsapp)}
+                  </a>
+                ) : (
+                  "Nao informado"
+                )
               }
               icon={Phone}
             />
             <SummaryItem
               label="E-mail"
-              value={patient?.email || "Nao informado"}
+              value={
+                patient?.email ? (
+                  <a
+                    className="hover:text-primary hover:underline"
+                    href={`mailto:${patient.email}`}
+                  >
+                    {patient.email}
+                  </a>
+                ) : (
+                  "Nao informado"
+                )
+              }
               icon={Mail}
             />
           </div>
@@ -1833,11 +1853,6 @@ function AppointmentDetailsModal({
               label="Convenio"
               value={insurance?.name ?? "Particular"}
             />
-            <SummaryItem
-              label="Forma de pagamento"
-              value={paymentMethod?.name ?? "Nao selecionada"}
-              icon={WalletCards}
-            />
           </div>
 
           {canEdit ? (
@@ -1860,39 +1875,41 @@ function AppointmentDetailsModal({
           ) : null}
         </section>
 
-        <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:flex-wrap sm:justify-end">
-          {canViewPatient && patient ? (
-            <Button asChild variant="secondary">
-              <Link href={`/pacientes/${patient.id}`}>
-                <UserRound className="size-4" aria-hidden="true" />
-                Ir ao paciente
-              </Link>
-            </Button>
-          ) : null}
-          {canViewClinical && encounter ? (
-            <Button asChild variant="secondary">
-              <Link href={buildAgendaEncounterHref(encounter.id, returnTo)}>
-                <FileText className="size-4" aria-hidden="true" />
-                Abrir prontuario
-              </Link>
-            </Button>
-          ) : null}
-          {canStartClinicalEncounter ? (
-            <StartEncounterForm
-              appointmentId={appointment.id}
-              returnTo={returnTo}
-            />
-          ) : null}
-          {canEdit ? (
-            <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-col justify-between gap-3 border-t border-border pt-4 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap gap-2">
+            {canViewPatient && patient ? (
+              <Button asChild variant="secondary">
+                <Link href={`/pacientes/${patient.id}`}>
+                  <UserRound className="size-4" aria-hidden="true" />
+                  Ver paciente
+                </Link>
+              </Button>
+            ) : null}
+            {canViewClinical && encounter ? (
+              <Button asChild variant="secondary">
+                <Link href={buildAgendaEncounterHref(encounter.id, returnTo)}>
+                  <FileText className="size-4" aria-hidden="true" />
+                  Abrir prontuario
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            {canEdit ? (
               <StatusActions
                 appointmentId={appointment.id}
                 status={appointment.status}
                 startAt={appointment.start_at}
                 hideInProgressAction={canStartClinicalEncounter}
               />
-            </div>
-          ) : null}
+            ) : null}
+            {canStartClinicalEncounter ? (
+              <StartEncounterForm
+                appointmentId={appointment.id}
+                returnTo={returnTo}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
     </Modal>
@@ -1974,11 +1991,11 @@ function SummaryItem({
   icon: Icon,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   icon?: React.ComponentType<{ className?: string }>;
 }) {
   return (
-    <div className="min-w-0 rounded-md bg-background px-3 py-2">
+    <div className="min-w-0 border-b border-border/70 px-1 pb-2">
       <p className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
         {Icon ? <Icon className="size-3.5" aria-hidden="true" /> : null}
         {label}
@@ -2141,7 +2158,7 @@ function ScheduleBlockForm({ data }: { data: AgendaData }) {
         onClose={() => setOpen(false)}
         title="Bloquear horário"
         description="O bloqueio vale para a agenda interna e para o agendamento online."
-        className="max-w-xl"
+        className="max-w-3xl"
       >
         <form
           action={action}
@@ -2174,63 +2191,68 @@ function ScheduleBlockForm({ data }: { data: AgendaData }) {
           <input type="hidden" name="start_at" value={startValue} readOnly />
           <input type="hidden" name="end_at" value={endValue} readOnly />
 
-          <label className="grid min-w-0 gap-2 text-sm font-medium">
-            {allDay ? "Dia do bloqueio" : "Início do bloqueio"}
-            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_6rem]">
-              <DatePickerInput
-                name="block_start_date"
-                value={startDate}
-                onValueChange={(value) => {
-                  setStartDate(value);
-                  keepEndAfterStart(value, normalizedStartTime);
-                }}
-                required
-                ariaLabel="Início do bloqueio: data"
-                className="min-w-0"
-                todayValue={localDateKey(
-                  new Date().toISOString(),
-                  data.timeZone,
-                )}
-              />
-              {!allDay ? (
-                <TimeTextInput
-                  value={startTime}
-                  onChange={setStartTime}
-                  onBlur={() => {
-                    setStartTime(normalizedStartTime);
-                    keepEndAfterStart(startDate, normalizedStartTime);
-                  }}
-                  ariaLabel="Início do bloqueio: horário"
-                />
-              ) : null}
-            </div>
-          </label>
-
-          {!allDay ? (
-            <label className="grid min-w-0 gap-2 text-sm font-medium">
-              Fim do bloqueio
-              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_6rem]">
+          <div
+            className={cn("grid min-w-0 gap-4", allDay ? "" : "md:grid-cols-2")}
+          >
+            <label className="grid min-w-0 content-start gap-2 text-sm font-medium">
+              {allDay ? "Dia do bloqueio" : "Início do bloqueio"}
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_5rem]">
                 <DatePickerInput
-                  name="block_end_date"
-                  value={endDate}
-                  onValueChange={setEndDate}
+                  name="block_start_date"
+                  value={startDate}
+                  onValueChange={(value) => {
+                    setStartDate(value);
+                    keepEndAfterStart(value, normalizedStartTime);
+                  }}
                   required
-                  ariaLabel="Fim do bloqueio: data"
+                  ariaLabel="Início do bloqueio: data"
                   className="min-w-0"
                   todayValue={localDateKey(
                     new Date().toISOString(),
                     data.timeZone,
                   )}
                 />
-                <TimeTextInput
-                  value={endTime}
-                  onChange={setEndTime}
-                  onBlur={() => setEndTime(normalizedEndTime)}
-                  ariaLabel="Fim do bloqueio: horário"
-                />
+                {!allDay ? (
+                  <TimeTextInput
+                    value={startTime}
+                    onChange={setStartTime}
+                    onBlur={() => {
+                      setStartTime(normalizedStartTime);
+                      keepEndAfterStart(startDate, normalizedStartTime);
+                    }}
+                    ariaLabel="Início do bloqueio: horário"
+                  />
+                ) : null}
               </div>
             </label>
-          ) : null}
+
+            {!allDay ? (
+              <label className="grid min-w-0 content-start gap-2 text-sm font-medium">
+                Fim do bloqueio
+                <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_5rem]">
+                  <DatePickerInput
+                    name="block_end_date"
+                    value={endDate}
+                    onValueChange={setEndDate}
+                    required
+                    ariaLabel="Fim do bloqueio: data"
+                    className="min-w-0"
+                    panelAlign="end"
+                    todayValue={localDateKey(
+                      new Date().toISOString(),
+                      data.timeZone,
+                    )}
+                  />
+                  <TimeTextInput
+                    value={endTime}
+                    onChange={setEndTime}
+                    onBlur={() => setEndTime(normalizedEndTime)}
+                    ariaLabel="Fim do bloqueio: horário"
+                  />
+                </div>
+              </label>
+            ) : null}
+          </div>
 
           <label className="grid gap-2 text-sm font-medium">
             Motivo
@@ -2692,27 +2714,124 @@ function StatusActions({
     <div className="flex flex-wrap justify-end gap-2">
       <RescheduleForm appointmentId={appointmentId} startAt={startAt} />
       {visibleActions.map(([next, label, Icon]) => (
-        <form
+        <StatusActionForm
           key={String(next)}
-          action={changeAppointmentStatus.bind(
-            null,
-            appointmentId,
-            String(next),
-          )}
-        >
-          <Button
-            type="submit"
-            size="sm"
-            variant={
-              next === "cancelled" || next === "no_show" ? "ghost" : "secondary"
-            }
-          >
-            {typeof Icon !== "string" ? <Icon className="size-3.5" /> : null}
-            {String(label)}
-          </Button>
-        </form>
+          appointmentId={appointmentId}
+          nextStatus={String(next)}
+          label={String(label)}
+          icon={typeof Icon === "string" ? undefined : Icon}
+          destructive={next === "cancelled" || next === "no_show"}
+          requiresConfirmation={
+            next === "cancelled" || next === "no_show" || next === "attended"
+          }
+        />
       ))}
     </div>
+  );
+}
+
+function StatusActionForm({
+  appointmentId,
+  destructive,
+  icon: Icon,
+  label,
+  nextStatus,
+  requiresConfirmation,
+}: {
+  appointmentId: string;
+  destructive: boolean;
+  icon?: React.ComponentType<{ className?: string }>;
+  label: string;
+  nextStatus: string;
+  requiresConfirmation: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string>();
+  const [pending, startTransition] = useTransition();
+
+  async function updateStatus() {
+    setError(undefined);
+    const result = await changeAppointmentStatus(
+      appointmentId,
+      nextStatus,
+      initialState,
+    );
+    if (result.error) {
+      setError(result.error);
+      toast.error(result.error);
+      return false;
+    }
+    if (result.success) toast.success(result.success);
+    return true;
+  }
+
+  function closeConfirmation() {
+    setConfirming(false);
+    setError(undefined);
+  }
+
+  if (requiresConfirmation) {
+    const isFinalizing = nextStatus === "attended";
+    return (
+      <>
+        <Button
+          type="button"
+          size="sm"
+          variant={destructive ? "ghost" : "primary"}
+          disabled={pending}
+          onClick={() => setConfirming(true)}
+        >
+          {Icon ? <Icon className="size-3.5" /> : null}
+          {label}
+        </Button>
+        <ConfirmDialog
+          open={confirming}
+          onClose={closeConfirmation}
+          title={
+            isFinalizing
+              ? "Finalizar atendimento?"
+              : nextStatus === "cancelled"
+                ? "Cancelar agendamento?"
+                : "Registrar falta?"
+          }
+          description={
+            isFinalizing
+              ? "O agendamento será marcado como atendido. Confirme apenas após concluir o atendimento."
+              : nextStatus === "cancelled"
+                ? "O agendamento será cancelado e deixará de ocupar este horário."
+                : "O atendimento será marcado como falta no histórico do paciente."
+          }
+          confirmLabel={
+            isFinalizing
+              ? "Finalizar atendimento"
+              : nextStatus === "cancelled"
+                ? "Cancelar agendamento"
+                : "Registrar falta"
+          }
+          pendingLabel="Atualizando..."
+          destructive={destructive}
+          error={error}
+          onConfirm={updateStatus}
+        />
+      </>
+    );
+  }
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="primary"
+      disabled={pending}
+      onClick={() => {
+        startTransition(async () => {
+          await updateStatus();
+        });
+      }}
+    >
+      {Icon ? <Icon className="size-3.5" /> : null}
+      {pending ? "Atualizando..." : label}
+    </Button>
   );
 }
 

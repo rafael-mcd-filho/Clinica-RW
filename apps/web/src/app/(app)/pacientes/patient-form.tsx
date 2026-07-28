@@ -72,7 +72,12 @@ export function PatientForm({
           </p>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Field label="Nome completo" required wide error={fieldErrors.full_name}>
+          <Field
+            label="Nome completo"
+            required
+            wide
+            error={fieldErrors.full_name}
+          >
             <Input
               name="full_name"
               required
@@ -106,19 +111,23 @@ export function PatientForm({
               <option value="not_informed">Prefere não informar</option>
             </Select>
           </Field>
-          <Field label="CPF" error={fieldErrors.cpf}>
-            <MaskedInput
-              name="cpf"
-              inputMode="numeric"
-              maskKind="cpf"
-              defaultValue={patient?.cpf ?? ""}
-              placeholder="000.000.000-00"
-              aria-invalid={fieldErrors.cpf ? true : undefined}
-            />
-          </Field>
-          <Field label="RG">
-            <Input name="rg" defaultValue={patient?.rg ?? ""} />
-          </Field>
+          {!editing || canSeeSensitive ? (
+            <>
+              <Field label="CPF" error={fieldErrors.cpf}>
+                <MaskedInput
+                  name="cpf"
+                  inputMode="numeric"
+                  maskKind="cpf"
+                  defaultValue={patient?.cpf ?? ""}
+                  placeholder="000.000.000-00"
+                  aria-invalid={fieldErrors.cpf ? true : undefined}
+                />
+              </Field>
+              <Field label="RG">
+                <Input name="rg" defaultValue={patient?.rg ?? ""} />
+              </Field>
+            </>
+          ) : null}
           <Field label="Origem do paciente">
             <Input
               name="source"

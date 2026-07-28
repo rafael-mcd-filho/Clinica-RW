@@ -22,6 +22,7 @@ import {
 import type { FunnelBoardCard } from "./funnel-board";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Textarea } from "@/components/ui/field";
 import { cn, initialsFromName } from "@/lib/utils";
@@ -38,6 +39,7 @@ export function CardPanel({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"notes" | "history">("notes");
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [notes, setNotes] = useState<CardNoteEntry[] | null>(null);
   const [movements, setMovements] = useState<CardTimelineEntry[] | null>(null);
@@ -69,10 +71,11 @@ export function CardPanel({
     const result = await archiveCard(funnelId, card.id);
     if (result.error) {
       toast.error(result.error);
-      return;
+      return false;
     }
     toast.success(result.success);
     onClose();
+    return true;
   }
 
   function submitNote(formData: FormData) {
@@ -140,7 +143,7 @@ export function CardPanel({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={handleArchive}
+              onClick={() => setConfirmingArchive(true)}
             >
               <Archive className="size-4" aria-hidden="true" />
               Arquivar card
@@ -252,6 +255,16 @@ export function CardPanel({
           )}
         </div>
       </aside>
+      <ConfirmDialog
+        open={confirmingArchive}
+        onClose={() => setConfirmingArchive(false)}
+        title="Arquivar card?"
+        description={`O card de ${card.patient_name} sairá do fluxo ativo e ficará disponível apenas ao exibir arquivados.`}
+        confirmLabel="Arquivar card"
+        pendingLabel="Arquivando..."
+        destructive
+        onConfirm={handleArchive}
+      />
     </>
   );
 }

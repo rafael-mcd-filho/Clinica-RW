@@ -1,4 +1,4 @@
-import { SquaresFour as PanelsTopLeft } from "@phosphor-icons/react/dist/ssr";
+import { FlowArrow as Waypoints } from "@phosphor-icons/react/dist/ssr";
 import { CreateFunnelDialog } from "./create-funnel-dialog";
 import { PanelsList, type PanelRow } from "./panels-list";
 import { PageHeader } from "@/components/ui/page-header";
@@ -42,7 +42,7 @@ export default async function FunisPage() {
       <PageHeader
         title="Painéis"
         description="Controle vendas, jornadas, tarefas e atividades em um só lugar."
-        icon={PanelsTopLeft}
+        icon={Waypoints}
       />
 
       <PanelsList

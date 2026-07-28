@@ -403,25 +403,25 @@ export default async function EncounterPage({
           ]}
         />
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-        <div>
-          <Button asChild variant="secondary" size="sm">
-            <Link href={backDestination.href}>
-              <ArrowLeft className="size-4" /> {backDestination.label}
-            </Link>
-          </Button>
-          <h1 className="mt-4 text-heading-lg">
-            {patientResult.data.social_name || patientResult.data.full_name}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {entryResult.data.template_snapshot.name ?? "Template"} v
-            {entryResult.data.template_snapshot.version_number ?? 1}
-          </p>
-        </div>
-        <Badge
-          variant={encounter.status === "finalized" ? "success" : "warning"}
-        >
-          {encounter.status === "finalized" ? "Finalizado" : "Rascunho"}
-        </Badge>
+          <div>
+            <Button asChild variant="secondary" size="sm">
+              <Link href={backDestination.href}>
+                <ArrowLeft className="size-4" /> {backDestination.label}
+              </Link>
+            </Button>
+            <h1 className="mt-4 text-heading-lg">
+              {patientResult.data.social_name || patientResult.data.full_name}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {entryResult.data.template_snapshot.name ?? "Template"} v
+              {entryResult.data.template_snapshot.version_number ?? 1}
+            </p>
+          </div>
+          <Badge
+            variant={encounter.status === "finalized" ? "success" : "warning"}
+          >
+            {encounter.status === "finalized" ? "Finalizado" : "Rascunho"}
+          </Badge>
         </div>
       </div>
 

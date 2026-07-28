@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { CalendarDots as CalendarClock, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
 import type { OnlineBookingSlot } from "@/lib/online-booking/slots";
 
@@ -132,6 +133,8 @@ export function RescheduleCard({
 }
 
 export function CancelCard({ token }: { token: string }) {
+  const [reason, setReason] = useState("");
+  const [confirming, setConfirming] = useState(false);
   const actionForToken = cancelPublicBooking.bind(null, token);
   const [state, action, pending] = useActionState(actionForToken, initialState);
   useToastState(state);
@@ -145,17 +148,40 @@ export function CancelCard({ token }: { token: string }) {
         </div>
       </CardHeader>
       <CardContent>
-        <form action={action} className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <Input name="reason" placeholder="Motivo opcional" />
-          <Button type="submit" variant="secondary" disabled={pending}>
-            {pending ? "Cancelando..." : "Cancelar"}
+        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <Input
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Motivo opcional"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={pending}
+            onClick={() => setConfirming(true)}
+          >
+            Cancelar agendamento
           </Button>
           {state.error ? (
             <p className="text-sm text-destructive md:col-span-2">
               {state.error}
             </p>
           ) : null}
-        </form>
+        </div>
+        <ConfirmDialog
+          open={confirming && !state.success}
+          onClose={() => setConfirming(false)}
+          title="Cancelar agendamento?"
+          description="O horário será liberado e o cancelamento ficará registrado. Esta ação não pode ser desfeita pelo portal."
+          confirmLabel="Cancelar agendamento"
+          pendingLabel="Cancelando..."
+          destructive
+          pending={pending}
+          error={state.error}
+          formAction={action}
+        >
+          <input type="hidden" name="reason" value={reason} />
+        </ConfirmDialog>
       </CardContent>
     </Card>
   );

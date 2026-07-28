@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { FloppyDisk as Save } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { updateEmpresa, type UpdateEmpresaState } from "../actions";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
 import { LogoUploadField } from "@/components/ui/logo-upload-field";
 import { MaskedInput } from "@/components/ui/masked-input";
@@ -26,6 +27,10 @@ type EmpresaDetailsFormProps = {
 };
 
 export function EmpresaDetailsForm({ organization }: EmpresaDetailsFormProps) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const confirmedStatusRef = useRef(false);
+  const [status, setStatus] = useState(organization.status);
+  const [confirmingStatus, setConfirmingStatus] = useState(false);
   const updateEmpresaWithId = updateEmpresa.bind(null, organization.id);
   const [state, action, pending] = useActionState(
     updateEmpresaWithId,
@@ -35,85 +40,122 @@ export function EmpresaDetailsForm({ organization }: EmpresaDetailsFormProps) {
   useEffect(() => {
     if (state.success) {
       toast.success(state.success);
+      confirmedStatusRef.current = false;
     }
   }, [state]);
 
   return (
-    <form action={action} className="grid gap-5">
-      <LogoUploadField currentUrl={organization.logo_url} />
+    <>
+      <form
+        ref={formRef}
+        action={action}
+        className="grid gap-5"
+        onSubmit={(event) => {
+          const becomingInactive =
+            status !== organization.status &&
+            ["suspended", "cancelled"].includes(status);
+          if (becomingInactive && !confirmedStatusRef.current) {
+            event.preventDefault();
+            setConfirmingStatus(true);
+          }
+        }}
+      >
+        <LogoUploadField currentUrl={organization.logo_url} />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="grid gap-2 text-sm font-medium md:col-span-2">
-          <span>
-            Nome fantasia
-            <RequiredMark />
-          </span>
-          <Input required name="name" defaultValue={organization.name} />
-        </label>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="grid gap-2 text-sm font-medium md:col-span-2">
+            <span>
+              Nome fantasia
+              <RequiredMark />
+            </span>
+            <Input required name="name" defaultValue={organization.name} />
+          </label>
 
-        <label className="grid gap-2 text-sm font-medium">
-          Razão social
-          <Input
-            name="legal_name"
-            defaultValue={organization.legal_name ?? ""}
-          />
-        </label>
+          <label className="grid gap-2 text-sm font-medium">
+            Razão social
+            <Input
+              name="legal_name"
+              defaultValue={organization.legal_name ?? ""}
+            />
+          </label>
 
-        <label className="grid gap-2 text-sm font-medium">
-          CNPJ
-          <MaskedInput
-            name="document"
-            inputMode="numeric"
-            maskKind="cnpj"
-            defaultValue={organization.document ?? ""}
-            placeholder="00.000.000/0000-00"
-          />
-        </label>
+          <label className="grid gap-2 text-sm font-medium">
+            CNPJ
+            <MaskedInput
+              name="document"
+              inputMode="numeric"
+              maskKind="cnpj"
+              defaultValue={organization.document ?? ""}
+              placeholder="00.000.000/0000-00"
+            />
+          </label>
 
-        <label className="grid gap-2 text-sm font-medium">
-          Telefone
-          <MaskedInput
-            name="phone"
-            inputMode="tel"
-            maskKind="phone"
-            defaultValue={organization.phone ?? ""}
-            placeholder="(11) 0000-0000"
-          />
-        </label>
+          <label className="grid gap-2 text-sm font-medium">
+            Telefone
+            <MaskedInput
+              name="phone"
+              inputMode="tel"
+              maskKind="phone"
+              defaultValue={organization.phone ?? ""}
+              placeholder="(11) 0000-0000"
+            />
+          </label>
 
-        <label className="grid gap-2 text-sm font-medium">
-          E-mail
-          <Input
-            name="email"
-            type="email"
-            defaultValue={organization.email ?? ""}
-            placeholder="contato@empresa.com"
-          />
-        </label>
+          <label className="grid gap-2 text-sm font-medium">
+            E-mail
+            <Input
+              name="email"
+              type="email"
+              defaultValue={organization.email ?? ""}
+              placeholder="contato@empresa.com"
+            />
+          </label>
 
-        <label className="grid gap-2 text-sm font-medium">
-          Status
-          <Select name="status" defaultValue={organization.status}>
-            <option value="trial">Trial</option>
-            <option value="active">Ativa</option>
-            <option value="suspended">Suspensa</option>
-            <option value="cancelled">Cancelada</option>
-          </Select>
-        </label>
-      </div>
+          <label className="grid gap-2 text-sm font-medium">
+            Status
+            <Select name="status" value={status} onValueChange={setStatus}>
+              <option value="trial">Trial</option>
+              <option value="active">Ativa</option>
+              <option value="suspended">Suspensa</option>
+              <option value="cancelled">Cancelada</option>
+            </Select>
+          </label>
+        </div>
 
-      {state.error ? (
-        <p className="rounded border border-destructive-muted bg-destructive-muted px-3 py-2 text-sm text-destructive-foreground">
-          {state.error}
-        </p>
-      ) : null}
+        {state.error ? (
+          <p className="rounded border border-destructive-muted bg-destructive-muted px-3 py-2 text-sm text-destructive-foreground">
+            {state.error}
+          </p>
+        ) : null}
 
-      <div className="flex justify-end">
-        <Button type="submit" disabled={pending}>
-          <Save className="size-4" aria-hidden="true" />
-          {pending ? "Salvando..." : "Salvar alterações"}
-        </Button>
-      </div>
-    </form>
+        <div className="flex justify-end">
+          <Button type="submit" disabled={pending}>
+            <Save className="size-4" aria-hidden="true" />
+            {pending ? "Salvando..." : "Salvar alterações"}
+          </Button>
+        </div>
+      </form>
+      <ConfirmDialog
+        open={confirmingStatus}
+        onClose={() => setConfirmingStatus(false)}
+        title={
+          status === "cancelled" ? "Cancelar empresa?" : "Suspender empresa?"
+        }
+        description={
+          status === "cancelled"
+            ? "A empresa perderá o acesso operacional. Os dados serão preservados para auditoria."
+            : "Os usuários da empresa perderão o acesso até que ela seja reativada."
+        }
+        confirmLabel={
+          status === "cancelled" ? "Cancelar empresa" : "Suspender empresa"
+        }
+        destructive
+        onConfirm={() => {
+          confirmedStatusRef.current = true;
+          formRef.current?.requestSubmit();
+          confirmedStatusRef.current = false;
+        }}
+      />
+    </>
   );
 }

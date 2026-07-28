@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -33,9 +27,11 @@ export function DropdownMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(
-    null,
-  );
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    maxHeight: number;
+  } | null>(null);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -46,22 +42,57 @@ export function DropdownMenu({
     }
     const rect = trigger.getBoundingClientRect();
     const width = 224;
-    const left =
-      align === "end"
-        ? Math.max(8, rect.right - width)
-        : Math.min(rect.left, window.innerWidth - width - 8);
-    setCoords({ top: rect.bottom + 6, left });
+    const gap = 6;
+    const viewportPadding = 8;
+    const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
+    const availableBelow = Math.max(
+      0,
+      window.innerHeight - rect.bottom - viewportPadding - gap,
+    );
+    const panelHeight = panelRef.current?.scrollHeight ?? 240;
+    const openAbove =
+      availableBelow < Math.min(panelHeight, 240) &&
+      availableAbove > availableBelow;
+    const maxHeight = Math.max(
+      40,
+      Math.min(320, openAbove ? availableAbove : availableBelow),
+    );
+    const visibleHeight = Math.min(panelHeight, maxHeight);
+    const desiredLeft = align === "end" ? rect.right - width : rect.left;
+    const left = Math.min(
+      Math.max(viewportPadding, desiredLeft),
+      Math.max(viewportPadding, window.innerWidth - width - viewportPadding),
+    );
+    const top = openAbove
+      ? Math.max(viewportPadding, rect.top - gap - visibleHeight)
+      : Math.min(
+          rect.bottom + gap,
+          Math.max(viewportPadding, window.innerHeight - visibleHeight - gap),
+        );
+
+    setCoords({ top, left, maxHeight });
   }, [align]);
 
-  useLayoutEffect(() => {
-    if (open) {
-      updatePosition();
-    }
-  }, [open, updatePosition]);
+  const openMenu = useCallback(() => {
+    updatePosition();
+    setOpen(true);
+  }, [updatePosition]);
 
   useEffect(() => {
     if (!open) {
       return;
+    }
+
+    let positionFrame: number | null = null;
+
+    function schedulePositionUpdate() {
+      if (positionFrame !== null) {
+        return;
+      }
+      positionFrame = window.requestAnimationFrame(() => {
+        positionFrame = null;
+        updatePosition();
+      });
     }
 
     function onPointerDown(event: PointerEvent) {
@@ -82,18 +113,22 @@ export function DropdownMenu({
       }
     }
 
+    schedulePositionUpdate();
     window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    window.addEventListener("scroll", schedulePositionUpdate, true);
+    window.addEventListener("resize", schedulePositionUpdate);
 
     return () => {
+      if (positionFrame !== null) {
+        window.cancelAnimationFrame(positionFrame);
+      }
       window.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", schedulePositionUpdate, true);
+      window.removeEventListener("resize", schedulePositionUpdate);
     };
-  }, [open, close]);
+  }, [open, updatePosition]);
 
   return (
     <>
@@ -103,7 +138,7 @@ export function DropdownMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={triggerLabel}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => (open ? close() : openMenu())}
         className={cn(
           "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-[background-color,color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 aria-expanded:bg-muted aria-expanded:text-foreground",
           triggerClassName,
@@ -117,8 +152,12 @@ export function DropdownMenu({
             <div
               ref={panelRef}
               role="menu"
-              style={{ top: coords.top, left: coords.left }}
-              className="fixed z-[60] w-56 animate-content-enter overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]"
+              style={{
+                top: coords.top,
+                left: coords.left,
+                maxHeight: coords.maxHeight,
+              }}
+              className="pointer-events-auto fixed z-[60] w-56 animate-content-enter overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]"
             >
               {children(close)}
             </div>,

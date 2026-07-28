@@ -1,69 +1,10 @@
-import {
-  Buildings as Building2,
-  CalendarDots as CalendarDays,
-  ClipboardText as ClipboardList,
-  Globe as Globe2,
-  GearSix as Settings,
-  Tag as Tags,
-  ChatCircle as MessageCircle,
-  UsersThree as UsersRound,
-} from "@phosphor-icons/react/dist/ssr";
-import type { Icon as LucideIcon } from "@phosphor-icons/react";
+import { GearSix as Settings } from "@phosphor-icons/react/dist/ssr";
 import type {
   CompanyConfigurationAccess,
   CompanyConfigurationRoute,
 } from "./_lib/server";
 import { PageHeader } from "@/components/ui/page-header";
-
-const pageMetadata: Record<
-  CompanyConfigurationRoute,
-  {
-    title: string;
-    icon: LucideIcon;
-    description: (organizationName: string) => string;
-  }
-> = {
-  cadastros: {
-    title: "Cadastros e operação",
-    icon: Building2,
-    description: (name) =>
-      `Dados da clínica, estrutura, equipe e serviços de ${name}.`,
-  },
-  "usuarios-acessos": {
-    title: "Usuários e acessos",
-    icon: UsersRound,
-    description: (name) =>
-      `Contas, perfis, permissões e escopos de acesso de ${name}.`,
-  },
-  agenda: {
-    title: "Agenda",
-    icon: CalendarDays,
-    description: (name) => `Agendas, disponibilidades e bloqueios de ${name}.`,
-  },
-  "agendamento-online": {
-    title: "Agendamento online",
-    icon: Globe2,
-    description: (name) =>
-      `Regras, perfil público e disponibilidade online de ${name}.`,
-  },
-  whatsapp: {
-    title: "WhatsApp",
-    icon: MessageCircle,
-    description: (name) =>
-      `Conexão da Evolution API e canal de atendimento de ${name}.`,
-  },
-  "tags-automacoes": {
-    title: "Tags e automações",
-    icon: Tags,
-    description: (name) => `Tags de pacientes e regras automáticas de ${name}.`,
-  },
-  "modelos-clinicos": {
-    title: "Modelos clínicos",
-    icon: ClipboardList,
-    description: (name) =>
-      `Fichas de atendimento e documentos clínicos de ${name}.`,
-  },
-};
+import { configurationSections } from "./_lib/sections";
 
 export function CompanyConfigurationPage({
   access,
@@ -74,14 +15,14 @@ export function CompanyConfigurationPage({
   children: React.ReactNode;
   route: CompanyConfigurationRoute;
 }) {
-  const metadata = pageMetadata[route];
+  const metadata = configurationSections[route];
 
   return (
     <div className="grid min-w-0 gap-6">
       <PageHeader
         icon={metadata.icon}
         title={metadata.title}
-        description={metadata.description(access.organization.name)}
+        description={metadata.pageDescription(access.organization.name)}
       />
       {children}
     </div>

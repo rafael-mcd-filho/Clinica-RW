@@ -5,10 +5,20 @@ import {
 } from "./patients-table";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { PageHeader } from "@/components/ui/page-header";
+import { getPatientCompleteness } from "@/lib/patients/completeness";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { UsersThree as UsersRound } from "@phosphor-icons/react/dist/ssr";
 
 type PatientTagRow = { patient_id: string; tag_id: string };
+type PatientAddressRow = {
+  patient_id: string;
+  postal_code: string | null;
+  address_line: string | null;
+  address_number: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
+};
 type LatestEncounterRow = {
   id: string;
   patient_id: string;
@@ -46,8 +56,10 @@ export default async function PacientesPage({
   const params = await searchParams;
   const page = positiveInteger(params.page, 1);
   const queryText = (params.q ?? "").trim().slice(0, 100);
-  const status = ["active", "archived", "all"].includes(params.status ?? "")
-    ? (params.status as "active" | "archived" | "all")
+  const status = ["active", "archived", "deceased", "all"].includes(
+    params.status ?? "",
+  )
+    ? (params.status as "active" | "archived" | "deceased" | "all")
     : "active";
   const sort = ["name", "newest", "oldest"].includes(params.sort ?? "")
     ? (params.sort as "name" | "newest" | "oldest")
@@ -79,17 +91,22 @@ export default async function PacientesPage({
     (item) => item.patient_id,
   );
   const patientSelect = canSeeSensitive
-    ? "id, full_name, social_name, birth_date, cpf, email, phone, whatsapp, status, source, deleted_at, created_at"
-    : "id, full_name, social_name, birth_date, email, phone, whatsapp, status, source, deleted_at, created_at";
+    ? "id, full_name, social_name, birth_date, sex_at_birth, cpf, rg, email, phone, whatsapp, preferred_contact, allow_whatsapp, allow_email, status, source, deceased_at, deleted_at, created_at"
+    : "id, full_name, social_name, birth_date, sex_at_birth, email, phone, whatsapp, preferred_contact, allow_whatsapp, allow_email, status, source, deceased_at, deleted_at, created_at";
   let patientsQuery = supabase
     .from("patients")
-    .select(patientSelect, { count: "exact" })
+    .select(patientSelect as string, { count: "exact" })
     .eq("organization_id", organizationId);
 
   if (status === "active") {
-    patientsQuery = patientsQuery.is("deleted_at", null);
+    patientsQuery = patientsQuery
+      .eq("status", "active")
+      .is("deleted_at", null)
+      .is("deceased_at", null);
   } else if (status === "archived") {
     patientsQuery = patientsQuery.not("deleted_at", "is", null);
+  } else if (status === "deceased") {
+    patientsQuery = patientsQuery.not("deceased_at", "is", null);
   }
 
   if (tagId !== "all") {
@@ -131,20 +148,31 @@ export default async function PacientesPage({
   const patients = patientsResult.data ?? [];
   const pagePatientIds = patients.map((patient) => patient.id);
 
-  const [patientTagsResult, latestEncountersResult] = await Promise.all([
-    pagePatientIds.length
-      ? supabase
-          .from("patient_tags")
-          .select("patient_id, tag_id")
-          .eq("organization_id", organizationId)
-          .in("patient_id", pagePatientIds)
-          .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-          .returns<PatientTagRow[]>()
-      : Promise.resolve({ data: [] as PatientTagRow[] }),
-    canViewClinicalRecords && pagePatientIds.length
-      ? fetchLatestPatientEncounters(supabase, organizationId, pagePatientIds)
-      : Promise.resolve({ data: [] as LatestEncounterRow[] }),
-  ]);
+  const [patientTagsResult, latestEncountersResult, addressesResult] =
+    await Promise.all([
+      pagePatientIds.length
+        ? supabase
+            .from("patient_tags")
+            .select("patient_id, tag_id")
+            .eq("organization_id", organizationId)
+            .in("patient_id", pagePatientIds)
+            .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+            .returns<PatientTagRow[]>()
+        : Promise.resolve({ data: [] as PatientTagRow[] }),
+      canViewClinicalRecords && pagePatientIds.length
+        ? fetchLatestPatientEncounters(supabase, organizationId, pagePatientIds)
+        : Promise.resolve({ data: [] as LatestEncounterRow[] }),
+      canSeeSensitive && pagePatientIds.length
+        ? supabase
+            .from("patient_addresses")
+            .select(
+              "patient_id, postal_code, address_line, address_number, district, city, state",
+            )
+            .eq("organization_id", organizationId)
+            .in("patient_id", pagePatientIds)
+            .returns<PatientAddressRow[]>()
+        : Promise.resolve({ data: [] as PatientAddressRow[] }),
+    ]);
 
   const tagIdsByPatient = new Map<string, string[]>();
   (patientTagsResult.data ?? []).forEach((item) => {
@@ -158,11 +186,41 @@ export default async function PacientesPage({
       encounter,
     ]),
   );
+  const addressByPatient = new Map(
+    (addressesResult.data ?? []).map((address) => [
+      address.patient_id,
+      address,
+    ]),
+  );
   const rows = patients.map((patient) => {
     const encounter = latestEncounterByPatient.get(patient.id);
+    const address = addressByPatient.get(patient.id);
+    const completeness = getPatientCompleteness({
+      fullName: patient.full_name,
+      birthDate: patient.birth_date,
+      sexAtBirth: patient.sex_at_birth,
+      cpf: patient.cpf,
+      rg: patient.rg,
+      source: patient.source,
+      email: patient.email,
+      phone: patient.phone,
+      whatsapp: patient.whatsapp,
+      preferredContact: patient.preferred_contact,
+      allowWhatsapp: patient.allow_whatsapp,
+      allowEmail: patient.allow_email,
+      postalCode: address?.postal_code,
+      addressLine: address?.address_line,
+      addressNumber: address?.address_number,
+      district: address?.district,
+      city: address?.city,
+      state: address?.state,
+    });
 
     return {
       ...patient,
+      completenessAvailable: canSeeSensitive,
+      completenessMissing: canSeeSensitive ? completeness.missing : [],
+      completenessPercentage: canSeeSensitive ? completeness.percentage : 0,
       tagIds: tagIdsByPatient.get(patient.id) ?? [],
       lastEncounterId: encounter?.id ?? null,
       lastEncounterAt: encounter?.started_at ?? null,

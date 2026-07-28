@@ -3,11 +3,13 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import { createPortal } from "react-dom";
 import { DayPicker, type DateRange } from "react-day-picker";
 import { ptBR } from "date-fns/locale";
 import { CalendarDots as CalendarDays } from "@phosphor-icons/react";
@@ -45,6 +47,7 @@ export function DatePickerInput({
   const [internalValue, setInternalValue] = useState(defaultValue ?? "");
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
   const value = controlledValue ?? internalValue;
   const selected = useMemo(() => parseDateKey(value), [value]);
@@ -53,7 +56,10 @@ export function DatePickerInput({
     if (!open) return;
 
     function closeOnPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      if (
+        !rootRef.current?.contains(event.target as Node) &&
+        !panelRef.current?.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -106,14 +112,12 @@ export function DatePickerInput({
         </span>
       </Button>
       {open ? (
-        <div
+        <CalendarPopover
           id={panelId}
-          role="dialog"
-          aria-label={ariaLabel}
-          className={cn(
-            "absolute z-40 mt-2 max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-border bg-popover p-3 shadow-[var(--shadow-lg)]",
-            panelAlign === "end" ? "right-0" : "left-0",
-          )}
+          ariaLabel={ariaLabel}
+          anchorRef={triggerRef}
+          panelRef={panelRef}
+          align={panelAlign}
         >
           <DayPicker
             mode="single"
@@ -129,18 +133,19 @@ export function DatePickerInput({
             classNames={{
               caption_label: "text-sm font-semibold capitalize",
               chevron: "size-4 fill-current",
-              day: "size-9 rounded-md text-sm hover:bg-muted",
+              day: "h-9 w-9 p-0 text-center text-sm",
               day_button: "size-9 rounded-md",
               dropdowns: "flex items-center gap-2",
               month_caption:
                 "mb-2 flex min-h-9 items-center justify-center text-center",
+              month_grid: "w-[252px] table-fixed border-collapse",
               months: "grid gap-3",
               nav: "absolute inset-x-3 top-3 flex justify-between",
               selected:
                 "rounded-md bg-primary text-primary-foreground hover:bg-primary",
               today: "font-semibold text-primary",
-              weekdays: "grid grid-cols-7 text-xs text-muted-foreground",
-              week: "grid grid-cols-7",
+              weekday:
+                "h-9 w-9 p-0 text-center text-xs font-medium text-muted-foreground",
             }}
           />
           <div className="mt-2 flex justify-between border-t border-border pt-2">
@@ -173,7 +178,7 @@ export function DatePickerInput({
               Hoje
             </Button>
           </div>
-        </div>
+        </CalendarPopover>
       ) : null}
     </div>
   );
@@ -209,6 +214,7 @@ export function DateRangePickerInput({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
   const isDesktop = useSyncExternalStore(
     subscribeToDesktopCalendar,
@@ -233,7 +239,10 @@ export function DateRangePickerInput({
     if (!open) return;
 
     function closeOnPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      if (
+        !rootRef.current?.contains(event.target as Node) &&
+        !panelRef.current?.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -285,14 +294,12 @@ export function DateRangePickerInput({
         </span>
       </Button>
       {open ? (
-        <div
+        <CalendarPopover
           id={panelId}
-          role="dialog"
-          aria-label="Selecionar intervalo de datas"
-          className={cn(
-            "absolute z-40 mt-2 max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-border bg-popover p-3 shadow-[var(--shadow-lg)]",
-            panelAlign === "end" ? "right-0" : "left-0",
-          )}
+          ariaLabel="Selecionar intervalo de datas"
+          anchorRef={triggerRef}
+          panelRef={panelRef}
+          align={panelAlign}
         >
           <DayPicker
             mode="range"
@@ -306,10 +313,11 @@ export function DateRangePickerInput({
             classNames={{
               caption_label: "text-sm font-semibold capitalize",
               chevron: "size-4 fill-current",
-              day: "size-9 rounded-md text-sm hover:bg-muted",
+              day: "h-9 w-9 p-0 text-center text-sm",
               day_button: "size-9 rounded-md",
               month_caption:
                 "mb-2 flex min-h-9 items-center justify-center text-center",
+              month_grid: "w-[252px] table-fixed border-collapse",
               months: "grid gap-3 md:grid-cols-2",
               nav: "absolute inset-x-3 top-3 flex justify-between",
               range_end: "rounded-r-md bg-primary text-primary-foreground",
@@ -317,8 +325,8 @@ export function DateRangePickerInput({
               range_start: "rounded-l-md bg-primary text-primary-foreground",
               selected: "bg-primary text-primary-foreground",
               today: "font-semibold text-primary",
-              weekdays: "grid grid-cols-7 text-xs text-muted-foreground",
-              week: "grid grid-cols-7",
+              weekday:
+                "h-9 w-9 p-0 text-center text-xs font-medium text-muted-foreground",
             }}
             numberOfMonths={isDesktop ? 2 : 1}
           />
@@ -350,9 +358,91 @@ export function DateRangePickerInput({
               Fechar
             </Button>
           </div>
-        </div>
+        </CalendarPopover>
       ) : null}
     </div>
+  );
+}
+
+function CalendarPopover({
+  align,
+  anchorRef,
+  ariaLabel,
+  children,
+  id,
+  panelRef,
+}: {
+  align: "start" | "end";
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
+  ariaLabel: string;
+  children: React.ReactNode;
+  id: string;
+  panelRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [position, setPosition] = useState({ left: 16, top: 16 });
+
+  useLayoutEffect(() => {
+    function placePopover() {
+      const anchor = anchorRef.current;
+      const panel = panelRef.current;
+      if (!anchor || !panel) return;
+
+      const viewportPadding = 16;
+      const gap = 8;
+      const anchorRect = anchor.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - anchorRect.bottom - gap;
+      const spaceAbove = anchorRect.top - gap;
+      const openAbove =
+        spaceBelow < panelRect.height && spaceAbove > spaceBelow;
+      const preferredTop = openAbove
+        ? anchorRect.top - panelRect.height - gap
+        : anchorRect.bottom + gap;
+      const preferredLeft =
+        align === "end" ? anchorRect.right - panelRect.width : anchorRect.left;
+
+      setPosition({
+        left: Math.max(
+          viewportPadding,
+          Math.min(
+            preferredLeft,
+            window.innerWidth - panelRect.width - viewportPadding,
+          ),
+        ),
+        top: Math.max(
+          viewportPadding,
+          Math.min(
+            preferredTop,
+            window.innerHeight - panelRect.height - viewportPadding,
+          ),
+        ),
+      });
+    }
+
+    placePopover();
+    window.addEventListener("resize", placePopover);
+    window.addEventListener("scroll", placePopover, true);
+    return () => {
+      window.removeEventListener("resize", placePopover);
+      window.removeEventListener("scroll", placePopover, true);
+    };
+  }, [align, anchorRef, panelRef]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      id={id}
+      role="dialog"
+      aria-label={ariaLabel}
+      data-date-picker-popover
+      style={{ left: position.left, top: position.top }}
+      className="pointer-events-auto fixed z-[70] max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-border bg-popover p-3 shadow-[var(--shadow-lg)]"
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
 

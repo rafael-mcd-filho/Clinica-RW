@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
 import { getRequestContext } from "@/lib/auth/context";
 import {
@@ -84,6 +85,24 @@ const clinicalSchema = z.object({
   emergency_contact_relationship: optionalText,
 });
 
+const patientLifeStatusSchema = z
+  .object({
+    deceased: z.boolean(),
+    deceased_at: z.string().optional(),
+    death_notes: z.string().trim().max(1000).optional(),
+  })
+  .superRefine((data, context) => {
+    if (!data.deceased) return;
+    if (!data.deceased_at || !/^\d{4}-\d{2}-\d{2}$/.test(data.deceased_at)) {
+      context.addIssue({
+        code: "custom",
+        path: ["deceased_at"],
+        message: "Informe a data do óbito.",
+      });
+      return;
+    }
+  });
+
 async function requirePatientContext(permission: string) {
   const context = await getRequestContext();
 
@@ -159,10 +178,28 @@ function friendlyError(message: string) {
   if (message.includes("patients_organization_cpf_active_key")) {
     return "Já existe um paciente ativo com este CPF.";
   }
+  if (message.includes("patients_deceased_after_birth_check")) {
+    return "A data do óbito não pode ser anterior à data de nascimento.";
+  }
+  if (message.includes("patients_deceased_not_future_check")) {
+    return "A data do óbito não pode estar no futuro.";
+  }
   if (message.includes("duplicate key")) {
     return "Já existe um registro ativo com estes dados.";
   }
   return message;
+}
+
+function currentDateInTimeZone(timeZone: string | null | undefined) {
+  try {
+    return formatInTimeZone(
+      new Date(),
+      timeZone || "America/Fortaleza",
+      "yyyy-MM-dd",
+    );
+  } catch {
+    return formatInTimeZone(new Date(), "America/Fortaleza", "yyyy-MM-dd");
+  }
 }
 
 export async function createPatient(
@@ -255,9 +292,15 @@ export async function updatePatient(
 
   const supabase = await createSupabaseServerClient();
   const organizationId = context.organization.id;
+  const updatePayload: Partial<ReturnType<typeof patientPayload>> =
+    patientPayload(parsed.data);
+  if (!context.permissionCodes.has("paciente.ver_dados_sensiveis")) {
+    delete updatePayload.cpf;
+    delete updatePayload.rg;
+  }
   const { error } = await supabase
     .from("patients")
-    .update(patientPayload(parsed.data))
+    .update(updatePayload)
     .eq("id", patientId)
     .eq("organization_id", organizationId);
 
@@ -293,7 +336,8 @@ export async function updateClinicalSummary(
   const context = await requirePatientContext("paciente.ver_dados_sensiveis");
   if (
     !context?.organization ||
-    !z.string().uuid().safeParse(patientId).success
+    !z.string().uuid().safeParse(patientId).success ||
+    !context.permissionCodes.has("paciente.editar")
   ) {
     return { error: "Acesso aos dados clínicos negado." };
   }
@@ -323,6 +367,92 @@ export async function updateClinicalSummary(
 
   revalidatePath(`/pacientes/${patientId}`);
   return { success: "Resumo clínico atualizado." };
+}
+
+export async function updatePatientLifeStatus(
+  patientId: string,
+  _previousState: PatientActionState,
+  formData: FormData,
+): Promise<PatientActionState> {
+  const context = await requirePatientContext("paciente.editar");
+  if (
+    !context?.organization ||
+    !z.string().uuid().safeParse(patientId).success ||
+    !context.permissionCodes.has("paciente.ver_dados_sensiveis")
+  ) {
+    return { error: "Paciente inválido ou acesso negado." };
+  }
+
+  const parsed = patientLifeStatusSchema.safeParse({
+    deceased: formData.get("deceased") === "true",
+    deceased_at: String(formData.get("deceased_at") ?? ""),
+    death_notes: String(formData.get("death_notes") ?? ""),
+  });
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "Dados inválidos.",
+      fieldErrors: fieldErrorsFromIssues(parsed.error.issues),
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const deceased = parsed.data.deceased;
+  const [currentPatientResult, timezoneResult] = await Promise.all([
+    supabase
+      .from("patients")
+      .select("id")
+      .eq("id", patientId)
+      .eq("organization_id", context.organization.id)
+      .maybeSingle<{ id: string }>(),
+    supabase
+      .from("organization_settings")
+      .select("timezone")
+      .eq("organization_id", context.organization.id)
+      .maybeSingle<{ timezone: string | null }>(),
+  ]);
+  const currentPatient = currentPatientResult.data;
+
+  if (!currentPatient) return { error: "Paciente não encontrado." };
+  if (
+    deceased &&
+    parsed.data.deceased_at &&
+    parsed.data.deceased_at >
+      currentDateInTimeZone(timezoneResult.data?.timezone)
+  ) {
+    return { error: "A data do óbito não pode estar no futuro." };
+  }
+
+  const { error } = await supabase
+    .from("patients")
+    .update(
+      deceased
+        ? {
+            deceased_at: parsed.data.deceased_at,
+            death_notes: emptyToNull(parsed.data.death_notes),
+            deceased_recorded_at: new Date().toISOString(),
+            deceased_recorded_by_user_id: context.effectiveUser?.id ?? null,
+          }
+        : {
+            deceased_at: null,
+            death_notes: null,
+            deceased_recorded_at: null,
+            deceased_recorded_by_user_id: null,
+          },
+    )
+    .eq("id", patientId)
+    .eq("organization_id", context.organization.id);
+
+  if (error) return { error: friendlyError(error.message) };
+
+  revalidatePath("/pacientes");
+  revalidatePath(`/pacientes/${patientId}`);
+  revalidatePath(`/pacientes/${patientId}/editar`);
+  return {
+    ok: true,
+    success: deceased
+      ? "Óbito registrado. Envios e automações de aniversário foram bloqueados."
+      : "Registro de óbito removido.",
+  };
 }
 
 export async function addPatientConsent(

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { createFunnel } from "./actions";
 import { categoricalColors, defaultStageColor } from "@/lib/colors";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 
@@ -197,6 +198,7 @@ export function CreateFunnelDialog() {
   const [stages, setStages] = useState<StageDraft[]>([
     { ...blankStage(), name: "Novo", stage_type: "initial" },
   ]);
+  const [stageToRemove, setStageToRemove] = useState<StageDraft | null>(null);
   const [state, action, pending] = useActionState(createFunnel, {});
 
   useEffect(() => {
@@ -365,7 +367,7 @@ export function CreateFunnelDialog() {
                     variant="ghost"
                     size="icon"
                     aria-label="Remover etapa"
-                    onClick={() => removeStage(stage.key)}
+                    onClick={() => setStageToRemove(stage)}
                     disabled={stages.length <= 1}
                   >
                     <Trash2 className="size-4" aria-hidden="true" />
@@ -380,6 +382,17 @@ export function CreateFunnelDialog() {
           ) : null}
         </form>
       </Modal>
+      <ConfirmDialog
+        open={Boolean(stageToRemove)}
+        onClose={() => setStageToRemove(null)}
+        title="Remover etapa?"
+        description={`A etapa “${stageToRemove?.name || "Sem nome"}” e os dados preenchidos nela serão removidos deste painel.`}
+        confirmLabel="Remover etapa"
+        destructive
+        onConfirm={() => {
+          if (stageToRemove) removeStage(stageToRemove.key);
+        }}
+      />
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/field";
 import { FormError } from "@/components/ui/form-error";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
@@ -95,6 +96,9 @@ export function OnlineBookingSettings({
   );
   const [activeSection, setActiveSection] =
     useState<BookingSettingsSection>("rules");
+  const settingsFormRef = useRef<HTMLFormElement>(null);
+  const confirmedDisableRef = useRef(false);
+  const [confirmingDisable, setConfirmingDisable] = useState(false);
 
   useEffect(() => {
     if (state.success) toast.success(state.success);
@@ -160,7 +164,22 @@ export function OnlineBookingSettings({
           </div>
         </CardHeader>
         <CardContent>
-          <form action={action} className="grid gap-4">
+          <form
+            ref={settingsFormRef}
+            action={action}
+            className="grid gap-4"
+            onSubmit={(event) => {
+              const enabled = new FormData(event.currentTarget).has("enabled");
+              if (
+                settings.enabled &&
+                !enabled &&
+                !confirmedDisableRef.current
+              ) {
+                event.preventDefault();
+                setConfirmingDisable(true);
+              }
+            }}
+          >
             <div
               hidden={activeSection !== "rules"}
               className="grid gap-4 md:grid-cols-3"
@@ -398,6 +417,19 @@ export function OnlineBookingSettings({
               </Button>
             </div>
           </form>
+          <ConfirmDialog
+            open={confirmingDisable}
+            onClose={() => setConfirmingDisable(false)}
+            title="Despublicar agendamento online?"
+            description="O link público deixará de aceitar novas solicitações. Agendamentos e solicitações existentes serão preservados."
+            confirmLabel="Despublicar portal"
+            destructive
+            onConfirm={() => {
+              confirmedDisableRef.current = true;
+              settingsFormRef.current?.requestSubmit();
+              confirmedDisableRef.current = false;
+            }}
+          />
         </CardContent>
       </Card>
 

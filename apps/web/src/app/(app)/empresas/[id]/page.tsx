@@ -222,29 +222,27 @@ export default async function EmpresaDetailsPage({
           ]}
         />
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-        <div className="flex min-w-0 items-start gap-3">
-          <Button asChild variant="secondary" size="icon">
-            <Link href="/empresas" aria-label="Voltar para empresas">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-            </Link>
-          </Button>
-          <div className="min-w-0">
-            <h1 className="truncate text-heading-lg">
-              {organization.name}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Cadastro e operacao da empresa cliente.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Criada em {formatDate(organization.created_at)}
-            </p>
+          <div className="flex min-w-0 items-start gap-3">
+            <Button asChild variant="secondary" size="icon">
+              <Link href="/empresas" aria-label="Voltar para empresas">
+                <ArrowLeft className="size-4" aria-hidden="true" />
+              </Link>
+            </Button>
+            <div className="min-w-0">
+              <h1 className="truncate text-heading-lg">{organization.name}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Cadastro e operacao da empresa cliente.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Criada em {formatDate(organization.created_at)}
+              </p>
+            </div>
           </div>
-        </div>
-        <ImpersonateButton
-          organizationId={organization.id}
-          organizationName={organization.name}
-          users={orgUsers}
-        />
+          <ImpersonateButton
+            organizationId={organization.id}
+            organizationName={organization.name}
+            users={orgUsers}
+          />
         </div>
       </section>
 

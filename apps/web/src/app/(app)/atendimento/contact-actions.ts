@@ -155,7 +155,8 @@ export type ContactDetailsData = {
 };
 
 export type ContactDetailsResult =
-  { ok: true; data: ContactDetailsData } | { ok: false; error: string };
+  | { ok: true; data: ContactDetailsData }
+  | { ok: false; error: string };
 
 type ConversationRow = { id: string; contact_id: string };
 type ContactRow = {

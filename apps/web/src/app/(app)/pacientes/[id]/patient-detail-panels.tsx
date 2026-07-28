@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   Check,
   CheckCircle as CheckCircle2,
@@ -22,6 +22,7 @@ import { categoricalColors } from "@/lib/colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 
 const initialState: PatientActionState = {};
@@ -247,17 +248,7 @@ export function ConsentsPanel({
                 </p>
               </div>
               {canEdit && !consent.revoked_at ? (
-                <form
-                  action={revokePatientConsent.bind(
-                    null,
-                    patientId,
-                    consent.id,
-                  )}
-                >
-                  <Button type="submit" variant="ghost" size="sm">
-                    Revogar
-                  </Button>
-                </form>
+                <RevokeConsentButton patientId={patientId} consent={consent} />
               ) : null}
             </div>
           ))}
@@ -332,32 +323,13 @@ export function TagsPanel({
           {tags.map((tag) => {
             const selected = selectedTagIds.includes(tag.id);
             return (
-              <form
+              <PatientTagToggle
                 key={tag.id}
-                action={setPatientTag.bind(null, patientId, tag.id, !selected)}
-              >
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  disabled={!canEdit}
-                  className="gap-2 shadow-none disabled:cursor-default"
-                  style={{
-                    borderColor: tag.color,
-                    color: tag.color,
-                    backgroundColor: selected ? `${tag.color}14` : undefined,
-                  }}
-                >
-                  <span
-                    className="flex size-4 items-center justify-center rounded border"
-                    style={{ borderColor: tag.color }}
-                  >
-                    {selected ? (
-                      <Check className="size-3.5" aria-hidden="true" />
-                    ) : null}
-                  </span>
-                  {tag.name}
-                </Button>
-              </form>
+                patientId={patientId}
+                tag={tag}
+                selected={selected}
+                disabled={!canEdit}
+              />
             );
           })}
           {!tags.length ? (
@@ -368,6 +340,96 @@ export function TagsPanel({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function RevokeConsentButton({
+  consent,
+  patientId,
+}: {
+  consent: ConsentRow;
+  patientId: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const label = consentLabel[consent.consent_type] ?? consent.consent_type;
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => setConfirming(true)}
+      >
+        Revogar
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="Revogar consentimento?"
+        description={`O consentimento para “${label}” será revogado e a alteração ficará registrada no histórico.`}
+        confirmLabel="Revogar consentimento"
+        destructive
+        onConfirm={() => revokePatientConsent(patientId, consent.id)}
+      />
+    </>
+  );
+}
+
+function PatientTagToggle({
+  disabled,
+  patientId,
+  selected,
+  tag,
+}: {
+  disabled: boolean;
+  patientId: string;
+  selected: boolean;
+  tag: TagRow;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const button = (
+    <Button
+      type={selected ? "button" : "submit"}
+      variant="secondary"
+      disabled={disabled}
+      className="gap-2 shadow-none disabled:cursor-default"
+      style={{
+        borderColor: tag.color,
+        color: tag.color,
+        backgroundColor: selected ? `${tag.color}14` : undefined,
+      }}
+      onClick={selected ? () => setConfirming(true) : undefined}
+    >
+      <span
+        className="flex size-4 items-center justify-center rounded border"
+        style={{ borderColor: tag.color }}
+      >
+        {selected ? <Check className="size-3.5" aria-hidden="true" /> : null}
+      </span>
+      {tag.name}
+    </Button>
+  );
+
+  return (
+    <>
+      {selected ? (
+        button
+      ) : (
+        <form action={setPatientTag.bind(null, patientId, tag.id, true)}>
+          {button}
+        </form>
+      )}
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="Remover tag do paciente?"
+        description={`A tag “${tag.name}” será removida deste paciente.`}
+        confirmLabel="Remover tag"
+        destructive
+        onConfirm={() => setPatientTag(patientId, tag.id, false)}
+      />
+    </>
   );
 }
 

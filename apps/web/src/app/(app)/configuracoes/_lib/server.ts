@@ -127,7 +127,8 @@ type PlatformConfigurationAccess = {
 };
 
 export type ConfigurationAccess =
-  CompanyConfigurationAccess | PlatformConfigurationAccess;
+  | CompanyConfigurationAccess
+  | PlatformConfigurationAccess;
 
 export async function getConfigurationAccess(): Promise<ConfigurationAccess> {
   const context = await getRequestContext();

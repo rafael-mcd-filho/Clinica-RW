@@ -34,11 +34,34 @@ async function requireAttendant() {
   return {
     organizationId: context.organization.id,
     userId: context.effectiveUser.id,
+    impersonating: Boolean(context.impersonation),
   };
 }
 
 function onlyDigits(value: string): string {
   return value.replace(/\D/g, "");
+}
+
+function brazilianPhoneCandidates(value: string): string[] {
+  const digits = onlyDigits(value);
+  const national =
+    digits.startsWith("55") && (digits.length === 12 || digits.length === 13)
+      ? digits.slice(2)
+      : digits;
+  if (national.length !== 10 && national.length !== 11) {
+    return [];
+  }
+
+  const nationalVariants = new Set([national]);
+  if (national.length === 11 && national[2] === "9") {
+    nationalVariants.add(`${national.slice(0, 2)}${national.slice(3)}`);
+  } else if (national.length === 10) {
+    nationalVariants.add(`${national.slice(0, 2)}9${national.slice(2)}`);
+  }
+
+  return [
+    ...new Set([...nationalVariants].flatMap((phone) => [phone, `55${phone}`])),
+  ];
 }
 
 function mediaFileExtension(file: File): string {
@@ -53,6 +76,7 @@ type ConversationContext = {
   contactId: string;
   phone: string;
   patientId: string | null;
+  patientDeceasedAt: string | null;
   status: ConversationStatus;
   assignedUserId: string | null;
 };
@@ -83,17 +107,72 @@ async function loadConversationContext(
     .maybeSingle<{ id: string; phone: string; patient_id: string | null }>();
   if (!contact) return null;
 
+  let patientDeceasedAt: string | null = null;
+  const admin = createSupabaseAdminClient();
+  if (contact.patient_id) {
+    const { data: patient, error: patientError } = await admin
+      .from("patients")
+      .select("deceased_at")
+      .eq("organization_id", organizationId)
+      .eq("id", contact.patient_id)
+      .maybeSingle<{ deceased_at: string | null }>();
+    if (patientError || !patient) {
+      console.error(
+        "[whatsapp patient life status]",
+        patientError?.message ?? "Linked patient not found.",
+      );
+      return null;
+    }
+    patientDeceasedAt = patient.deceased_at;
+  } else {
+    // O vínculo pode ser removido manualmente. Ainda assim, um contato com o
+    // mesmo telefone de um paciente falecido não pode contornar o bloqueio.
+    const phoneCandidates = brazilianPhoneCandidates(contact.phone);
+    if (phoneCandidates.length) {
+      const phoneFilter = phoneCandidates
+        .flatMap((phone) => [`phone.eq.${phone}`, `whatsapp.eq.${phone}`])
+        .join(",");
+      const { data: deceasedPatient, error: patientError } = await admin
+        .from("patients")
+        .select("deceased_at")
+        .eq("organization_id", organizationId)
+        .not("deceased_at", "is", null)
+        .or(phoneFilter)
+        .limit(1)
+        .maybeSingle<{ deceased_at: string | null }>();
+      if (patientError) {
+        console.error(
+          "[whatsapp patient life status by phone]",
+          patientError.message,
+        );
+        return null;
+      }
+      patientDeceasedAt = deceasedPatient?.deceased_at ?? null;
+    }
+  }
+
   return {
     conversationId: conversation.id,
     contactId: contact.id,
     phone: contact.phone,
     patientId: contact.patient_id,
+    patientDeceasedAt,
     status: conversation.status,
     assignedUserId: conversation.assigned_user_id,
   };
 }
 
 function writableConversationError(
+  context: ConversationContext,
+  userId: string,
+): string | null {
+  if (context.patientDeceasedAt) {
+    return "Paciente registrado como falecido. O envio de mensagens está bloqueado.";
+  }
+  return ownedOpenConversationError(context, userId);
+}
+
+function ownedOpenConversationError(
   context: ConversationContext,
   userId: string,
 ): string | null {
@@ -358,6 +437,17 @@ export async function assignToMeAction(
   const auth = await requireAttendant();
   if (!auth) return { ok: false, error: "Acesso negado." };
 
+  // Durante a impersonação, o JWT ainda pertence ao Super Admin, enquanto a
+  // tela e as permissões representam o usuário efetivo. A RPC tradicional usa
+  // auth.uid() e por isso não encontra a organização do usuário efetivo.
+  if (auth.impersonating) {
+    return claimConversationAsEffectiveUser(
+      auth.organizationId,
+      auth.userId,
+      conversationId,
+    );
+  }
+
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("claim_whatsapp_conversation", {
     p_conversation_id: conversationId,
@@ -370,6 +460,55 @@ export async function assignToMeAction(
     };
   }
   return { ok: true };
+}
+
+async function claimConversationAsEffectiveUser(
+  organizationId: string,
+  userId: string,
+  conversationId: string,
+): Promise<AttendanceResult> {
+  const admin = createSupabaseAdminClient();
+  const { data: current, error: currentError } = await admin
+    .from("whatsapp_conversations")
+    .select("status, assigned_user_id")
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId)
+    .maybeSingle<{
+      status: ConversationStatus;
+      assigned_user_id: string | null;
+    }>();
+
+  if (currentError) return { ok: false, error: currentError.message };
+  if (!current) return { ok: false, error: "Conversa não encontrada." };
+  if (current.status === "open" && current.assigned_user_id === userId) {
+    return { ok: true };
+  }
+  if (current.status !== "pending" || current.assigned_user_id) {
+    return {
+      ok: false,
+      error: "Este atendimento acabou de ser assumido por outro usuário.",
+    };
+  }
+
+  // A condição no UPDATE mantém a disputa entre atendentes atômica. O trigger
+  // de ciclo de atendimento registra a sessão e o evento da alteração.
+  const { data: claimed, error } = await admin
+    .from("whatsapp_conversations")
+    .update({ status: "open", assigned_user_id: userId })
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId)
+    .eq("status", "pending")
+    .is("assigned_user_id", null)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (error) return { ok: false, error: error.message };
+  return claimed
+    ? { ok: true }
+    : {
+        ok: false,
+        error: "Este atendimento acabou de ser assumido por outro usuário.",
+      };
 }
 
 /**
@@ -393,7 +532,7 @@ export async function addInternalNoteAction(
     conversationId,
   );
   if (!context) return { ok: false, error: "Conversa não encontrada." };
-  const writeError = writableConversationError(context, auth.userId);
+  const writeError = ownedOpenConversationError(context, auth.userId);
   if (writeError) return { ok: false, error: writeError };
 
   const nowIso = new Date().toISOString();

@@ -37,16 +37,16 @@ Duas famílias, carregadas em `app/layout.tsx` via `next/font/google`:
 
 Escala fechada (utilitários Tailwind gerados pelos tokens `--text-*`):
 
-| Utilitário        | Tamanho/linha | Uso                                         |
-| ----------------- | ------------- | ------------------------------------------- |
-| `text-caption`    | 11/16         | metadados, selos, labels uppercase          |
+| Utilitário        | Tamanho/linha | Uso                                                |
+| ----------------- | ------------- | -------------------------------------------------- |
+| `text-caption`    | 11/16         | metadados, selos, labels uppercase                 |
 | `text-label`      | 12/16         | labels de campo, headers de tabela, células densas |
-| `text-body-sm`    | 13/20         | texto secundário, botões                    |
-| `text-body`       | 14/20         | **default do app** (corpo, tabelas)         |
-| `text-heading-sm` | 16/24         | título de card/seção                        |
-| `text-heading`    | 18/28         | título de painel/dialog                     |
-| `text-heading-lg` | 24/32         | título de página                            |
-| `text-display`    | 30/36         | números de dashboard, hero da página pública |
+| `text-body-sm`    | 13/20         | texto secundário, botões                           |
+| `text-body`       | 14/20         | **default do app** (corpo, tabelas)                |
+| `text-heading-sm` | 16/24         | título de card/seção                               |
+| `text-heading`    | 18/28         | título de painel/dialog                            |
+| `text-heading-lg` | 24/32         | título de página                                   |
+| `text-display`    | 30/36         | números de dashboard, hero da página pública       |
 
 Aliases Tailwind aceitos em código legado: `text-xs` (=label), `text-sm` (=body),
 `text-base` (=heading-sm). Código novo usa os nomes semânticos.
@@ -80,11 +80,11 @@ Valores numéricos alinhados (dinheiro, contagens, horários em tabela): adicion
 
 ## Radius
 
-| Token        | Valor | Onde                                             |
-| ------------ | ----- | ------------------------------------------------ |
-| `rounded-md` | 10px  | controles: botões, inputs, selects, badges, itens de menu |
-| `rounded-lg` | 16px  | superfícies: cards, painéis, modais, popovers    |
-| `rounded-full` | —   | avatares, dots de status, switch                 |
+| Token          | Valor | Onde                                                      |
+| -------------- | ----- | --------------------------------------------------------- |
+| `rounded-md`   | 10px  | controles: botões, inputs, selects, badges, itens de menu |
+| `rounded-lg`   | 16px  | superfícies: cards, painéis, modais, popovers             |
+| `rounded-full` | —     | avatares, dots de status, switch                          |
 
 Sem exceção. `rounded-xl`+ não faz parte do sistema.
 
@@ -98,12 +98,12 @@ Foco de teclado: `globals.css` define um anel global `:focus-visible`
 (2px `--ring` + offset) com especificidade zero via `:where()` — componentes
 com foco próprio continuam valendo; nenhum elemento interativo fica sem anel.
 
-| Token            | Uso                                      |
-| ---------------- | ---------------------------------------- |
-| `--shadow-soft`  | repouso: cards, botões, tabelas          |
-| `--shadow-hover` | hover de superfícies clicáveis           |
-| `--shadow-md`    | popovers, dropdowns, menus               |
-| `--shadow-lg`    | modais, drawers, card sendo arrastado    |
+| Token            | Uso                                   |
+| ---------------- | ------------------------------------- |
+| `--shadow-soft`  | repouso: cards, botões, tabelas       |
+| `--shadow-hover` | hover de superfícies clicáveis        |
+| `--shadow-md`    | popovers, dropdowns, menus            |
+| `--shadow-lg`    | modais, drawers, card sendo arrastado |
 
 ## Ícones
 
@@ -115,11 +115,12 @@ item de navegação ativo. Server components importam de
 
 Escala fechada — via wrapper `<Icon>` (`components/ui/icon.tsx`) ou classes:
 
-| Tamanho | Classe     | Contexto                                    |
-| ------- | ---------- | ------------------------------------------- |
-| 14px    | `size-3.5` | metadados, badges, células densas           |
-| 16px    | `size-4`   | botões, inputs, itens de menu (default)     |
-| 20px    | `size-5`   | cabeçalho de página/painel, empty states    |
+| Tamanho | Classe     | Contexto                                 |
+| ------- | ---------- | ---------------------------------------- |
+| 14px    | `size-3.5` | metadados, badges, células densas        |
+| 16px    | `size-4`   | botões, inputs, itens de menu (default)  |
+| 20px    | `size-5`   | cabeçalho de página/painel, empty states |
+| 24px    | `size-6`   | ícone principal do cabeçalho de página   |
 
 Avatares e containers ilustrativos (ex.: círculo de empty state) não são ícones
 e podem usar outros tamanhos. Exceção documentada: glifos internos de controle
@@ -147,14 +148,14 @@ Sem stagger de cards (delays escalonados) — conteúdo de página entra de uma 
 
 ### Button (`components/ui/button.tsx`)
 
-| Variante            | Quando                                              |
-| ------------------- | --------------------------------------------------- |
+| Variante            | Quando                                                |
+| ------------------- | ----------------------------------------------------- |
 | `primary`           | a ação principal da tela/painel (máx. 1 por contexto) |
-| `secondary`         | ações normais (borda + fundo claro)                 |
-| `ghost`             | ações de baixa ênfase, barras de ferramentas, ícones |
-| `destructive`       | confirmação de exclusão/ação irreversível           |
-| `destructive-ghost` | gatilho de exclusão em listas/menus                 |
-| `link`              | navegação inline com cara de link                   |
+| `secondary`         | ações normais (borda + fundo claro)                   |
+| `ghost`             | ações de baixa ênfase, barras de ferramentas, ícones  |
+| `destructive`       | confirmação de exclusão/ação irreversível             |
+| `destructive-ghost` | gatilho de exclusão em listas/menus                   |
+| `link`              | navegação inline com cara de link                     |
 
 Tamanhos: `sm` (h-8) · `md` (h-9, default) · `lg` (h-10, página pública/CTAs) ·
 `icon` (36px) · `icon-sm` (32px, ações de linha de tabela).

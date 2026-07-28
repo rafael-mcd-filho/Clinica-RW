@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowsClockwise as RefreshCw,
   Check,
@@ -699,6 +699,9 @@ function EditUserDialog({
   user: CompanyAccessUser;
   onClose: () => void;
 }) {
+  const pendingFormRef = useRef<HTMLFormElement | null>(null);
+  const confirmedUnlinkRef = useRef(false);
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false);
   const action = updateCompanyUser.bind(null, user.id);
   const [state, formAction, pending] = useActionState(action, initialState);
   useSuccessClose(state, onClose, "Usuário atualizado.");
@@ -710,53 +713,82 @@ function EditUserDialog({
   );
 
   return (
-    <FormDialog
-      open
-      onClose={onClose}
-      title="Dados e vínculo profissional"
-      description={`Atualize a conta de ${user.name}.`}
-      formAction={formAction}
-      pending={pending}
-      error={state.error}
-      icon={Pencil}
-    >
-      <label className="grid gap-2 text-sm font-medium">
-        <span>
-          Nome <RequiredMark />
-        </span>
-        <Input name="name" required defaultValue={user.name} />
-      </label>
-      <label className="grid gap-2 text-sm font-medium">
-        <span>
-          E-mail <RequiredMark />
-        </span>
-        <Input name="email" type="email" required defaultValue={user.email} />
-      </label>
-      <label className="grid gap-2 text-sm font-medium">
-        Telefone
-        <MaskedInput
-          name="phone"
-          maskKind="phone"
-          inputMode="tel"
-          defaultValue={user.phone ?? ""}
-        />
-      </label>
-      <label className="grid gap-2 text-sm font-medium">
-        Profissional vinculado
-        <Select
-          name="professional_id"
-          defaultValue={user.professionalId ?? ""}
-          allowEmptyOption
-        >
-          <option value="">Nenhum</option>
-          {professionals.map((professional) => (
-            <option key={professional.id} value={professional.id}>
-              {professional.name}
-            </option>
-          ))}
-        </Select>
-      </label>
-    </FormDialog>
+    <>
+      <FormDialog
+        open
+        onClose={onClose}
+        title="Dados e vínculo profissional"
+        description={`Atualize a conta de ${user.name}.`}
+        formAction={formAction}
+        pending={pending}
+        error={state.error}
+        icon={Pencil}
+        onSubmit={(event) => {
+          const professionalId = new FormData(event.currentTarget).get(
+            "professional_id",
+          );
+          if (
+            user.professionalId &&
+            !professionalId &&
+            !confirmedUnlinkRef.current
+          ) {
+            event.preventDefault();
+            pendingFormRef.current = event.currentTarget;
+            setConfirmingUnlink(true);
+          }
+        }}
+      >
+        <label className="grid gap-2 text-sm font-medium">
+          <span>
+            Nome <RequiredMark />
+          </span>
+          <Input name="name" required defaultValue={user.name} />
+        </label>
+        <label className="grid gap-2 text-sm font-medium">
+          <span>
+            E-mail <RequiredMark />
+          </span>
+          <Input name="email" type="email" required defaultValue={user.email} />
+        </label>
+        <label className="grid gap-2 text-sm font-medium">
+          Telefone
+          <MaskedInput
+            name="phone"
+            maskKind="phone"
+            inputMode="tel"
+            defaultValue={user.phone ?? ""}
+          />
+        </label>
+        <label className="grid gap-2 text-sm font-medium">
+          Profissional vinculado
+          <Select
+            name="professional_id"
+            defaultValue={user.professionalId ?? ""}
+            allowEmptyOption
+          >
+            <option value="">Nenhum</option>
+            {professionals.map((professional) => (
+              <option key={professional.id} value={professional.id}>
+                {professional.name}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </FormDialog>
+      <ConfirmDialog
+        open={confirmingUnlink}
+        onClose={() => setConfirmingUnlink(false)}
+        title="Desvincular profissional?"
+        description={`${user.name} deixará de estar associado ao profissional atual. As permissões da conta serão mantidas.`}
+        confirmLabel="Desvincular profissional"
+        destructive
+        onConfirm={() => {
+          confirmedUnlinkRef.current = true;
+          pendingFormRef.current?.requestSubmit();
+          confirmedUnlinkRef.current = false;
+        }}
+      />
+    </>
   );
 }
 

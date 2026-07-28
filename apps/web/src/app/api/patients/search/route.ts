@@ -50,6 +50,7 @@ export async function GET(request: Request) {
     .select("id, full_name, social_name, email, phone, whatsapp")
     .eq("organization_id", context.organization.id)
     .is("deleted_at", null)
+    .is("deceased_at", null)
     .or(filters.join(","))
     .order("full_name")
     .limit(8);

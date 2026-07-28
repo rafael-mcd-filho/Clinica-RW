@@ -46,6 +46,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
 import { Input, Textarea } from "@/components/ui/field";
@@ -101,6 +102,7 @@ export function AttendanceInbox({
   canConfigure,
   evolutionReady,
   initialConversations,
+  initialConversationId,
   availableTags,
   quickReplies,
   instance,
@@ -113,17 +115,32 @@ export function AttendanceInbox({
   canConfigure: boolean;
   evolutionReady: boolean;
   initialConversations: ConversationListItem[];
+  initialConversationId: string | null;
   availableTags: ConversationTagView[];
   quickReplies: QuickReplyTemplate[];
   instance: AttendanceInstance | null;
 }) {
+  const initialConversation = initialConversationId
+    ? (initialConversations.find((item) => item.id === initialConversationId) ??
+      null)
+    : null;
   const [conversations, setConversations] = useState(initialConversations);
-  const [tab, setTab] = useState<InboxView>("new");
+  const [tab, setTab] = useState<InboxView>(() => {
+    if (!initialConversation) return "new";
+    const initialQueue = getAttendanceQueue(
+      initialConversation.status,
+      initialConversation.assignedUserId,
+      currentUserId,
+    );
+    return initialQueue === "resolved" ? "mine" : initialQueue;
+  });
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialConversation?.id ?? null,
+  );
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const selectedIdRef = useRef<string | null>(null);
+  const selectedIdRef = useRef<string | null>(initialConversation?.id ?? null);
   const supabaseRef = useRef(createSupabaseBrowserClient());
   const router = useRouter();
 
@@ -318,6 +335,17 @@ export function AttendanceInbox({
     },
     [organizationId],
   );
+
+  useEffect(() => {
+    if (!initialConversationId) return;
+    void reloadMessages(initialConversationId);
+
+    if (canAttend) {
+      void markConversationReadAction(initialConversationId).then(() => {
+        upsertConversation({ id: initialConversationId, unreadCount: 0 });
+      });
+    }
+  }, [canAttend, initialConversationId, reloadMessages, upsertConversation]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -536,7 +564,11 @@ function ConversationListColumn({
             aria-hidden="true"
           />
         </label>
-        <div className="mt-3 grid w-full grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+        <div
+          className="mt-3 flex min-h-8 items-center gap-1"
+          role="tablist"
+          aria-label="Filtrar atendimentos"
+        >
           {tabs.map((item) => (
             <Button
               key={item}
@@ -544,16 +576,18 @@ function ConversationListColumn({
               variant="ghost"
               size="sm"
               onClick={() => onTabChange(item)}
+              role="tab"
+              aria-selected={tab === item}
               className={cn(
-                "min-w-0 gap-1 px-1 text-label",
+                "h-8 min-w-0 shrink-0 gap-1.5 rounded-full px-3 text-[13px] font-normal leading-none",
                 tab === item
-                  ? "bg-card text-foreground shadow-[var(--shadow-soft)] hover:bg-card"
-                  : "",
+                  ? "bg-muted text-foreground hover:bg-muted"
+                  : "bg-transparent text-muted-foreground hover:bg-muted/60",
               )}
             >
               {tabLabels[item]}
               {counts[item] > 0 ? (
-                <span className="tabular-nums text-muted-foreground">
+                <span className="inline-flex size-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none tabular-nums text-white">
                   {counts[item]}
                 </span>
               ) : null}
@@ -688,6 +722,7 @@ function ConversationThread({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [pending, startTransition] = useTransition();
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -703,6 +738,19 @@ function ConversationThread({
         toast.error(result.error ?? "Não foi possível atualizar.");
       }
     });
+  }
+
+  async function completeAttendance() {
+    const result = await setConversationStatusAction(
+      conversation.id,
+      "resolved",
+    );
+    if (!result.ok) {
+      toast.error(result.error ?? "Não foi possível concluir.");
+      return false;
+    }
+    onStatusChange("resolved");
+    return true;
   }
 
   function startAttendance() {
@@ -740,6 +788,14 @@ function ConversationThread({
 
   return (
     <section className="flex min-h-0 flex-col overflow-hidden bg-card">
+      <ConfirmDialog
+        open={confirmingCompletion}
+        onClose={() => setConfirmingCompletion(false)}
+        title="Concluir atendimento?"
+        description="A conversa sairá da fila ativa e será movida para os atendimentos concluídos. Ela poderá ser reaberta depois."
+        confirmLabel="Concluir atendimento"
+        onConfirm={completeAttendance}
+      />
       <header className="flex min-h-16 items-center justify-between gap-3 border-b border-border px-4 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Button
@@ -862,7 +918,7 @@ function ConversationThread({
                 variant="secondary"
                 size="sm"
                 disabled={pending}
-                onClick={() => changeStatus("resolved")}
+                onClick={() => setConfirmingCompletion(true)}
               >
                 <CheckCheck className="size-4" aria-hidden="true" />
                 Concluir
@@ -973,11 +1029,14 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
   const outbound = message.direction === "outbound";
   const isNote = message.type === "note";
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
+  const mediaEndpoint = `/api/whatsapp/media/${message.id}`;
+
   return (
     <div className={cn("flex", outbound ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[82%] rounded-xl px-3 py-2 text-body-sm shadow-[var(--shadow-soft)] sm:max-w-[68%]",
+          "relative max-w-[82%] rounded-xl px-3 pb-1.5 pt-2 text-sm leading-5 shadow-[var(--shadow-soft)] sm:max-w-[68%]",
           isNote
             ? "rounded-br-sm border border-warning/40 bg-warning-muted text-warning-foreground"
             : outbound
@@ -991,33 +1050,33 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
             Nota interna
           </p>
         ) : null}
-        <div className="relative grid gap-2 pr-4">
+        <div className="grid gap-2 pr-5">
           {message.mediaUrl && message.type === "image" ? (
-            <a
-              href={`/api/whatsapp/media/${message.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="block overflow-hidden rounded-lg"
+            <button
+              type="button"
+              onClick={() => setImageOpen(true)}
+              className="block cursor-zoom-in overflow-hidden rounded-lg text-left outline-none ring-primary focus-visible:ring-2 focus-visible:ring-offset-2"
+              aria-label="Expandir imagem"
             >
               <Image
                 unoptimized
-                src={`/api/whatsapp/media/${message.id}`}
+                src={mediaEndpoint}
                 alt={message.body ?? "Imagem recebida"}
                 width={420}
                 height={320}
                 className="max-h-80 w-auto max-w-full object-contain"
               />
-            </a>
+            </button>
           ) : message.mediaUrl && message.type === "audio" ? (
             <audio
               controls
               preload="metadata"
-              src={`/api/whatsapp/media/${message.id}`}
+              src={mediaEndpoint}
               className="max-w-full"
             />
           ) : message.mediaUrl ? (
             <a
-              href={`/api/whatsapp/media/${message.id}`}
+              href={mediaEndpoint}
               target="_blank"
               rel="noreferrer"
               className="font-medium text-primary underline"
@@ -1030,19 +1089,19 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
           ) : (
             <p className="italic opacity-80">{labelForType(message.type)}</p>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setDetailsOpen(true)}
-            className="absolute -right-1 -top-1 h-auto w-auto rounded p-1 text-muted-foreground hover:bg-foreground/5"
-            aria-label="Detalhes da mensagem"
-          >
-            <MoreVertical className="size-3.5" />
-          </Button>
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => setDetailsOpen(true)}
+          className="absolute right-1 top-1 h-6 w-6 rounded p-0 text-muted-foreground hover:bg-foreground/5"
+          aria-label="Detalhes da mensagem"
+        >
+          <MoreVertical className="size-3.5" />
+        </Button>
         <p
           className={cn(
-            "mt-1 flex items-center justify-end gap-1 text-caption tabular-nums",
+            "mt-0.5 flex min-h-3 items-center justify-end gap-1 text-[10px] leading-3 tabular-nums",
             "text-muted-foreground",
           )}
         >
@@ -1053,6 +1112,23 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
             <CheckCheck className="size-3.5" aria-hidden="true" />
           ) : null}
         </p>
+        <Modal
+          open={imageOpen}
+          onClose={() => setImageOpen(false)}
+          title="Visualizar imagem"
+          className="max-w-[min(72rem,calc(100vw-2rem))]"
+        >
+          <div className="flex max-h-[calc(100vh-9rem)] min-h-64 items-center justify-center overflow-hidden rounded-lg bg-surface-sunken">
+            <Image
+              unoptimized
+              src={mediaEndpoint}
+              alt={message.body ?? "Imagem da conversa"}
+              width={1600}
+              height={1200}
+              className="max-h-[calc(100vh-10rem)] h-auto w-auto max-w-full object-contain"
+            />
+          </div>
+        </Modal>
         <Modal
           open={detailsOpen}
           onClose={() => setDetailsOpen(false)}

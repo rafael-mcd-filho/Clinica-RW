@@ -25,6 +25,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 import { FormError } from "@/components/ui/form-error";
 import { Switch } from "@/components/ui/switch";
@@ -966,28 +967,58 @@ function TemplateActiveForm({
 }: {
   template: ClinicalDocumentTemplateSummary;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const [state, action, pending] = useActionState(
     setDocumentTemplateActive,
     initialActionState,
   );
 
   useEffect(() => {
-    if (state.success) toast.success(state.success);
+    if (state.success) {
+      toast.success(state.success);
+    }
     if (state.error) toast.error(state.error);
   }, [state.error, state.success]);
+
+  if (template.active) {
+    return (
+      <>
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive-ghost"
+          disabled={pending}
+          onClick={() => setConfirming(true)}
+        >
+          <Power className="size-4" aria-hidden="true" />
+          Desativar
+        </Button>
+        <ConfirmDialog
+          open={confirming && !state.success}
+          onClose={() => setConfirming(false)}
+          title="Desativar modelo de documento?"
+          description={`${template.name} deixará de estar disponível para novas emissões. Documentos já gerados serão preservados.`}
+          confirmLabel="Desativar modelo"
+          pendingLabel="Desativando..."
+          destructive
+          pending={pending}
+          error={state.error}
+          formAction={action}
+        >
+          <input type="hidden" name="template_id" value={template.id} />
+          <input type="hidden" name="active" value="false" />
+        </ConfirmDialog>
+      </>
+    );
+  }
 
   return (
     <form action={action}>
       <input type="hidden" name="template_id" value={template.id} />
-      <input type="hidden" name="active" value={String(!template.active)} />
-      <Button
-        type="submit"
-        size="sm"
-        variant={template.active ? "destructive-ghost" : "secondary"}
-        disabled={pending}
-      >
+      <input type="hidden" name="active" value="true" />
+      <Button type="submit" size="sm" variant="secondary" disabled={pending}>
         <Power className="size-4" aria-hidden="true" />
-        {pending ? "Salvando..." : template.active ? "Desativar" : "Ativar"}
+        {pending ? "Salvando..." : "Ativar"}
       </Button>
       <FormError className="sr-only" message={state.error} />
     </form>

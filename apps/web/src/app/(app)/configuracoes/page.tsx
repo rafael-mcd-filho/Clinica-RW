@@ -1,17 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  Buildings,
-  CalendarDots,
-  CaretRight,
-  ChatsCircle,
-  FileText,
-  GearSix,
-  Globe,
-  Tag,
-  UserGear,
-} from "@phosphor-icons/react/dist/ssr";
-import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
+import { CaretRight, GearSix } from "@phosphor-icons/react/dist/ssr";
 import {
   canAccessCompanyConfigurationRoute,
   companyConfigurationPaths,
@@ -20,6 +9,10 @@ import {
 } from "./_lib/server";
 import { UnavailableConfigurationPage } from "./configuration-page";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  configurationSectionRoutes,
+  configurationSections,
+} from "./_lib/sections";
 
 const legacyTabRoutes: Record<string, CompanyConfigurationRoute> = {
   cadastros: "cadastros",
@@ -32,57 +25,6 @@ const legacyTabRoutes: Record<string, CompanyConfigurationRoute> = {
   "tags-automacoes": "tags-automacoes",
   "modelos-clinicos": "modelos-clinicos",
 };
-
-const sectionCards: Array<{
-  route: CompanyConfigurationRoute;
-  title: string;
-  description: string;
-  icon: PhosphorIcon;
-}> = [
-  {
-    route: "cadastros",
-    title: "Cadastros e operação",
-    description:
-      "Dados da clínica, unidades, profissionais, serviços e financeiro.",
-    icon: Buildings,
-  },
-  {
-    route: "usuarios-acessos",
-    title: "Usuários e acessos",
-    description: "Convites, perfis de permissão e escopos de acesso.",
-    icon: UserGear,
-  },
-  {
-    route: "agenda",
-    title: "Agenda",
-    description: "Agendas, horários de atendimento e bloqueios.",
-    icon: CalendarDots,
-  },
-  {
-    route: "agendamento-online",
-    title: "Agendamento online",
-    description: "Página pública de agendamento e regras de reserva.",
-    icon: Globe,
-  },
-  {
-    route: "tags-automacoes",
-    title: "Tags e automações",
-    description: "Etiquetas de pacientes e regras automáticas.",
-    icon: Tag,
-  },
-  {
-    route: "modelos-clinicos",
-    title: "Modelos clínicos",
-    description: "Templates de prontuário e documentos.",
-    icon: FileText,
-  },
-  {
-    route: "whatsapp",
-    title: "WhatsApp",
-    description: "Conexão da instância e canal de atendimento.",
-    icon: ChatsCircle,
-  },
-];
 
 type ConfigurationSearchParams = Record<string, string | string[] | undefined>;
 
@@ -115,8 +57,8 @@ export default async function ConfiguracoesPage({
     );
   }
 
-  const visibleSections = sectionCards.filter((section) =>
-    canAccessCompanyConfigurationRoute(access, section.route),
+  const visibleSections = configurationSectionRoutes.filter((route) =>
+    canAccessCompanyConfigurationRoute(access, route),
   );
 
   if (!visibleSections.length) {
@@ -132,33 +74,36 @@ export default async function ConfiguracoesPage({
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {visibleSections.map((section) => (
-          <Link
-            key={section.route}
-            href={companyConfigurationPaths[section.route]}
-            className="group flex items-start gap-4 rounded-lg border border-border bg-card p-5 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-primary/40 hover:shadow-[var(--shadow-hover)]"
-          >
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
-              <section.icon
-                className="size-5"
-                weight="duotone"
-                aria-hidden="true"
-              />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center justify-between gap-2 text-heading-sm font-semibold">
-                {section.title}
-                <CaretRight
-                  className="size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out)] group-hover:translate-x-0.5"
+        {visibleSections.map((route) => {
+          const section = configurationSections[route];
+          return (
+            <Link
+              key={route}
+              href={companyConfigurationPaths[route]}
+              className="group flex items-start gap-4 rounded-lg border border-border bg-card p-5 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-primary/40 hover:shadow-[var(--shadow-hover)]"
+            >
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
+                <section.icon
+                  className="size-5"
+                  weight="duotone"
                   aria-hidden="true"
                 />
-              </p>
-              <p className="mt-1 text-body-sm text-muted-foreground">
-                {section.description}
-              </p>
-            </div>
-          </Link>
-        ))}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center justify-between gap-2 text-heading-sm font-semibold">
+                  {section.title}
+                  <CaretRight
+                    className="size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out)] group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
+                </p>
+                <p className="mt-1 text-body-sm text-muted-foreground">
+                  {section.cardDescription}
+                </p>
+              </div>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

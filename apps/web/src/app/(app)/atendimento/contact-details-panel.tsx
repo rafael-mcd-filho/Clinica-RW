@@ -44,6 +44,7 @@ import { linkPatientAction, setConversationTagAction } from "./actions";
 import { createAppointment, type AgendaActionState } from "../agenda/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
@@ -209,6 +210,10 @@ function ContactTab({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false);
+  const [tagToRemove, setTagToRemove] = useState<ConversationTagView | null>(
+    null,
+  );
   const selectedTagIds = useMemo(
     () => new Set(conversation.tags.map((tag) => tag.id)),
     [conversation.tags],
@@ -216,6 +221,10 @@ function ContactTab({
 
   function toggleTag(tag: ConversationTagView) {
     const attach = !selectedTagIds.has(tag.id);
+    if (!attach) {
+      setTagToRemove(tag);
+      return;
+    }
     const previousTags = conversation.tags;
     const nextTags = attach
       ? [...previousTags, tag]
@@ -234,21 +243,55 @@ function ContactTab({
     });
   }
 
-  function unlinkPatient() {
-    startTransition(async () => {
-      const result = await linkPatientAction(data.contact.id, null);
-      if (result.ok) {
-        toast.success("Vínculo com o paciente removido.");
-        onRefresh();
-        router.refresh();
-      } else {
-        toast.error(result.error ?? "Não foi possível remover o vínculo.");
-      }
-    });
+  async function unlinkPatient() {
+    const result = await linkPatientAction(data.contact.id, null);
+    if (!result.ok) {
+      toast.error(result.error ?? "Não foi possível remover o vínculo.");
+      return false;
+    }
+    toast.success("Vínculo com o paciente removido.");
+    onRefresh();
+    router.refresh();
+    return true;
+  }
+
+  async function removeTag() {
+    if (!tagToRemove) return false;
+    const result = await setConversationTagAction(
+      conversation.id,
+      tagToRemove.id,
+      false,
+    );
+    if (!result.ok) {
+      toast.error(result.error ?? "Não foi possível remover a etiqueta.");
+      return false;
+    }
+    onTagsChange(
+      conversation.tags.filter((item) => item.id !== tagToRemove.id),
+    );
+    return true;
   }
 
   return (
     <div className="grid gap-5">
+      <ConfirmDialog
+        open={confirmingUnlink}
+        onClose={() => setConfirmingUnlink(false)}
+        title="Desvincular paciente?"
+        description="O contato deixará de estar associado a este paciente. O histórico da conversa será preservado."
+        confirmLabel="Desvincular paciente"
+        destructive
+        onConfirm={unlinkPatient}
+      />
+      <ConfirmDialog
+        open={Boolean(tagToRemove)}
+        onClose={() => setTagToRemove(null)}
+        title="Remover etiqueta?"
+        description={`A etiqueta “${tagToRemove?.name ?? ""}” será removida desta conversa.`}
+        confirmLabel="Remover etiqueta"
+        destructive
+        onConfirm={removeTag}
+      />
       <PanelSection title="Dados do contato">
         <dl className="grid gap-3 text-body-sm">
           <DetailRow label="Nome" value={data.contact.name} />
@@ -308,7 +351,7 @@ function ContactTab({
                 variant="ghost"
                 size="sm"
                 disabled={pending}
-                onClick={unlinkPatient}
+                onClick={() => setConfirmingUnlink(true)}
               >
                 Desvincular paciente
               </Button>

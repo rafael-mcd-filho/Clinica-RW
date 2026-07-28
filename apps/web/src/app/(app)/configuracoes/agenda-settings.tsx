@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import {
   Prohibit as Ban,
   CalendarDots as CalendarClock,
@@ -109,6 +109,9 @@ export function AgendaSettings({
   canBlock: boolean;
   initialScheduleId?: string;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const confirmedDeactivationRef = useRef(false);
+  const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
   const [editor, setEditor] = useState<string | "new" | null>(() =>
     initialScheduleId &&
     data.schedules.some((schedule) => schedule.id === initialScheduleId)
@@ -423,6 +426,9 @@ function ScheduleConfigurationEditor({
   const [onlineEnabled, setOnlineEnabled] = useState(
     schedule?.online_enabled ?? false,
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  const confirmedDeactivationRef = useRef(false);
+  const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
   const [periods, setPeriods] = useState<EditablePeriod[]>(() =>
     scheduleRows.map((row) => ({
       key: row.id,
@@ -495,7 +501,25 @@ function ScheduleConfigurationEditor({
       description="Dados, expediente, publicação online e exceções da agenda."
       className="max-w-6xl"
     >
-      <form action={action} className="grid gap-5" aria-busy={pending}>
+      <form
+        ref={formRef}
+        action={action}
+        className="grid gap-5"
+        aria-busy={pending}
+        onSubmit={(event) => {
+          const deactivatingSchedule = Boolean(schedule?.active && !active);
+          const unpublishingSchedule = Boolean(
+            schedule?.online_enabled && !onlineEnabled,
+          );
+          if (
+            (deactivatingSchedule || unpublishingSchedule) &&
+            !confirmedDeactivationRef.current
+          ) {
+            event.preventDefault();
+            setConfirmingDeactivation(true);
+          }
+        }}
+      >
         <input type="hidden" name="schedule_id" value={schedule?.id ?? ""} />
         <input type="hidden" name="active" value={String(active)} />
         <input
@@ -779,6 +803,23 @@ function ScheduleConfigurationEditor({
           ) : null}
         </div>
       </form>
+      <ConfirmDialog
+        open={confirmingDeactivation}
+        onClose={() => setConfirmingDeactivation(false)}
+        title={active ? "Despublicar agenda?" : "Desativar agenda?"}
+        description={
+          active
+            ? "Esta agenda deixará de aparecer no portal público. Agendamentos existentes serão preservados."
+            : "A agenda deixará de aceitar novos agendamentos internos e online. Todo o histórico será preservado."
+        }
+        confirmLabel={active ? "Despublicar agenda" : "Desativar agenda"}
+        destructive
+        onConfirm={() => {
+          confirmedDeactivationRef.current = true;
+          formRef.current?.requestSubmit();
+          confirmedDeactivationRef.current = false;
+        }}
+      />
     </Modal>
   );
 }

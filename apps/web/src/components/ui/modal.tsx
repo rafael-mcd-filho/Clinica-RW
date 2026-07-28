@@ -43,6 +43,15 @@ export function Modal({
           <Dialog.Overlay className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
           <Dialog.Content
             data-select-portal-root
+            onInteractOutside={(event) => {
+              const target = event.detail.originalEvent.target;
+              if (
+                target instanceof Element &&
+                target.closest("[data-date-picker-popover]")
+              ) {
+                event.preventDefault();
+              }
+            }}
             className={cn(
               "relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-lg)] outline-none data-[state=open]:animate-dialog-in",
               className,

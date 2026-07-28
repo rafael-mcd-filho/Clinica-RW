@@ -745,24 +745,53 @@ function AsyncStatusButton({
   execute: (active: boolean) => Promise<CatalogActionState>;
 }) {
   const [pending, startTransition] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string>();
+
+  async function updateStatus(nextActive: boolean) {
+    const result = await execute(nextActive);
+    if (result.error) {
+      setError(result.error);
+      toast.error(result.error);
+      return false;
+    }
+    setError(undefined);
+    if (result.success) toast.success(result.success);
+    return true;
+  }
 
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="ghost"
-      disabled={pending}
-      aria-label={active ? deactivateLabel : activateLabel}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await execute(!active);
-          if (result.error) toast.error(result.error);
-          else if (result.success) toast.success(result.success);
-        })
-      }
-    >
-      {pending ? "..." : active ? "Desativar" : "Ativar"}
-    </Button>
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        disabled={pending}
+        aria-label={active ? deactivateLabel : activateLabel}
+        onClick={() => {
+          if (active) {
+            setConfirming(true);
+            return;
+          }
+          startTransition(async () => {
+            await updateStatus(true);
+          });
+        }}
+      >
+        {pending ? "..." : active ? "Desativar" : "Ativar"}
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title={`${deactivateLabel}?`}
+        description="O item deixará de estar disponível para novos lançamentos. Registros anteriores serão preservados."
+        confirmLabel="Desativar"
+        pendingLabel="Desativando..."
+        destructive
+        error={error}
+        onConfirm={() => updateStatus(false)}
+      />
+    </>
   );
 }
 

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { ArrowLeft } from "@phosphor-icons/react/dist/ssr";
-import type { Icon as LucideIcon } from "@phosphor-icons/react";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { Breadcrumb, type BreadcrumbItem } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 
 export function PageHeader({
@@ -12,7 +13,7 @@ export function PageHeader({
   breadcrumbs,
   className,
   description,
-  icon: Icon,
+  icon,
   title,
 }: {
   actions?: React.ReactNode;
@@ -21,7 +22,7 @@ export function PageHeader({
   breadcrumbs?: BreadcrumbItem[];
   className?: string;
   description?: React.ReactNode;
-  icon?: LucideIcon;
+  icon?: PhosphorIcon;
   title: React.ReactNode;
 }) {
   return (
@@ -35,9 +36,9 @@ export function PageHeader({
                 <ArrowLeft className="size-4" aria-hidden="true" />
               </Link>
             </Button>
-          ) : Icon ? (
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
-              <Icon className="size-5" weight="duotone" aria-hidden="true" />
+          ) : icon ? (
+            <div className="flex min-h-12 w-12 shrink-0 self-stretch items-center justify-center rounded-lg bg-primary-muted text-primary">
+              <Icon icon={icon} size="xl" weight="duotone" />
             </div>
           ) : null}
           <div className="min-w-0">

@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import {
   connectWhatsApp,
   disconnectWhatsApp,
@@ -47,6 +48,7 @@ export function WhatsAppSettings({ initial }: Props) {
     profilePictureUrl: initial.profilePictureUrl,
   });
   const [pending, startTransition] = useTransition();
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const state = connection.state ?? initial.status;
   const connected = state === "connected" || state === "open";
   const connecting = state === "connecting";
@@ -58,6 +60,17 @@ export function WhatsAppSettings({ initial }: Props) {
       if (result.error) toast.error(result.error);
       else if (result.success) toast.success(result.success);
     });
+  }
+
+  async function disconnect() {
+    const result = await disconnectWhatsApp();
+    setConnection((current) => ({ ...current, ...result }));
+    if (result.error) {
+      toast.error(result.error);
+      return false;
+    }
+    if (result.success) toast.success(result.success);
+    return true;
   }
 
   useEffect(() => {
@@ -150,7 +163,7 @@ export function WhatsAppSettings({ initial }: Props) {
             <Button
               variant="destructive"
               disabled={pending}
-              onClick={() => run(disconnectWhatsApp)}
+              onClick={() => setConfirmingDisconnect(true)}
             >
               <LogOut className="size-4" aria-hidden="true" />
               Desconectar
@@ -170,6 +183,16 @@ export function WhatsAppSettings({ initial }: Props) {
           ) : null}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmingDisconnect}
+        onClose={() => setConfirmingDisconnect(false)}
+        title="Desconectar WhatsApp?"
+        description="O canal deixará de receber e enviar mensagens até que uma nova conexão seja realizada."
+        confirmLabel="Desconectar WhatsApp"
+        pendingLabel="Desconectando..."
+        destructive
+        onConfirm={disconnect}
+      />
 
       {!initial.platformConfigured ? (
         <p className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">

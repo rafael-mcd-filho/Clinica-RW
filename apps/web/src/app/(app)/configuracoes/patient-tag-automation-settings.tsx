@@ -579,6 +579,7 @@ function RuleRow({
   const hasScheduleScope = Boolean(rule.config.schedule_id);
   const hasProfessionalScope = Boolean(rule.config.professional_id);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
   return (
     <article className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center">
@@ -619,13 +620,22 @@ function RuleRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
-        <form
-          action={setPatientTagRuleActive.bind(null, rule.id, !rule.active)}
-        >
-          <Button type="submit" variant="secondary" size="sm">
-            {rule.active ? "Desativar" : "Ativar"}
+        {rule.active ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setConfirmingDeactivate(true)}
+          >
+            Desativar
           </Button>
-        </form>
+        ) : (
+          <form action={setPatientTagRuleActive.bind(null, rule.id, true)}>
+            <Button type="submit" variant="secondary" size="sm">
+              Ativar
+            </Button>
+          </form>
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -637,6 +647,15 @@ function RuleRow({
         </Button>
       </div>
 
+      <ConfirmDialog
+        open={confirmingDeactivate}
+        onClose={() => setConfirmingDeactivate(false)}
+        title="Desativar automação?"
+        description={`A automação “${rule.name}” deixará de ser aplicada até que seja ativada novamente.`}
+        confirmLabel="Desativar automação"
+        destructive
+        formAction={setPatientTagRuleActive.bind(null, rule.id, false)}
+      />
       <ConfirmDialog
         open={confirmingDelete}
         onClose={() => setConfirmingDelete(false)}

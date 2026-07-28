@@ -7,6 +7,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 
 type LogoUploadFieldProps = {
   /** File input name read by the server action. */
@@ -32,6 +33,7 @@ export function LogoUploadField({
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(currentUrl);
   const [removed, setRemoved] = useState(false);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -92,7 +94,7 @@ export function LogoUploadField({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={handleRemove}
+              onClick={() => setConfirmingRemoval(true)}
             >
               <X className="size-4" aria-hidden="true" />
               Remover
@@ -109,6 +111,15 @@ export function LogoUploadField({
         type="hidden"
         name={removeFieldName}
         value={removed ? "true" : "false"}
+      />
+      <ConfirmDialog
+        open={confirmingRemoval}
+        onClose={() => setConfirmingRemoval(false)}
+        title="Remover logo?"
+        description="A logo será marcada para remoção e apagada quando você salvar as alterações."
+        confirmLabel="Remover logo"
+        destructive
+        onConfirm={handleRemove}
       />
     </div>
   );
