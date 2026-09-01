@@ -80,17 +80,16 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
-  /* Subsistema deliberado: shell escura sobre canvas claro (padrão Vercel/Linear).
-     O fundo é tingido pelo primary — a shell acompanha o white-label em vez
-     de ficar num slate genérico — e os estados ativos derivam do primary. */
-  --sidebar-bg: color-mix(in srgb, var(--primary) 18%, #0a101f);
-  --sidebar-bg-elevated: color-mix(in srgb, var(--primary) 24%, #101a2e);
-  --sidebar-border: rgba(255, 255, 255, 0.09);
-  --sidebar-foreground: #e7ecf5;
-  --sidebar-muted-foreground: #97a7c4;
-  --sidebar-hover-bg: rgba(255, 255, 255, 0.07);
-  --sidebar-active-bg: color-mix(in srgb, var(--primary) 32%, transparent);
-  --sidebar-active-foreground: color-mix(in srgb, var(--primary) 25%, white);
+  /* Sidebar clara e neutra. O primary permanece nos detalhes de marca,
+     enquanto navegação e estados ativos mantêm contraste estável. */
+  --sidebar-bg: #ffffff;
+  --sidebar-bg-elevated: #f8fafc;
+  --sidebar-border: #e4e9f0;
+  --sidebar-foreground: #101828;
+  --sidebar-muted-foreground: #475467;
+  --sidebar-hover-bg: #f4f6f8;
+  --sidebar-active-bg: color-mix(in srgb, var(--primary) 4%, #e8edf2);
+  --sidebar-active-foreground: #101828;
 }
 
 @theme inline {

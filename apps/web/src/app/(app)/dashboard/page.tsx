@@ -26,7 +26,6 @@ import {
   type CompanyDashboardChartsData,
   type DashboardSlice,
 } from "./company-dashboard-charts";
-import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { SummaryBarChart } from "@/components/ui/summary-chart";
 import { getRequestContext } from "@/lib/auth/context";
@@ -111,9 +110,9 @@ const dashboardAppointmentColumns =
 type MetricTone = "primary" | "success" | "warning" | "destructive" | "neutral";
 const metricToneClass: Record<MetricTone, string> = {
   primary: "bg-primary-muted text-primary",
-  success: "bg-success-muted text-success",
+  success: "bg-success-muted text-success-foreground",
   warning: "bg-warning-muted text-warning-foreground",
-  destructive: "bg-destructive-muted text-destructive",
+  destructive: "bg-destructive-muted text-destructive-foreground",
   neutral: "bg-muted text-muted-foreground",
 };
 
@@ -133,25 +132,29 @@ function DashboardMetricCard({
   trend?: MetricTrend;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-border-strong hover:shadow-[var(--shadow-hover)]">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex min-h-36 min-w-0 flex-col rounded-lg border border-border bg-card px-4 py-3.5 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-border-strong hover:shadow-[var(--shadow-hover)]">
+      <div className="flex min-w-0 items-center gap-2.5">
         <div
           className={cn(
-            "flex size-10 items-center justify-center rounded-md",
+            "flex size-8 shrink-0 items-center justify-center rounded-md",
             metricToneClass[tone],
           )}
         >
-          <Icon className="size-5" aria-hidden="true" />
+          <Icon className="size-4" weight="duotone" aria-hidden="true" />
         </div>
-        <Badge variant="neutral">{status}</Badge>
+        <p className="min-w-0 text-sm font-semibold leading-tight text-secondary-foreground">
+          {label}
+        </p>
+        <span className="sr-only">Categoria: {status}</span>
       </div>
-      <p className="mt-4 text-sm text-muted-foreground">{label}</p>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <p className="text-2xl font-semibold tabular-nums">{value}</p>
+      <div className="mt-3 flex flex-1 flex-col justify-end">
+        <p className="text-[2rem] font-bold leading-none tabular-nums text-foreground">
+          {value}
+        </p>
         {trend ? (
           <span
             className={cn(
-              "inline-flex items-center gap-0.5 text-xs font-semibold",
+              "mt-2 inline-flex flex-wrap items-center gap-0.5 text-xs font-semibold",
               trend.sentiment === "positive"
                 ? "text-success-foreground"
                 : trend.sentiment === "negative"
@@ -169,7 +172,11 @@ function DashboardMetricCard({
               {trend.label}
             </span>
           </span>
-        ) : null}
+        ) : (
+          <span className="mt-2 text-xs text-muted-foreground">
+            Indicador do período selecionado
+          </span>
+        )}
       </div>
     </div>
   );
@@ -281,7 +288,7 @@ export default async function DashboardPage({
   ];
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4">
       <PageHeader
         icon={LayoutDashboard}
         title="Painel da plataforma"
@@ -415,7 +422,7 @@ function buildCompanyDashboardCharts({
       insurances.get(appointment.health_insurance_id ?? "") ?? "Convenio",
   );
   const insuranceStatusCounts = new Map<string, number>([
-    ["Sem convenio", mixAppointments.length - insuranceAppointments.length],
+    ["Particular", mixAppointments.length - insuranceAppointments.length],
     ["Com convenio", insuranceAppointments.length],
   ]);
   const noShows = appointments.filter(
@@ -464,11 +471,21 @@ function buildCompanyDashboardCharts({
     insurances: {
       total: mixAppointments.length,
       slices: toSlices(insuranceStatusCounts, chartSeries),
-      breakdown: toPercentageSlices(
-        insuranceNameCounts,
-        Math.max(1, insuranceAppointments.length),
-        chartSeries,
-      ),
+      breakdown: [
+        {
+          label: "Particular",
+          value: percent(
+            mixAppointments.length - insuranceAppointments.length,
+            Math.max(1, mixAppointments.length),
+          ),
+          color: categoricalColors.teal,
+        },
+        ...toPercentageSlices(
+          insuranceNameCounts,
+          Math.max(1, mixAppointments.length),
+          chartSeries,
+        ),
+      ],
     },
     timing: {
       averageValue: average(timingValues),
@@ -676,7 +693,7 @@ function buildCompanyDashboardChartsFromAggregate(
     aggregate.charts.insurance_status.with_insurance +
     aggregate.charts.insurance_status.without_insurance;
   const insuranceStatusCounts = new Map<string, number>([
-    ["Sem convenio", aggregate.charts.insurance_status.without_insurance],
+    ["Particular", aggregate.charts.insurance_status.without_insurance],
     ["Com convenio", aggregate.charts.insurance_status.with_insurance],
   ]);
 
@@ -700,15 +717,22 @@ function buildCompanyDashboardChartsFromAggregate(
     insurances: {
       total: insuranceTotal,
       slices: toSlices(insuranceStatusCounts, chartSeries),
-      breakdown: aggregate.charts.insurance_breakdown.map((slice, index) => ({
-        label: slice.label,
-        value: percent(
-          slice.value,
-          Math.max(1, aggregate.charts.insurance_status.with_insurance),
-        ),
-        color:
-          chartSeries[index % chartSeries.length] ?? categoricalColors.blue,
-      })),
+      breakdown: [
+        {
+          label: "Particular",
+          value: percent(
+            aggregate.charts.insurance_status.without_insurance,
+            Math.max(1, insuranceTotal),
+          ),
+          color: categoricalColors.teal,
+        },
+        ...aggregate.charts.insurance_breakdown.map((slice, index) => ({
+          label: slice.label,
+          value: percent(slice.value, Math.max(1, insuranceTotal)),
+          color:
+            chartSeries[index % chartSeries.length] ?? categoricalColors.blue,
+        })),
+      ],
     },
     timing: {
       averageValue: aggregate.charts.timing.average_value,
@@ -1133,7 +1157,7 @@ async function CompanyDashboard({
     selection.view === "commercial" ? "comercial" : "operacional";
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4">
       <PageHeader
         title="Painel"
         description={`Visão ${viewLabel} de ${organization?.name ?? "sua empresa"}.`}
@@ -1157,8 +1181,8 @@ async function CompanyDashboard({
             description="Os dados não foram substituídos por zeros. Tente atualizar a página em alguns instantes."
           />
         ) : (
-          <>
-            <section className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 rounded-xl bg-surface-sunken/45 p-3 sm:p-4">
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {cards.map((card) => (
                 <DashboardMetricCard
                   key={card.label}
@@ -1189,7 +1213,7 @@ async function CompanyDashboard({
                 />
               )
             ) : null}
-          </>
+          </div>
         )
       ) : (
         <DashboardUnavailable

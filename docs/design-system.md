@@ -180,6 +180,29 @@ Shell escura (`--sidebar-*`) sobre canvas claro — padrão Vercel/Linear, **nã
 dark mode nem sinal para criar um. Estados ativos derivam do primary via
 `color-mix` para acompanhar o white-label. Nenhum outro componente usa esses tokens.
 
+### Avatar (`components/ui/avatar.tsx`)
+
+Foto com fallback para iniciais (`initialsFromName`), nunca recriado à mão.
+Escala fechada — avatares não seguem a escala de ícones:
+
+| Tamanho | Caixa | Contexto                                    |
+| ------- | ----- | ------------------------------------------- |
+| `sm`    | 36px  | listas densas, células de tabela, header    |
+| `md`    | 40px  | item de conversa, cabeçalho de painel       |
+| `lg`    | 64px  | identificação principal de contato/paciente |
+
+Tons: `muted` (default, sobre card) · `solid` (só o usuário autenticado no header).
+As iniciais são `aria-hidden` — o nome sempre aparece ao lado. `onPhotoError`
+avisa o pai quando a foto quebra (ex.: esconder o "ampliar foto").
+
+### Timeline (`components/ui/timeline.tsx`)
+
+Histórico de eventos em nós ligados por um fio: histórico de atendimento
+(`atendimento`) e log de acessos (`configuracoes/usuarios-acessos`). O nó recebe
+ícone Phosphor quando o tipo do evento tem significado próprio; sem ícone, ponto
+neutro. `detail` é o bloco destacado (ex.: motivo de uma transferência).
+Ordem cronológica é responsabilidade de quem monta `items`.
+
 ### PDFs (`lib/pdf/`)
 
 Todo documento usa `lib/pdf/pdf-theme.ts` (paleta espelhada dos tokens + escala de

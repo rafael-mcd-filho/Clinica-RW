@@ -20,12 +20,13 @@ import {
   type CardTimelineEntry,
 } from "../actions";
 import type { FunnelBoardCard } from "./funnel-board";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Textarea } from "@/components/ui/field";
-import { cn, initialsFromName } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export function CardPanel({
   funnelId,
@@ -110,9 +111,7 @@ export function CardPanel({
       >
         <header className="flex items-start justify-between gap-4 px-8 py-6">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-muted text-sm font-semibold text-primary">
-              {initialsFromName(card.patient_name)}
-            </span>
+            <Avatar name={card.patient_name} />
             <div className="min-w-0">
               <p className="truncate text-heading font-semibold text-foreground">
                 {card.patient_name}

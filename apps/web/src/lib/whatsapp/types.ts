@@ -47,6 +47,8 @@ export type ConversationListItem = {
   unreadCount: number;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
+  /** Fim do último atendimento concluído — só a fila de concluídos usa. */
+  resolvedAt: string | null;
   tags: ConversationTagView[];
 };
 

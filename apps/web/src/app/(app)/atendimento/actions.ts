@@ -7,6 +7,7 @@ import { draftReply } from "@/lib/whatsapp/ai-draft";
 import {
   sendMediaMessage,
   sendTextMessage,
+  sendWhatsAppAudio,
 } from "@/lib/whatsapp/evolution-client";
 import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest";
@@ -20,6 +21,12 @@ export type AttendanceResult = {
   ok: boolean;
   error?: string;
   message?: ConversationMessage;
+};
+
+type AttendantAuth = {
+  organizationId: string;
+  userId: string;
+  impersonating: boolean;
 };
 
 async function requireAttendant() {
@@ -201,6 +208,51 @@ async function isOptedOut(
   return Boolean(data);
 }
 
+async function recordOutboundActivity({
+  auth,
+  conversationId,
+  preview,
+  sentAt,
+}: {
+  auth: AttendantAuth;
+  conversationId: string;
+  preview: string;
+  sentAt: string;
+}): Promise<void> {
+  if (!auth.impersonating) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.rpc(
+      "record_whatsapp_outbound_activity",
+      {
+        p_conversation_id: conversationId,
+        p_preview: preview,
+        p_sent_at: sentAt,
+      },
+    );
+    if (!error && data) return;
+    if (error) {
+      console.error("[whatsapp outbound activity]", error.message);
+    }
+  }
+
+  // Na impersonaÃ§Ã£o o JWT continua sendo do Super Admin. A identidade efetiva
+  // jÃ¡ foi autorizada e validada como dona da conversa antes do envio.
+  const { error } = await createSupabaseAdminClient()
+    .from("whatsapp_conversations")
+    .update({
+      unread_count: 0,
+      last_message_at: sentAt,
+      last_message_preview: preview,
+    })
+    .eq("organization_id", auth.organizationId)
+    .eq("id", conversationId)
+    .eq("status", "open")
+    .eq("assigned_user_id", auth.userId);
+  if (error) {
+    console.error("[whatsapp outbound activity fallback]", error.message);
+  }
+}
+
 export async function sendMessageAction(
   conversationId: string,
   text: string,
@@ -280,17 +332,12 @@ export async function sendMessageAction(
     };
   }
 
-  const { error: activityError } = await supabase.rpc(
-    "record_whatsapp_outbound_activity",
-    {
-      p_conversation_id: conversationId,
-      p_preview: toMessagePreview("text", trimmed),
-      p_sent_at: nowIso,
-    },
-  );
-  if (activityError) {
-    console.error("[whatsapp outbound activity]", activityError.message);
-  }
+  await recordOutboundActivity({
+    auth,
+    conversationId,
+    preview: toMessagePreview("text", trimmed),
+    sentAt: nowIso,
+  });
 
   return {
     ok: true,
@@ -328,7 +375,9 @@ export async function sendMediaMessageAction(
     ? "image"
     : file.type.startsWith("audio/")
       ? "audio"
-      : "document";
+      : file.type.startsWith("video/")
+        ? "video"
+        : "document";
   const supabase = await createSupabaseServerClient();
   const context = await loadConversationContext(
     supabase,
@@ -349,16 +398,20 @@ export async function sendMediaMessageAction(
   const base64 = fileBytes.toString("base64");
   let waMessageId: string | null = null;
   try {
-    const result = await sendMediaMessage(
-      {
-        phone: context.phone,
-        mediaUrl: `data:${file.type || "application/octet-stream"};base64,${base64}`,
-        mediaType,
-        fileName: file.name,
-        caption: String(formData.get("caption") ?? "").trim() || undefined,
-      },
-      evolutionConfig,
-    );
+    const result =
+      mediaType === "audio"
+        ? await sendWhatsAppAudio(context.phone, base64, evolutionConfig)
+        : await sendMediaMessage(
+            {
+              phone: context.phone,
+              media: base64,
+              mediaType,
+              fileName: file.name,
+              caption:
+                String(formData.get("caption") ?? "").trim() || undefined,
+            },
+            evolutionConfig,
+          );
     waMessageId = result.waMessageId;
   } catch (error) {
     return {
@@ -401,17 +454,12 @@ export async function sendMediaMessageAction(
       ok: false,
       error: error?.message ?? "Arquivo enviado, mas não registrado.",
     };
-  const { error: activityError } = await supabase.rpc(
-    "record_whatsapp_outbound_activity",
-    {
-      p_conversation_id: conversationId,
-      p_preview: toMessagePreview(mediaType, file.name),
-      p_sent_at: nowIso,
-    },
-  );
-  if (activityError) {
-    console.error("[whatsapp outbound activity]", activityError.message);
-  }
+  await recordOutboundActivity({
+    auth,
+    conversationId,
+    preview: toMessagePreview(mediaType, file.name),
+    sentAt: nowIso,
+  });
   return {
     ok: true,
     message: {
@@ -611,6 +659,14 @@ export async function setConversationStatusAction(
     return { ok: false, error: "Status de atendimento inválido." };
   }
 
+  if (auth.impersonating) {
+    return setConversationStatusAsEffectiveUser(
+      auth.organizationId,
+      conversationId,
+      status,
+    );
+  }
+
   const functionName =
     status === "resolved"
       ? "complete_whatsapp_conversation"
@@ -624,19 +680,45 @@ export async function setConversationStatusAction(
     : { ok: false, error: "Não foi possível atualizar o atendimento." };
 }
 
-export async function markConversationReadAction(
+async function setConversationStatusAsEffectiveUser(
+  organizationId: string,
   conversationId: string,
+  status: "pending" | "resolved",
 ): Promise<AttendanceResult> {
-  const auth = await requireAttendant();
-  if (!auth) return { ok: false, error: "Acesso negado." };
+  const admin = createSupabaseAdminClient();
+  const { data: current, error: currentError } = await admin
+    .from("whatsapp_conversations")
+    .select("status")
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId)
+    .maybeSingle<{ status: ConversationStatus }>();
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc(
-    "mark_whatsapp_conversation_read",
-    { p_conversation_id: conversationId },
-  );
+  if (currentError) return { ok: false, error: currentError.message };
+  if (!current) return { ok: false, error: "Conversa não encontrada." };
+  if (current.status === status) return { ok: true };
+  if (status === "pending" && current.status !== "resolved") {
+    return { ok: false, error: "Não foi possível atualizar o atendimento." };
+  }
+
+  const changes =
+    status === "pending" ? { status, assigned_user_id: null } : { status };
+  const { data: updated, error } = await admin
+    .from("whatsapp_conversations")
+    .update(changes)
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId)
+    .eq("status", current.status)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
   if (error) return { ok: false, error: error.message };
-  return data ? { ok: true } : { ok: false, error: "Conversa não encontrada." };
+  return updated
+    ? { ok: true }
+    : {
+        ok: false,
+        error:
+          "O atendimento foi atualizado por outro usuário. Tente novamente.",
+      };
 }
 
 export async function setConversationTagAction(

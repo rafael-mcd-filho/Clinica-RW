@@ -29,6 +29,8 @@ import {
   updateFinancialCategoryDreGroup,
   type FinanceActionState,
 } from "./actions";
+import { FinanceOverviewPanel, type FinanceOverview } from "./finance-overview";
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -100,7 +102,13 @@ export type FinanceSummary = {
   cashIn: number;
   cashOut: number;
   averageCollectionDays: number;
+  previousAccrualRevenue: number;
+  previousAccrualExpense: number;
+  previousCashIn: number;
+  previousCashOut: number;
 };
+
+export type { FinanceOverview } from "./finance-overview";
 
 type FinancePeriod = { from: string; to: string; mode: "cash" | "accrual" };
 type DreRow = { group: string; amount: number };
@@ -137,6 +145,8 @@ const initialState: FinanceActionState = {};
 export function FinancePanel({
   section,
   period,
+  overview,
+  overviewError,
   dreRows,
   summary,
   receivables,
@@ -156,6 +166,8 @@ export function FinancePanel({
     | "repasses"
     | "dre";
   period: FinancePeriod;
+  overview: FinanceOverview | null;
+  overviewError: string | null;
   dreRows: DreRow[];
   summary: FinanceSummary;
   receivables: ReceivableRow[];
@@ -195,8 +207,38 @@ export function FinancePanel({
       id: "visao-geral",
       label: "Visão geral",
       icon: <WalletCards />,
-      content: (
+      content: overview ? (
+        <FinanceOverviewPanel
+          overview={overview}
+          periodRevenue={periodRevenue}
+          periodExpense={periodExpense}
+          previousRevenue={
+            period.mode === "cash"
+              ? summary.previousCashIn
+              : summary.previousAccrualRevenue
+          }
+          previousExpense={
+            period.mode === "cash"
+              ? summary.previousCashOut
+              : summary.previousAccrualExpense
+          }
+          openReceivable={summary.openReceivable}
+          openPayable={summary.openPayable}
+          revenueLabel={period.mode === "cash" ? "Entradas" : "Receitas"}
+          expenseLabel={period.mode === "cash" ? "Saídas" : "Despesas"}
+          canViewCash={permissions.canViewCash}
+          canViewPayables={permissions.canViewPayables}
+        />
+      ) : (
         <div className="grid min-w-0 gap-6">
+          {overviewError ? (
+            <Alert variant="warning" title="Visão geral completa indisponível">
+              O painel de fluxo de caixa depende da função{" "}
+              <code className="font-mono">get_finance_overview</code>, que o
+              banco recusou: {overviewError}. Aplique a migration pendente para
+              liberar os gráficos.
+            </Alert>
+          ) : null}
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {permissions.canViewCash ? (
               <>

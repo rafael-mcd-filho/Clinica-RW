@@ -55,6 +55,7 @@ import { MaskedInput } from "@/components/ui/masked-input";
 import { Modal } from "@/components/ui/modal";
 import { RequiredMark } from "@/components/ui/required-mark";
 import { Tabs } from "@/components/ui/tabs";
+import { Timeline } from "@/components/ui/timeline";
 import { formatPhoneBR } from "@/lib/validation/br";
 
 const initialState: AccessActionState = {};
@@ -538,32 +539,21 @@ function AuditPanel({ data }: { data: CompanyAccessData }) {
         </p>
       </CardHeader>
       {data.auditEvents.length ? (
-        <div className="divide-y divide-border">
-          {data.auditEvents.map((event) => (
-            <div
-              key={event.id}
-              className="flex flex-col justify-between gap-2 px-5 py-4 sm:flex-row sm:items-center"
-            >
-              <div>
-                <p className="text-sm font-medium">
-                  {auditLabels[event.action] ?? event.action}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Por {event.actorName}
-                  {event.resourceId
-                    ? ` · Recurso ${event.resourceId.slice(0, 8)}`
-                    : ""}
-                </p>
-              </div>
-              <time
-                dateTime={event.createdAt}
-                className="shrink-0 text-xs text-muted-foreground"
-              >
-                {formatDateTime(event.createdAt)}
-              </time>
-            </div>
-          ))}
-        </div>
+        <CardContent>
+          <Timeline
+            items={data.auditEvents.map((event) => ({
+              id: event.id,
+              title: auditLabels[event.action] ?? event.action,
+              timestamp: formatDateTime(event.createdAt),
+              dateTime: event.createdAt,
+              description: `Por ${event.actorName}${
+                event.resourceId
+                  ? ` · Recurso ${event.resourceId.slice(0, 8)}`
+                  : ""
+              }`,
+            }))}
+          />
+        </CardContent>
       ) : (
         <div className="px-5 py-10 text-center text-sm text-muted-foreground">
           Nenhuma alteração de acesso registrada.

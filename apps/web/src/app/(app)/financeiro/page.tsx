@@ -8,6 +8,7 @@ import {
   FinancePanel,
   type FinancialCategoryRow,
   type FinanceListPagination,
+  type FinanceOverview,
   type FinanceSummary,
   type PayableRow,
   type PaymentMethodRow,
@@ -17,6 +18,10 @@ import {
 } from "./finance-panel";
 import { PageHeader } from "@/components/ui/page-header";
 import { getRequestContext, hasAnyPermission } from "@/lib/auth/context";
+import {
+  defaultDashboardTimeZone,
+  isValidTimeZone,
+} from "@/lib/dashboard/periods";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -115,6 +120,9 @@ export async function renderFinanceiroPage(
     payouts: financePageParam(params.payouts_page),
   };
 
+  const isOverview = section === "visao-geral";
+  const previousPeriod = previousFinancePeriod(period);
+
   const [
     financeSummary,
     receivables,
@@ -125,6 +133,8 @@ export async function renderFinanceiroPage(
     categories,
     periodMetrics,
     dre,
+    organizationSettings,
+    previousMetrics,
   ] = await Promise.all([
     supabase
       .rpc("get_operational_finance_summary", {
@@ -236,7 +246,38 @@ export async function renderFinanceiroPage(
           })
           .returns<DreRow[]>()
       : Promise.resolve({ data: [] as DreRow[] }),
+    isOverview
+      ? supabase
+          .from("organization_settings")
+          .select("timezone")
+          .eq("organization_id", organizationId)
+          .maybeSingle<{ timezone: string | null }>()
+      : Promise.resolve({ data: null }),
+    isOverview
+      ? supabase
+          .rpc("get_finance_period_metrics", {
+            p_organization_id: organizationId,
+            p_from: previousPeriod.from,
+            p_to: previousPeriod.to,
+          })
+          .returns<FinancePeriodMetricsRow[]>()
+      : Promise.resolve({ data: [] as FinancePeriodMetricsRow[] }),
   ]);
+
+  const timeZone = isValidTimeZone(organizationSettings.data?.timezone)
+    ? (organizationSettings.data?.timezone as string)
+    : defaultDashboardTimeZone;
+  // A visão geral depende do fuso da clínica para fechar os dias, por isso
+  // roda numa segunda onda. Sem a migration do RPC aplicada volta null e a
+  // aba cai no resumo simples.
+  const overviewResult = isOverview
+    ? await supabase.rpc("get_finance_overview", {
+        p_organization_id: organizationId,
+        p_from: period.from,
+        p_to: period.to,
+        p_timezone: timeZone,
+      })
+    : null;
 
   if (financeSummary.error) {
     throw new Error("Não foi possível carregar os indicadores financeiros.");
@@ -252,6 +293,9 @@ export async function renderFinanceiroPage(
   const periodRows = Array.isArray(periodMetrics.data)
     ? (periodMetrics.data as unknown as FinancePeriodMetricsRow[])
     : [];
+  const previousRows = Array.isArray(previousMetrics.data)
+    ? (previousMetrics.data as unknown as FinancePeriodMetricsRow[])
+    : [];
   const dreRows = Array.isArray(dre.data)
     ? (dre.data as unknown as DreRow[])
     : [];
@@ -265,6 +309,10 @@ export async function renderFinanceiroPage(
     cashIn: Number(periodRows[0]?.cash_in ?? 0),
     cashOut: Number(periodRows[0]?.cash_out ?? 0),
     averageCollectionDays: Number(periodRows[0]?.average_collection_days ?? 0),
+    previousAccrualRevenue: Number(previousRows[0]?.accrual_revenue ?? 0),
+    previousAccrualExpense: Number(previousRows[0]?.accrual_expense ?? 0),
+    previousCashIn: Number(previousRows[0]?.cash_in ?? 0),
+    previousCashOut: Number(previousRows[0]?.cash_out ?? 0),
   };
   const pagination = {
     receivables: financePagination(
@@ -296,6 +344,8 @@ export async function renderFinanceiroPage(
     <FinancePanel
       section={section}
       period={period}
+      overview={parseFinanceOverview(overviewResult?.data)}
+      overviewError={overviewResult?.error?.message ?? null}
       dreRows={dreRows.map((row) => ({
         group: row.dre_group,
         amount: Number(row.amount),
@@ -339,6 +389,79 @@ function financePeriod(params: Record<string, string | string[] | undefined>) {
 
 function firstSearchParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+// Período imediatamente anterior, do mesmo tamanho, para a variação dos cards.
+function previousFinancePeriod(period: { from: string; to: string }) {
+  const from = new Date(`${period.from}T12:00:00Z`);
+  const to = new Date(`${period.to}T12:00:00Z`);
+  const days = Math.max(
+    1,
+    Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1,
+  );
+  const previousTo = new Date(from.getTime() - 86_400_000);
+  const previousFrom = new Date(previousTo.getTime() - (days - 1) * 86_400_000);
+
+  return {
+    from: previousFrom.toISOString().slice(0, 10),
+    to: previousTo.toISOString().slice(0, 10),
+  };
+}
+
+function parseFinanceOverview(value: unknown): FinanceOverview | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const buckets = (input: unknown) => {
+    const entry = (input ?? {}) as Record<string, unknown>;
+    return {
+      overdue: Number(entry.overdue ?? 0),
+      dueToday: Number(entry.dueToday ?? 0),
+      dueMonth: Number(entry.dueMonth ?? 0),
+      dueYear: Number(entry.dueYear ?? 0),
+      settledMonth: Number(entry.settledMonth ?? 0),
+      settledYear: Number(entry.settledYear ?? 0),
+    };
+  };
+  const slices = (input: unknown) =>
+    (Array.isArray(input) ? input : []).map((item) => {
+      const entry = item as Record<string, unknown>;
+      return {
+        name: String(entry.name ?? "Sem categoria"),
+        amount: Number(entry.amount ?? 0),
+      };
+    });
+
+  return {
+    today: String(raw.today ?? ""),
+    series: (Array.isArray(raw.series) ? raw.series : []).map((item) => {
+      const entry = item as Record<string, unknown>;
+      return {
+        bucket: String(entry.bucket ?? ""),
+        cashIn: Number(entry.cashIn ?? 0),
+        cashOut: Number(entry.cashOut ?? 0),
+        expectedIn: Number(entry.expectedIn ?? 0),
+        expectedOut: Number(entry.expectedOut ?? 0),
+      };
+    }),
+    receivable: buckets(raw.receivable),
+    payable: buckets(raw.payable),
+    revenueCategories: slices(raw.revenueCategories),
+    expenseCategories: slices(raw.expenseCategories),
+    paymentMethods: (Array.isArray(raw.paymentMethods)
+      ? raw.paymentMethods
+      : []
+    ).map((item) => {
+      const entry = item as Record<string, unknown>;
+      return {
+        name: String(entry.name ?? "Forma de pagamento"),
+        methodType: entry.methodType ? String(entry.methodType) : null,
+        amount: Number(entry.amount ?? 0),
+      };
+    }),
+  };
 }
 
 function financePageParam(value: string | string[] | undefined) {

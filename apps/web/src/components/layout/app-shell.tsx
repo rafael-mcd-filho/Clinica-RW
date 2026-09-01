@@ -5,33 +5,33 @@ import {
   Pulse as Activity,
   ChartBar as BarChart3,
   Buildings as Building2,
-  CalendarDots as CalendarDays,
+  CalendarBlank as CalendarDays,
   CaretDown as ChevronDown,
   ClockCounterClockwise as History,
+  CurrencyCircleDollar as WalletCards,
   SquaresFour as LayoutDashboard,
-  SignOut as LogOut,
-  List as Menu,
-  ChatsCircle as MessagesSquare,
+  ListBullets as MessagesSquare,
   SidebarSimple as PanelLeftClose,
   Sidebar as PanelLeftOpen,
-  GearSix as Settings,
+  Gear as Settings,
   ShieldWarning as ShieldAlert,
   Stethoscope,
   type Icon as LucideIcon,
   UserGear as UserCog,
-  UserCircle as UserRound,
-  UsersThree as UsersRound,
-  Wallet as WalletCards,
+  Users as UsersRound,
   FlowArrow as Waypoints,
 } from "@phosphor-icons/react";
 import { useId, useState, useSyncExternalStore } from "react";
-import { signOut } from "@/app/(auth)/login/actions";
 import { endImpersonation } from "@/app/(app)/suporte/actions";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
 import { TodayAppointmentsRail } from "@/components/layout/today-appointments-rail";
-import { cn, initialsFromName } from "@/lib/utils";
+import {
+  GlobalHeader,
+  type GlobalSearchPage,
+} from "@/components/layout/global-header";
+import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 
 export type AppShellNavItem = {
@@ -82,10 +82,12 @@ type AppShellProps = {
   sidebarSubtitle: string;
   userName: string;
   userSubtitle: string;
+  userRole: string;
   impersonation: {
     organizationName: string;
     targetUserName: string;
   } | null;
+  patientSearchEnabled?: boolean;
   todayRailEnabled?: boolean;
   initialSidebarPinned?: boolean;
   initialTodayRailPinned?: boolean;
@@ -148,7 +150,9 @@ export function AppShell({
   sidebarSubtitle,
   userName,
   userSubtitle,
+  userRole,
   impersonation,
+  patientSearchEnabled = false,
   todayRailEnabled = false,
   initialSidebarPinned = true,
   initialTodayRailPinned = false,
@@ -167,7 +171,11 @@ export function AppShell({
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [todayRailOpen, setTodayRailOpen] = useState(false);
+  const [todayAppointmentCount, setTodayAppointmentCount] = useState<
+    number | null
+  >(null);
   const hasTodayRail = todayRailEnabled;
+  const searchPages = navigationSearchPages(navItems);
 
   function updatePinned(nextPinned: boolean) {
     window.localStorage.setItem(storageKey, String(nextPinned));
@@ -190,7 +198,14 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-screen min-w-0 w-full bg-background text-foreground">
+    <div
+      className={cn(
+        "min-w-0 w-full bg-background text-foreground",
+        pathname.startsWith("/atendimento")
+          ? "h-dvh overflow-hidden"
+          : "min-h-screen",
+      )}
+    >
       <NavigationProgress />
 
       {sidebarPinned ? (
@@ -199,8 +214,7 @@ export function AppShell({
           brandName={brandName}
           brandLogoUrl={brandLogoUrl}
           subtitle={sidebarSubtitle}
-          userName={userName}
-          userSubtitle={userSubtitle}
+          impersonation={impersonation}
           pinned={sidebarPinned}
           onTogglePinned={() => updatePinned(false)}
           className="hidden lg:flex"
@@ -221,8 +235,7 @@ export function AppShell({
         brandName={brandName}
         brandLogoUrl={brandLogoUrl}
         subtitle={sidebarSubtitle}
-        userName={userName}
-        userSubtitle={userSubtitle}
+        impersonation={impersonation}
         pinned={sidebarPinned}
         onNavigate={() => {
           if (!sidebarPinned) {
@@ -239,67 +252,42 @@ export function AppShell({
 
       <div
         className={cn(
-          "min-w-0 w-full",
-          impersonation
-            ? "[--app-sticky-offset:6.5rem]"
-            : "[--app-sticky-offset:3.5rem]",
-          sidebarPinned
-            ? impersonation
-              ? "lg:[--app-sticky-offset:3rem]"
-              : "lg:[--app-sticky-offset:0rem]"
-            : impersonation
-              ? "lg:[--app-sticky-offset:6.5rem]"
-              : "lg:[--app-sticky-offset:3.5rem]",
+          "min-w-0 w-full [--app-sticky-offset:4rem] [--today-rail-offset:0rem]",
+          pathname.startsWith("/atendimento") ? "h-full overflow-hidden" : "",
           sidebarPinned ? "lg:pl-64" : "lg:pl-0",
           hasTodayRail && todayRailPinned ? "xl:pr-[21rem]" : "",
+          hasTodayRail && (todayRailOpen || todayRailPinned)
+            ? "[--today-rail-offset:21rem]"
+            : "",
         )}
       >
-        {impersonation ? (
-          <div className="sticky top-0 z-30 flex min-h-12 flex-wrap items-center justify-between gap-3 border-b border-blue-200 bg-blue-50 px-4 py-2 text-blue-900 md:px-6">
-            <div className="flex min-w-0 items-center gap-2">
-              <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />
-              <p className="truncate text-sm font-medium">
-                Suporte ativo em {impersonation.organizationName} como{" "}
-                {impersonation.targetUserName}
-              </p>
-            </div>
-            <form action={endImpersonation}>
-              <Button
-                type="submit"
-                variant="secondary"
-                size="sm"
-                className="border-blue-300 bg-transparent text-blue-700 shadow-none hover:border-blue-400 hover:bg-blue-100"
-              >
-                Encerrar suporte
-              </Button>
-            </form>
-          </div>
-        ) : null}
-
-        <header
-          className={cn(
-            "sticky z-20 flex h-14 items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur md:px-6",
-            impersonation ? "top-12" : "top-0",
-            sidebarPinned ? "lg:hidden" : "",
-          )}
-        >
-          <Tooltip content="Abrir menu" side="bottom">
-            <Button
-              variant="secondary"
-              size="icon"
-              type="button"
-              aria-label="Abrir menu"
-              onClick={() => setDrawerOpen(true)}
-            >
-              <Menu className="size-4" aria-hidden="true" />
-            </Button>
-          </Tooltip>
-        </header>
+        <GlobalHeader
+          pages={searchPages}
+          patientSearchEnabled={patientSearchEnabled}
+          userName={userName}
+          userSubtitle={userRole}
+          userOrganization={userSubtitle}
+          sidebarPinned={sidebarPinned}
+          onOpenMenu={() => setDrawerOpen(true)}
+          todayRailEnabled={hasTodayRail}
+          todayRailOpen={todayRailOpen || todayRailPinned}
+          todayAppointmentCount={todayAppointmentCount}
+          onToggleTodayRail={() => {
+            if (todayRailOpen || todayRailPinned) {
+              if (todayRailPinned) updateTodayRailPinned(false);
+              setTodayRailOpen(false);
+            } else {
+              setTodayRailOpen(true);
+            }
+          }}
+        />
 
         <main
           className={cn(
-            "mx-auto min-h-[calc(100svh-3.5rem)] min-w-0 w-full",
-            pathname.startsWith("/atendimento") ? "p-0" : "px-4 py-6 md:px-6",
+            "mx-auto min-w-0 w-full",
+            pathname.startsWith("/atendimento")
+              ? "h-[calc(100dvh-var(--app-sticky-offset))] min-h-0 overflow-hidden p-0"
+              : "min-h-[calc(100svh-var(--app-sticky-offset))] px-4 py-6 md:px-6",
             contentWidthClass(pathname),
           )}
         >
@@ -313,9 +301,33 @@ export function AppShell({
           pinned={todayRailPinned}
           onOpenChange={setTodayRailOpen}
           onPinnedChange={updateTodayRailPinned}
+          onAppointmentCountChange={setTodayAppointmentCount}
+          preload
+          showTrigger={false}
         />
       ) : null}
     </div>
+  );
+}
+
+function navigationSearchPages(
+  navItems: AppShellNavItem[],
+): GlobalSearchPage[] {
+  const pages = navItems.flatMap((item) => [
+    {
+      href: item.href,
+      label: item.label,
+      section: "Navegação",
+    },
+    ...(item.children ?? []).map((child) => ({
+      href: child.href,
+      label: child.label,
+      section: item.label,
+    })),
+  ]);
+  return pages.filter(
+    (page, index) =>
+      pages.findIndex((candidate) => candidate.href === page.href) === index,
   );
 }
 
@@ -344,8 +356,7 @@ function Sidebar({
   brandName,
   brandLogoUrl,
   subtitle,
-  userName,
-  userSubtitle,
+  impersonation,
   pinned,
   onNavigate,
   onTogglePinned,
@@ -355,8 +366,7 @@ function Sidebar({
   brandName: string;
   brandLogoUrl: string | null;
   subtitle: string;
-  userName: string;
-  userSubtitle: string;
+  impersonation: AppShellProps["impersonation"];
   pinned: boolean;
   onNavigate?: () => void;
   onTogglePinned: () => void;
@@ -365,11 +375,11 @@ function Sidebar({
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 w-64 flex-col border-r border-sidebar-border bg-sidebar shadow-[var(--shadow-md)]",
+        "fixed inset-y-0 left-0 w-64 flex-col border-r border-sidebar-border bg-sidebar shadow-[var(--shadow-soft)]",
         className,
       )}
     >
-      <div className="flex h-[4.5rem] items-center justify-between gap-3 border-b border-sidebar-border px-5">
+      <div className="flex h-16 items-center justify-between gap-3 border-b border-sidebar-border px-5">
         <div className="flex min-w-0 items-center gap-3">
           <div
             className={cn(
@@ -421,17 +431,13 @@ function Sidebar({
         </Tooltip>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4 [scrollbar-gutter:stable]">
+      <nav className="flex flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-5 [scrollbar-gutter:stable]">
         {navItems.map((item) => (
           <SidebarLink key={item.href} item={item} onNavigate={onNavigate} />
         ))}
       </nav>
 
-      <SidebarAccount
-        userName={userName}
-        userSubtitle={userSubtitle}
-        onNavigate={onNavigate}
-      />
+      <SidebarSupport impersonation={impersonation} />
     </aside>
   );
 }
@@ -493,13 +499,17 @@ function SidebarLink({
             setExpansionOverride({ pathname, expanded: !expanded })
           }
           className={cn(
-            "relative flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+            "relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
             routeInGroup
-              ? "bg-sidebar-active text-sidebar-active-foreground before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
+              ? "font-semibold text-sidebar-foreground"
               : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
           )}
         >
-          <Icon className="size-4 shrink-0" aria-hidden="true" />
+          <Icon
+            className="size-5 shrink-0"
+            weight="regular"
+            aria-hidden="true"
+          />
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
           <ChevronDown
             className={cn(
@@ -542,9 +552,9 @@ function SidebarLink({
                     tabIndex={expanded ? undefined : -1}
                     onClick={onNavigate}
                     className={cn(
-                      "relative flex min-h-9 items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+                      "relative flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
                       childIsActive
-                        ? "bg-sidebar-active text-sidebar-active-foreground"
+                        ? "bg-sidebar-active font-semibold text-sidebar-active-foreground"
                         : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
                     )}
                   >
@@ -573,17 +583,13 @@ function SidebarLink({
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
-        "relative flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+        "relative flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
         active
-          ? "bg-sidebar-active text-sidebar-active-foreground before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-primary"
+          ? "bg-sidebar-active font-semibold text-sidebar-active-foreground"
           : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
       )}
     >
-      <Icon
-        className="size-4"
-        weight={active ? "fill" : "duotone"}
-        aria-hidden="true"
-      />
+      <Icon className="size-5" weight="regular" aria-hidden="true" />
       {item.label}
       <NavLinkPending />
     </Link>
@@ -597,49 +603,39 @@ function isNavRouteActive(pathname: string, href: string) {
   );
 }
 
-function SidebarAccount({
-  userName,
-  userSubtitle,
-  onNavigate,
+function SidebarSupport({
+  impersonation,
 }: {
-  userName: string;
-  userSubtitle: string;
-  onNavigate?: () => void;
+  impersonation: AppShellProps["impersonation"];
 }) {
+  if (!impersonation) {
+    return null;
+  }
+
   return (
     <div className="border-t border-sidebar-border p-3">
-      <div className="flex min-w-0 items-center gap-3 px-2 py-2">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sidebar-active text-xs font-semibold text-sidebar-active-foreground">
-          {initialsFromName(userName)}
+      <div className="rounded-lg border border-primary/15 bg-primary-muted/60 p-2 text-sidebar-foreground">
+        <div className="flex min-w-0 items-start gap-2">
+          <ShieldAlert
+            className="mt-0.5 size-3.5 shrink-0 text-primary"
+            aria-hidden="true"
+          />
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold leading-4">Suporte ativo</p>
+            <p
+              className="truncate text-[10px] leading-4 text-sidebar-muted-foreground"
+              title={`${impersonation.organizationName} como ${impersonation.targetUserName}`}
+            >
+              {impersonation.organizationName} · {impersonation.targetUserName}
+            </p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-sidebar-foreground">
-            {userName}
-          </p>
-          <p className="truncate text-xs text-sidebar-muted-foreground">
-            {userSubtitle}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-1 grid gap-0.5">
-        <Link
-          href="/perfil"
-          prefetch={true}
-          onClick={onNavigate}
-          className="flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-sidebar-hover hover:text-sidebar-foreground"
-        >
-          <UserRound className="size-4" aria-hidden="true" />
-          Meu perfil
-        </Link>
-
-        <form action={signOut}>
+        <form action={endImpersonation} className="mt-1">
           <button
-            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm font-medium text-sidebar-muted-foreground transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-sidebar-hover hover:text-sidebar-foreground"
             type="submit"
+            className="flex h-7 w-full items-center justify-center rounded px-2 text-[11px] font-medium text-primary transition-colors hover:bg-primary-muted-hover"
           >
-            <LogOut className="size-4" aria-hidden="true" />
-            Sair
+            Encerrar suporte
           </button>
         </form>
       </div>

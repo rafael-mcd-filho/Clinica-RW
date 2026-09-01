@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import {
   Check,
   CheckCircle as CheckCircle2,
+  PencilSimpleLine,
   Plus,
   FloppyDisk as Save,
   ShieldCheck,
@@ -22,7 +23,7 @@ import { categoricalColors } from "@/lib/colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ConfirmDialog } from "@/components/ui/dialog";
+import { ConfirmDialog, FormDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 
 const initialState: PatientActionState = {};
@@ -48,6 +49,104 @@ export type ConsentRow = {
 };
 
 export type TagRow = { id: string; name: string; color: string };
+
+export type ClinicalSummaryField =
+  | "allergies"
+  | "comorbidities"
+  | "medications"
+  | "medical_history"
+  | "family_history"
+  | "habits";
+
+export function ClinicalQuickEditButton({
+  field,
+  label,
+  patientId,
+  value,
+}: {
+  field: ClinicalSummaryField;
+  label: string;
+  patientId: string;
+  value: string | null | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={`Editar ${label.toLocaleLowerCase("pt-BR")}`}
+        title={`Editar ${label.toLocaleLowerCase("pt-BR")}`}
+        onClick={() => setOpen(true)}
+        className="size-7 shrink-0 rounded-full text-current opacity-70 shadow-none hover:bg-card/70 hover:text-current hover:opacity-100"
+      >
+        <PencilSimpleLine className="size-3.5" aria-hidden="true" />
+      </Button>
+
+      {open ? (
+        <ClinicalQuickEditDialog
+          field={field}
+          label={label}
+          patientId={patientId}
+          value={value}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ClinicalQuickEditDialog({
+  field,
+  label,
+  patientId,
+  value,
+  onClose,
+}: {
+  field: ClinicalSummaryField;
+  label: string;
+  patientId: string;
+  value: string | null | undefined;
+  onClose: () => void;
+}) {
+  const action = updateClinicalSummary.bind(null, patientId);
+  const [state, formAction, pending] = useActionState(action, initialState);
+
+  useEffect(() => {
+    if (!state.success) return;
+    toast.success(state.success);
+    onClose();
+  }, [onClose, state.success]);
+
+  return (
+    <FormDialog
+      open
+      onClose={onClose}
+      title={`Editar ${label.toLocaleLowerCase("pt-BR")}`}
+      description="Digite um item por linha. Os marcadores serão adicionados automaticamente no resumo."
+      formAction={formAction}
+      pending={pending}
+      error={state.error}
+      confirmLabel="Salvar"
+      pendingLabel="Salvando..."
+    >
+      <label className="grid gap-2 text-sm font-medium">
+        {label}
+        <Textarea
+          name={field}
+          defaultValue={value ?? ""}
+          rows={7}
+          placeholder={"Exemplo 1\nExemplo 2"}
+        />
+      </label>
+      <p className="text-xs text-muted-foreground">
+        Use uma linha para cada informação. Linhas vazias serão ignoradas.
+      </p>
+    </FormDialog>
+  );
+}
 
 export function ClinicalSummaryForm({
   patientId,

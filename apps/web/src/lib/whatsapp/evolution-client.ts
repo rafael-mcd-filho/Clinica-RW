@@ -99,8 +99,8 @@ export async function sendTextMessage(
 export async function sendMediaMessage(
   input: {
     phone: string;
-    mediaUrl: string;
-    mediaType: "image" | "video" | "document" | "audio";
+    media: string;
+    mediaType: "image" | "video" | "document";
     caption?: string;
     fileName?: string;
   },
@@ -114,7 +114,7 @@ export async function sendMediaMessage(
       body: JSON.stringify({
         number: toWhatsAppNumber(input.phone),
         mediatype: input.mediaType,
-        media: input.mediaUrl,
+        media: input.media,
         caption: input.caption,
         fileName: input.fileName,
       }),
@@ -122,6 +122,45 @@ export async function sendMediaMessage(
     config,
   );
   return { waMessageId: extractMessageId(payload), raw: payload };
+}
+
+/** Envia uma gravação como áudio nativo/voz do WhatsApp. */
+export async function sendWhatsAppAudio(
+  phone: string,
+  audio: string,
+  providedConfig?: EvolutionConfig,
+): Promise<SendResult> {
+  const config = providedConfig ?? getEvolutionConfig();
+  const payload = await evolutionFetch(
+    `/message/sendWhatsAppAudio/${config.instance}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        number: toWhatsAppNumber(phone),
+        audio,
+      }),
+    },
+    config,
+  );
+  return { waMessageId: extractMessageId(payload), raw: payload };
+}
+
+/** Busca a foto de perfil pública que o WhatsApp disponibiliza para o contato. */
+export async function getContactProfilePictureUrl(
+  phone: string,
+  providedConfig?: EvolutionConfig,
+): Promise<string | null> {
+  const config = providedConfig ?? getEvolutionConfig();
+  const payload = await evolutionFetch(
+    `/chat/fetchProfilePictureUrl/${config.instance}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ number: toWhatsAppNumber(phone) }),
+    },
+    config,
+  );
+  if (!payload || typeof payload !== "object") return null;
+  return readString((payload as Record<string, unknown>).profilePictureUrl);
 }
 
 /** Estado atual da conexão da instância. */

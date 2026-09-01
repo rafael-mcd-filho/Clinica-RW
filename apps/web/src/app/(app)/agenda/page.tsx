@@ -3,6 +3,7 @@ import { AgendaBoard, type AgendaData } from "./agenda-board";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import {
   normalizeAgendaTimeZone,
+  resolveAgendaMonthGridRange,
   resolveAgendaSelection,
   resolveAgendaVisibleRange,
 } from "@/lib/agenda/range";
@@ -113,8 +114,9 @@ export default async function AgendaPage({
   const visibleRange = resolveAgendaVisibleRange(selection, timeZone);
   const rangeStart = visibleRange.startInclusive.toISOString();
   const rangeEnd = visibleRange.endExclusive.toISOString();
+  const monthGrid = resolveAgendaMonthGridRange(selection.date, timeZone);
 
-  const [appointments, blocks] = await Promise.all([
+  const [appointments, blocks, dayCounts] = await Promise.all([
     supabase
       .from("appointments")
       .select(
@@ -131,6 +133,12 @@ export default async function AgendaPage({
       .lt("start_at", rangeEnd)
       .gt("end_at", rangeStart)
       .order("start_at"),
+    supabase.rpc("agenda_day_counts", {
+      p_organization_id: organizationId,
+      p_start: monthGrid.startInclusive.toISOString(),
+      p_end: monthGrid.endExclusive.toISOString(),
+      p_timezone: timeZone,
+    }),
   ]);
 
   const appointmentRows = appointments.data ?? [];
@@ -181,6 +189,9 @@ export default async function AgendaPage({
     insurances: insurances.data ?? [],
     paymentMethods: paymentMethods.data ?? [],
     appointments: appointmentRows,
+    // Ocupação do mini calendário. Enquanto a migration do RPC não estiver
+    // aplicada o mapa de calor apenas não aparece — o resto da agenda segue.
+    dayCounts: isDayCountMap(dayCounts.data) ? dayCounts.data : {},
     encounters: encounters.data ?? [],
     availability: availability.data ?? [],
     blocks: blocks.data ?? [],
@@ -211,4 +222,13 @@ export default async function AgendaPage({
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function isDayCountMap(value: unknown): value is Record<string, number> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "number")
+  );
 }

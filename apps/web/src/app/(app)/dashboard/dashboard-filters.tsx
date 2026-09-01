@@ -13,6 +13,7 @@ import {
   type DashboardFilterSelection,
   type DashboardPeriodPreset,
 } from "@/lib/dashboard/periods";
+import { cn } from "@/lib/utils";
 
 const periodOptions: Array<{
   value: DashboardPeriodPreset;
@@ -60,13 +61,14 @@ export function DashboardFilters({
     <section className="overflow-visible rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
       <form
         action="/dashboard"
-        className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-[minmax(10rem,12rem)_minmax(11rem,14rem)_minmax(15rem,1fr)_auto] xl:items-end"
+        className="grid items-end gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[minmax(9rem,11rem)_minmax(10rem,13rem)_minmax(14rem,1fr)_auto]"
       >
-        <label className="grid gap-2 text-body-sm font-medium">
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground">
           Visão
           <Select
             name="view"
             value={view}
+            className="h-9 bg-background shadow-none"
             onValueChange={(value) =>
               setView(value as DashboardFilterSelection["view"])
             }
@@ -76,11 +78,12 @@ export function DashboardFilters({
           </Select>
         </label>
 
-        <label className="grid gap-2 text-body-sm font-medium">
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground">
           Período
           <Select
             name="period"
             value={period}
+            className="h-9 bg-background shadow-none"
             onValueChange={(value) => setPeriod(value as DashboardPeriodPreset)}
           >
             {periodOptions.map((option) => (
@@ -92,7 +95,7 @@ export function DashboardFilters({
         </label>
 
         {period === "custom" ? (
-          <label className="grid gap-2 text-body-sm font-medium">
+          <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground">
             Selecionar período
             <DateRangePickerInput
               fromName="from"
@@ -101,16 +104,18 @@ export function DashboardFilters({
               maxDate={today}
               weekStartsOn={0}
               panelAlign="end"
+              className="[&>button]:h-9 [&>button]:bg-background [&>button]:shadow-none"
               onValueChange={setCustomRange}
             />
           </label>
-        ) : (
-          <div className="hidden md:block" />
-        )}
+        ) : null}
 
         <Button
           type="submit"
-          className="md:justify-self-end"
+          className={cn(
+            "w-full sm:w-auto sm:justify-self-end lg:col-span-1 lg:col-start-4",
+            period !== "custom" && "sm:col-span-2",
+          )}
           disabled={customIncomplete || customInvalid || customTooLong}
         >
           Aplicar
@@ -118,14 +123,14 @@ export function DashboardFilters({
 
         {customTooLong ? (
           <p
-            className="text-body-sm text-destructive xl:col-start-3"
+            className="text-xs text-destructive sm:col-span-2 lg:col-span-2 lg:col-start-3"
             role="alert"
           >
             Selecione no máximo {maxCustomPeriodDays} dias.
           </p>
         ) : customInvalid ? (
           <p
-            className="text-body-sm text-destructive xl:col-start-3"
+            className="text-xs text-destructive sm:col-span-2 lg:col-span-2 lg:col-start-3"
             role="alert"
           >
             Selecione um intervalo de datas válido.
@@ -133,9 +138,9 @@ export function DashboardFilters({
         ) : null}
       </form>
 
-      <div className="flex flex-col gap-2 border-t border-border px-4 py-3 text-body-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
-        <span className="inline-flex items-center gap-2">
-          <CalendarRange className="size-4 shrink-0" aria-hidden="true" />
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <CalendarRange className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="inline-flex flex-wrap gap-x-1">
             <span>Período analisado:</span>
             <strong className="font-medium text-foreground">
@@ -143,8 +148,8 @@ export function DashboardFilters({
             </strong>
           </span>
         </span>
-        <span className="inline-flex items-center gap-2">
-          <ArrowLeftRight className="size-4 shrink-0" aria-hidden="true" />
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <ArrowLeftRight className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="inline-flex flex-wrap gap-x-1">
             <span>Comparado com</span>
             <strong className="font-medium text-foreground">

@@ -6,14 +6,15 @@ import {
   createContext,
   useEffect,
   useContext,
-  useLayoutEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   useTransition,
 } from "react";
-import { createPortal } from "react-dom";
+import { DayPicker, type DayButtonProps } from "react-day-picker";
 import { fromZonedTime } from "date-fns-tz";
+import { ptBR } from "date-fns/locale";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -121,6 +122,9 @@ export type AgendaData = {
     notes: string | null;
     is_extra: boolean;
   }>;
+  // Total de agendamentos por dia local na grade do mini calendário, sem os
+  // cancelados e independente dos filtros aplicados na tela.
+  dayCounts: Record<string, number>;
   encounters: Array<{
     id: string;
     appointment_id: string | null;
@@ -269,20 +273,6 @@ export function AgendaBoard({
           icon={CalendarDays}
           title="Agenda"
           description="Operação diária da recepção e dos profissionais."
-          actions={
-            canCreate || canBlock ? (
-              <div className="flex flex-wrap items-center gap-2">
-                {canBlock ? <ScheduleBlockForm data={data} /> : null}
-                {canCreate ? (
-                  <AppointmentForm
-                    data={data}
-                    canExtra={canExtra}
-                    canCreatePatient={canCreatePatient}
-                  />
-                ) : null}
-              </div>
-            ) : null
-          }
         />
 
         <AgendaCalendarView
@@ -294,8 +284,114 @@ export function AgendaBoard({
           canViewClinical={canViewClinical}
           canStartEncounter={canStartEncounter}
         />
+
+        {canCreate || canBlock ? (
+          <AgendaFloatingActions
+            data={data}
+            canCreate={canCreate}
+            canBlock={canBlock}
+            canExtra={canExtra}
+            canCreatePatient={canCreatePatient}
+          />
+        ) : null}
       </div>
     </AgendaTimeZoneContext.Provider>
+  );
+}
+
+function AgendaFloatingActions({
+  data,
+  canCreate,
+  canBlock,
+  canExtra,
+  canCreatePatient,
+}: {
+  data: AgendaData;
+  canCreate: boolean;
+  canBlock: boolean;
+  canExtra: boolean;
+  canCreatePatient: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const menuId = useId();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setExpanded(false);
+    }
+    function closeOnOutsideClick(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !containerRef.current?.contains(event.target)
+      ) {
+        setExpanded(false);
+      }
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+    };
+  }, [expanded]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="fixed bottom-6 right-[calc(1.5rem+var(--today-rail-offset,0rem))] z-50 flex flex-col items-end gap-3 transition-[right] duration-[var(--motion-drawer)] ease-[var(--ease-out)]"
+    >
+      <div
+        id={menuId}
+        aria-hidden={!expanded}
+        className={cn(
+          "flex origin-bottom flex-col items-end gap-2 transition-[opacity,transform] duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+          expanded
+            ? "pointer-events-auto translate-y-0 scale-100 opacity-100"
+            : "pointer-events-none translate-y-3 scale-95 opacity-0",
+        )}
+      >
+        {canBlock ? (
+          <ScheduleBlockForm
+            data={data}
+            floatingTrigger
+            triggerTabIndex={expanded ? 0 : -1}
+            onTrigger={() => setExpanded(false)}
+          />
+        ) : null}
+        {canCreate ? (
+          <AppointmentForm
+            data={data}
+            canExtra={canExtra}
+            canCreatePatient={canCreatePatient}
+            floatingTrigger
+            triggerTabIndex={expanded ? 0 : -1}
+            onTrigger={() => setExpanded(false)}
+          />
+        ) : null}
+      </div>
+
+      <Button
+        type="button"
+        size="icon"
+        aria-controls={menuId}
+        aria-expanded={expanded}
+        aria-label={
+          expanded ? "Fechar ações da agenda" : "Abrir ações da agenda"
+        }
+        onClick={() => setExpanded((value) => !value)}
+        className="size-14 rounded-full shadow-[var(--shadow-hover)]"
+      >
+        <Plus
+          className={cn(
+            "size-6 transition-transform duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+            expanded ? "rotate-45" : "rotate-0",
+          )}
+          aria-hidden="true"
+        />
+      </Button>
+    </div>
   );
 }
 
@@ -330,6 +426,7 @@ function AgendaCalendarView({
   const [procedureIds, setProcedureIds] = useState<string[]>([]);
   const [insuranceIds, setInsuranceIds] = useState<string[]>([]);
   const [patientQuery, setPatientQuery] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<
     string | null
   >(null);
@@ -534,216 +631,241 @@ function AgendaCalendarView({
     navigateAgenda(addAgendaPeriod(date, view, direction), view);
   }
 
+  function clearFilters() {
+    setProfessionalIds([]);
+    setStatusValues([]);
+    setUnitIds([]);
+    setSpecialtyIds([]);
+    setProcedureIds([]);
+    setInsuranceIds([]);
+    setPatientQuery("");
+  }
+
   return (
-    <div className="grid gap-4">
-      <Card
-        aria-busy={navigationPending}
-        className="bg-card/95 shadow-[var(--shadow-hover)] backdrop-blur md:sticky md:top-[calc(var(--app-sticky-offset,0rem)+0.5rem)] md:z-10"
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)] xl:items-start">
+      <AgendaSidebar
+        date={date}
+        dayCounts={data.dayCounts}
+        open={sidebarOpen}
+        canClear={activeFilterCount > 0 || patientQuery.trim().length > 0}
+        onClearFilters={clearFilters}
+        onSelectDate={(nextDate) => navigateAgenda(nextDate, view)}
       >
-        <CardContent className="grid gap-3 p-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-md bg-muted p-0.5">
-                {[
-                  ["day", "Diária"],
-                  ["week", "Semanal"],
-                  ["month", "Mensal"],
-                ].map(([value, label]) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={navigationPending}
-                    aria-pressed={view === value}
-                    onClick={() => navigateAgenda(date, value as AgendaView)}
-                    className={
-                      view === value
-                        ? "bg-card text-foreground shadow-[var(--shadow-soft)] hover:bg-card"
-                        : ""
-                    }
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </div>
-              <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-[var(--shadow-soft)]">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Periodo anterior"
-                  disabled={navigationPending}
-                  onClick={() => moveDate(-1)}
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={navigationPending}
-                  onClick={() => navigateAgenda(today, view)}
-                >
-                  Hoje
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Proximo periodo"
-                  disabled={navigationPending}
-                  onClick={() => moveDate(1)}
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-              <DatePickerInput
-                name="agenda_date"
-                value={date}
-                todayValue={today}
-                required
+        <FilterField label="Status">
+          <MultiSelect
+            value={statusValues}
+            onValueChange={setStatusValues}
+            allLabel="Todos"
+            aria-label="Filtrar status"
+            options={Object.entries(statusLabel).map(([value, label]) => ({
+              value,
+              label,
+            }))}
+          />
+        </FilterField>
+        <FilterField label="Profissional">
+          <MultiSelect
+            value={professionalIds}
+            onValueChange={setProfessionalIds}
+            allLabel="Todos"
+            aria-label="Filtrar profissionais"
+            options={data.professionals.map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
+        </FilterField>
+        <FilterField label="Especialidade">
+          <MultiSelect
+            value={specialtyIds}
+            onValueChange={setSpecialtyIds}
+            allLabel="Todas"
+            aria-label="Filtrar especialidades"
+            options={data.specialties.map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
+        </FilterField>
+        <FilterField label="Procedimento">
+          <MultiSelect
+            value={procedureIds}
+            onValueChange={setProcedureIds}
+            allLabel="Todos"
+            aria-label="Filtrar procedimentos"
+            options={data.procedures.map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
+        </FilterField>
+        <FilterField label="Unidade">
+          <MultiSelect
+            value={unitIds}
+            onValueChange={setUnitIds}
+            allLabel="Todas"
+            aria-label="Filtrar unidades"
+            options={data.units.map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
+        </FilterField>
+        <FilterField label="Convênio">
+          <MultiSelect
+            value={insuranceIds}
+            onValueChange={setInsuranceIds}
+            allLabel="Todos"
+            aria-label="Filtrar convenios"
+            options={data.insurances.map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
+        </FilterField>
+      </AgendaSidebar>
+
+      <div className="order-1 grid min-w-0 gap-4 xl:order-2">
+        <Card
+          aria-busy={navigationPending}
+          className="bg-card/95 shadow-[var(--shadow-hover)] backdrop-blur md:sticky md:top-[calc(var(--app-sticky-offset,0rem)+0.5rem)] md:z-10"
+        >
+          <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
+            <div className="flex min-w-0 items-center gap-1">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
                 disabled={navigationPending}
-                onValueChange={(nextDate) => {
-                  if (nextDate && nextDate !== date) {
-                    navigateAgenda(nextDate, view);
-                  }
-                }}
-                className="w-44"
-              />
-              <Badge variant="neutral">
-                {navigationPending ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <RefreshCw className="size-3 animate-spin" /> Atualizando
-                  </span>
-                ) : (
-                  rangeLabel
-                )}
-              </Badge>
+                onClick={() => navigateAgenda(today, view)}
+              >
+                Hoje
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Periodo anterior"
+                disabled={navigationPending}
+                onClick={() => moveDate(-1)}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <p className="min-w-0 truncate px-1 text-sm font-semibold first-letter:uppercase">
+                {rangeLabel}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Proximo periodo"
+                disabled={navigationPending}
+                onClick={() => moveDate(1)}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+              {navigationPending ? (
+                <RefreshCw
+                  className="size-4 animate-spin text-muted-foreground"
+                  aria-label="Atualizando"
+                />
+              ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <Badge variant="neutral">
+
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+              <div className="relative min-w-0 flex-1 sm:max-w-64">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  value={patientQuery}
+                  onChange={(event) => setPatientQuery(event.target.value)}
+                  placeholder="Buscar paciente"
+                  className="w-full pl-9"
+                  aria-label="Buscar paciente na agenda"
+                />
+              </div>
+              <Badge variant="neutral" className="hidden lg:inline-flex">
                 {filteredAppointments.length} agendamentos
               </Badge>
-              <Badge variant="neutral">{filteredBlocks.length} bloqueios</Badge>
+              {filteredBlocks.length ? (
+                <Badge variant="neutral" className="hidden lg:inline-flex">
+                  {filteredBlocks.length} bloqueios
+                </Badge>
+              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                aria-expanded={sidebarOpen}
+                onClick={() => setSidebarOpen((value) => !value)}
+                className="shrink-0 xl:hidden"
+              >
+                <SlidersHorizontal
+                  className="size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                Filtros
+                {activeFilterCount > 0 ? (
+                  <Badge variant="primary" className="h-5 px-1.5">
+                    {activeFilterCount}
+                  </Badge>
+                ) : null}
+              </Button>
+              <Select
+                value={view}
+                onValueChange={(nextView) =>
+                  navigateAgenda(date, nextView as AgendaView)
+                }
+                disabled={navigationPending}
+                aria-label="Visao da agenda"
+                className="w-36 shrink-0"
+              >
+                <option value="day">Diária</option>
+                <option value="week">Semanal</option>
+                <option value="month">Mensal</option>
+              </Select>
             </div>
-          </div>
+          </CardContent>
+        </Card>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
-                value={patientQuery}
-                onChange={(event) => setPatientQuery(event.target.value)}
-                placeholder="Buscar paciente por nome, telefone ou e-mail"
-                className="w-full pl-9"
-                aria-label="Buscar paciente na agenda"
-              />
-            </div>
-            <FiltersPopover activeCount={activeFilterCount}>
-              <MultiSelect
-                value={professionalIds}
-                onValueChange={setProfessionalIds}
-                allLabel="Todos os profissionais"
-                aria-label="Filtrar profissionais"
-                options={data.professionals.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                }))}
-              />
-              <MultiSelect
-                value={statusValues}
-                onValueChange={setStatusValues}
-                allLabel="Todos os status"
-                aria-label="Filtrar status"
-                options={Object.entries(statusLabel).map(([value, label]) => ({
-                  value,
-                  label,
-                }))}
-              />
-              <MultiSelect
-                value={unitIds}
-                onValueChange={setUnitIds}
-                allLabel="Todas as unidades"
-                aria-label="Filtrar unidades"
-                options={data.units.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                }))}
-              />
-              <MultiSelect
-                value={specialtyIds}
-                onValueChange={setSpecialtyIds}
-                allLabel="Todas as especialidades"
-                aria-label="Filtrar especialidades"
-                options={data.specialties.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                }))}
-              />
-              <MultiSelect
-                value={procedureIds}
-                onValueChange={setProcedureIds}
-                allLabel="Todos os procedimentos"
-                aria-label="Filtrar procedimentos"
-                options={data.procedures.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                }))}
-              />
-              <MultiSelect
-                value={insuranceIds}
-                onValueChange={setInsuranceIds}
-                allLabel="Todos os convenios"
-                aria-label="Filtrar convenios"
-                options={data.insurances.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                }))}
-              />
-            </FiltersPopover>
-          </div>
-        </CardContent>
-      </Card>
+        {view === "day" ? (
+          <DayAgenda
+            date={date}
+            appointments={filteredAppointments}
+            blocks={filteredBlocks}
+            patient={patient}
+            professional={professional}
+            procedure={procedure}
+            schedule={schedule}
+            canEdit={canEdit}
+            onSelectAppointment={setSelectedAppointmentId}
+          />
+        ) : view === "week" ? (
+          <WeekAgenda
+            date={date}
+            appointmentsByDay={appointmentsByDay}
+            blocksByDay={blocksByDay}
+            patient={patient}
+            professional={professional}
+            procedure={procedure}
+            schedule={schedule}
+            onSelectAppointment={setSelectedAppointmentId}
+          />
+        ) : (
+          <MonthAgenda
+            date={date}
+            appointmentsByDay={appointmentsByDay}
+            blocksByDay={blocksByDay}
+            patient={patient}
+            professional={professional}
+            procedure={procedure}
+            schedule={schedule}
+            onSelectAppointment={setSelectedAppointmentId}
+          />
+        )}
+      </div>
 
-      {view === "day" ? (
-        <DayAgenda
-          date={date}
-          appointments={filteredAppointments}
-          blocks={filteredBlocks}
-          patient={patient}
-          professional={professional}
-          procedure={procedure}
-          schedule={schedule}
-          canEdit={canEdit}
-          onSelectAppointment={setSelectedAppointmentId}
-        />
-      ) : view === "week" ? (
-        <WeekAgenda
-          date={date}
-          appointmentsByDay={appointmentsByDay}
-          blocksByDay={blocksByDay}
-          patient={patient}
-          professional={professional}
-          procedure={procedure}
-          schedule={schedule}
-          onSelectAppointment={setSelectedAppointmentId}
-        />
-      ) : (
-        <MonthAgenda
-          date={date}
-          appointmentsByDay={appointmentsByDay}
-          blocksByDay={blocksByDay}
-          patient={patient}
-          professional={professional}
-          procedure={procedure}
-          schedule={schedule}
-          onSelectAppointment={setSelectedAppointmentId}
-        />
-      )}
       {selectedAppointment ? (
         <AppointmentDetailsModal
           appointment={selectedAppointment}
@@ -776,107 +898,228 @@ function AgendaCalendarView({
   );
 }
 
-function FiltersPopover({
-  activeCount,
+// Coluna fixa da agenda: mini calendário do mês para saltar entre datas e,
+// logo abaixo, os filtros do período visível. Abaixo de xl ela sai do fluxo
+// e é aberta pelo botão "Filtros" da barra superior.
+function AgendaSidebar({
+  canClear,
   children,
+  date,
+  dayCounts,
+  onClearFilters,
+  onSelectDate,
+  open,
 }: {
-  activeCount: number;
+  canClear: boolean;
   children: React.ReactNode;
+  date: string;
+  dayCounts: Record<string, number>;
+  onClearFilters: () => void;
+  onSelectDate: (nextDate: string) => void;
+  open: boolean;
 }) {
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(
-    null,
-  );
-
-  const close = useCallback(() => setOpen(false), []);
-
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const width = 340;
-    const left = Math.min(rect.right - width, window.innerWidth - width - 8);
-    setCoords({ top: rect.bottom + 6, left: Math.max(8, left) });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (open) updatePosition();
-  }, [open, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    function onPointerDown(event: PointerEvent) {
-      const target = event.target as Node;
-      if (
-        panelRef.current?.contains(target) ||
-        triggerRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setOpen(false);
-    }
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    }
-
-    window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("resize", close);
-
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", close);
-    };
-  }, [open, close]);
+  const selectedDay = useMemo(() => calendarDateFromKey(date), [date]);
+  const density = useMemo(() => buildDayDensity(dayCounts), [dayCounts]);
 
   return (
-    <>
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="secondary"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => (open ? setOpen(false) : setOpen(true))}
-        className="h-10 shrink-0 aria-expanded:border-primary"
-      >
-        <SlidersHorizontal
-          className="size-4 text-muted-foreground"
-          aria-hidden="true"
-        />
-        Filtros
-        {activeCount > 0 ? (
-          <Badge variant="primary" className="h-5 px-1.5">
-            {activeCount}
-          </Badge>
-        ) : null}
-      </Button>
+    <div
+      className={cn(
+        "order-2 min-w-0 content-start gap-4 xl:sticky xl:top-[calc(var(--app-sticky-offset,0rem)+0.5rem)] xl:order-1 xl:grid xl:max-h-[calc(100svh-var(--app-sticky-offset,0rem)-1.5rem)] xl:overflow-y-auto xl:pr-1",
+        open ? "grid" : "hidden",
+      )}
+    >
+      <Card className="relative overflow-hidden">
+        <CardContent className="p-3">
+          <AgendaDayDensityContext.Provider value={density}>
+            <DayPicker
+              mode="single"
+              locale={ptBR}
+              weekStartsOn={1}
+              showOutsideDays
+              // O mês exibido segue o dia selecionado, então as setas do mini
+              // calendário movem o próprio período da agenda — é assim que a
+              // ocupação do mês novo chega junto na navegação.
+              month={selectedDay}
+              onMonthChange={(nextMonth) =>
+                onSelectDate(sameDayOfMonth(nextMonth, selectedDay.getDate()))
+              }
+              selected={selectedDay}
+              onSelect={(nextDay) => {
+                if (nextDay) onSelectDate(calendarKeyFromDate(nextDay));
+              }}
+              // A ocupação do dia é o único realce além do dia selecionado:
+              // pinta a célula e o botão transparente deixa o tom aparecer.
+              modifiers={{
+                loadLow: (day) => densityOf(density, day) === "low",
+                loadMedium: (day) => densityOf(density, day) === "medium",
+                loadHigh: (day) => densityOf(density, day) === "high",
+              }}
+              modifiersClassNames={{
+                loadLow: densityCellClass.low,
+                loadMedium: densityCellClass.medium,
+                loadHigh: densityCellClass.high,
+              }}
+              formatters={{ formatWeekdayName: calendarWeekdayLabel }}
+              components={{ DayButton: AgendaDayButton }}
+              classNames={{
+                root: "relative w-full",
+                caption_label:
+                  "text-sm font-semibold first-letter:uppercase text-foreground",
+                chevron: "size-4 fill-current",
+                day: "h-9 w-8 rounded-md p-0 text-center text-sm",
+                day_button: "",
+                month_caption:
+                  "mb-1 flex min-h-8 items-center justify-center text-center",
+                month_grid: "w-full table-fixed border-collapse",
+                months: "grid gap-2",
+                nav: "absolute inset-x-0 top-0 flex justify-between",
+                button_next:
+                  "flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40",
+                button_previous:
+                  "flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40",
+                weekday:
+                  "h-7 w-8 p-0 text-center text-[11px] font-medium uppercase text-muted-foreground",
+              }}
+            />
+          </AgendaDayDensityContext.Provider>
 
-      {open && coords && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              ref={panelRef}
-              role="dialog"
-              aria-label="Filtros da agenda"
-              data-select-portal-root
-              style={{ top: coords.top, left: coords.left, width: 340 }}
-              className="fixed z-[60] max-w-[calc(100vw-1rem)] animate-content-enter rounded-lg border border-border bg-popover p-4 shadow-[var(--shadow-md)]"
+          <div className="mt-2 flex items-center justify-center gap-3 border-t border-border pt-2 text-caption text-muted-foreground">
+            {densityLegend.map((item) => (
+              <span key={item.level} className="flex items-center gap-1">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "size-2.5 rounded-sm border border-border",
+                    densityCellClass[item.level],
+                  )}
+                />
+                {item.label}
+              </span>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="grid gap-3 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Filtros</p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!canClear}
+              onClick={onClearFilters}
+              className="h-7 px-2 text-xs text-primary hover:bg-primary-muted hover:text-primary"
             >
-              <p className="mb-3 text-sm font-semibold">Filtros</p>
-              <div className="grid gap-3">{children}</div>
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
+              Limpar filtros
+            </Button>
+          </div>
+          {children}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+type DayDensity = { counts: Record<string, number>; scale: number };
+type DensityLevel = "low" | "medium" | "high";
+
+const AgendaDayDensityContext = createContext<DayDensity>({
+  counts: {},
+  scale: 1,
+});
+
+const densityCellClass: Record<DensityLevel, string> = {
+  low: "bg-success-muted",
+  medium: "bg-warning-muted",
+  high: "bg-destructive-muted",
+};
+
+const densityLegend: Array<{ level: DensityLevel; label: string }> = [
+  { level: "low", label: "Tranquilo" },
+  { level: "medium", label: "Moderado" },
+  { level: "high", label: "Cheio" },
+];
+
+// Escala mínima para clínicas de baixo volume: sem ela um dia com dois
+// agendamentos apareceria como "cheio" só por ser o pico do mês.
+const minimumDensityScale = 6;
+
+function buildDayDensity(counts: Record<string, number>): DayDensity {
+  const values = Object.values(counts);
+  return {
+    counts,
+    scale: Math.max(minimumDensityScale, ...values, 1),
+  };
+}
+
+function densityLevelOf(count: number, scale: number): DensityLevel | null {
+  if (count <= 0) return null;
+  const ratio = count / scale;
+  if (ratio <= 1 / 3) return "low";
+  if (ratio <= 2 / 3) return "medium";
+  return "high";
+}
+
+function densityOf(density: DayDensity, day: Date) {
+  return densityLevelOf(
+    density.counts[calendarKeyFromDate(day)] ?? 0,
+    density.scale,
+  );
+}
+
+// Mesmo botão do react-day-picker (inclusive o foco por teclado). O estilo
+// fica todo aqui porque o `cn` resolve os conflitos entre selecionado, hoje e
+// dia de fora do mês; a contagem do dia vai só no title.
+function AgendaDayButton({
+  day,
+  modifiers,
+  children,
+  className,
+  ...props
+}: DayButtonProps) {
+  const density = useContext(AgendaDayDensityContext);
+  const ref = useRef<HTMLButtonElement>(null);
+  const count = density.counts[calendarKeyFromDate(day.date)] ?? 0;
+
+  useEffect(() => {
+    if (modifiers.focused) ref.current?.focus();
+  }, [modifiers.focused]);
+
+  return (
+    <button
+      ref={ref}
+      {...props}
+      title={`${count} ${count === 1 ? "agendamento" : "agendamentos"}`}
+      className={cn(
+        "flex size-full items-center justify-center rounded-md transition-colors duration-[var(--motion-fast)] hover:bg-muted",
+        modifiers.today && "font-semibold text-primary",
+        modifiers.outside && "text-muted-foreground/50",
+        modifiers.selected &&
+          "bg-primary font-semibold text-primary-foreground hover:bg-primary",
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FilterField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid min-w-0 gap-1.5">
+      <span className="text-xs font-medium text-secondary-foreground">
+        {label}
+      </span>
+      {children}
+    </div>
   );
 }
 
@@ -933,7 +1176,7 @@ function DayAgenda({
   ];
 
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {periods.map((period) => {
         const periodAppointments = dayAppointments.filter((item) =>
           localIntervalIntersectsMinuteRange(
@@ -966,7 +1209,7 @@ function DayAgenda({
 
         return (
           <Card key={period.id} className="overflow-hidden">
-            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] border-b border-border bg-card">
+            <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] border-b border-border bg-card">
               <div className="border-r border-border" />
               <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <div>
@@ -983,7 +1226,7 @@ function DayAgenda({
               </div>
             </div>
             <div
-              className="grid grid-cols-[4.5rem_minmax(0,1fr)]"
+              className="grid grid-cols-[3.25rem_minmax(0,1fr)]"
               style={{ height: totalHeight }}
             >
               <div className="relative border-r border-border bg-card">
@@ -992,7 +1235,7 @@ function DayAgenda({
                   .map((slot) => (
                     <div
                       key={slot.minute}
-                      className="absolute right-3 translate-y-1 rounded bg-card px-1 text-xs tabular-nums text-muted-foreground"
+                      className="absolute right-1.5 translate-y-1 rounded bg-card px-1 text-caption tabular-nums text-muted-foreground"
                       style={{ top: slot.top }}
                     >
                       {slot.label}
@@ -2065,7 +2308,17 @@ function EmptyAgendaBlock({ text }: { text: string }) {
   );
 }
 
-function ScheduleBlockForm({ data }: { data: AgendaData }) {
+function ScheduleBlockForm({
+  data,
+  floatingTrigger = false,
+  onTrigger,
+  triggerTabIndex,
+}: {
+  data: AgendaData;
+  floatingTrigger?: boolean;
+  onTrigger?: () => void;
+  triggerTabIndex?: number;
+}) {
   const [open, setOpen] = useState(false);
   const initial = defaultAppointmentDateTime(data.timeZone, data.selectedDate);
   const initialStart = parseLocalDateTimeForUi(
@@ -2149,7 +2402,20 @@ function ScheduleBlockForm({ data }: { data: AgendaData }) {
 
   return (
     <>
-      <Button type="button" variant="secondary" onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        variant="secondary"
+        tabIndex={triggerTabIndex}
+        onClick={() => {
+          setOpen(true);
+          onTrigger?.();
+        }}
+        className={
+          floatingTrigger
+            ? "h-11 rounded-full px-4 shadow-[var(--shadow-hover)]"
+            : undefined
+        }
+      >
         <Ban className="size-4" aria-hidden="true" />
         Bloquear horário
       </Button>
@@ -2294,10 +2560,16 @@ function AppointmentForm({
   data,
   canExtra,
   canCreatePatient,
+  floatingTrigger = false,
+  onTrigger,
+  triggerTabIndex,
 }: {
   data: AgendaData;
   canExtra: boolean;
   canCreatePatient: boolean;
+  floatingTrigger?: boolean;
+  onTrigger?: () => void;
+  triggerTabIndex?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [selectedScheduleId, setSelectedScheduleId] = useState("");
@@ -2324,7 +2596,19 @@ function AppointmentForm({
   );
   return (
     <>
-      <Button type="button" onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        tabIndex={triggerTabIndex}
+        onClick={() => {
+          setOpen(true);
+          onTrigger?.();
+        }}
+        className={
+          floatingTrigger
+            ? "h-11 rounded-full px-4 shadow-[var(--shadow-hover)]"
+            : undefined
+        }
+      >
         <Plus className="size-4" aria-hidden="true" />
         Novo agendamento
       </Button>
@@ -2916,6 +3200,39 @@ function dateKey(value: Date) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "UTC",
   }).format(value);
+}
+
+// O react-day-picker trabalha com datas no fuso do navegador, então o par
+// abaixo converte para/de chave `yyyy-MM-dd` sem passar por UTC (o que
+// deslocaria o dia em fusos negativos).
+function calendarDateFromKey(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
+function calendarKeyFromDate(value: Date) {
+  return [
+    String(value.getFullYear()).padStart(4, "0"),
+    String(value.getMonth() + 1).padStart(2, "0"),
+    String(value.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function sameDayOfMonth(month: Date, day: number) {
+  const lastDay = new Date(
+    month.getFullYear(),
+    month.getMonth() + 1,
+    0,
+  ).getDate();
+  return calendarKeyFromDate(
+    new Date(month.getFullYear(), month.getMonth(), Math.min(day, lastDay), 12),
+  );
+}
+
+function calendarWeekdayLabel(value: Date) {
+  return new Intl.DateTimeFormat("pt-BR", { weekday: "short" })
+    .format(value)
+    .replace(".", "");
 }
 
 function addDays(value: Date, days: number) {

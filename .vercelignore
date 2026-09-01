@@ -1,0 +1,26 @@
+# Local dependencies and build artifacts
+node_modules/
+apps/*/node_modules/
+.next/
+apps/*/.next/
+dist/
+coverage/
+
+# Local configuration, caches and tooling
+.git/
+.vercel/
+.agents/
+.claude/
+.supabase/
+.turbo/
+supabase/.temp/
+.env
+.env.*
+!.env.example
+
+# Backups, logs and local-only documentation
+*.rar
+*.log
+docs/
+Instruções de Desenvolvimento.md
+Plano de Implantação por Fases.md

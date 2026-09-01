@@ -5,6 +5,7 @@ import {
   buildAgendaReturnTo,
   normalizeAgendaTimeZone,
   parseAgendaLocalDateTime,
+  resolveAgendaMonthGridRange,
   resolveAgendaSelection,
   resolveAgendaVisibleRange,
   safeAgendaReturnTo,
@@ -50,6 +51,15 @@ describe("agenda visible range", () => {
     );
     expect(range.localFrom).toBe("2026-02-01");
     expect(range.localTo).toBe("2026-02-28");
+  });
+
+  it("pads the mini calendar month with the neighbouring weeks", () => {
+    const grid = resolveAgendaMonthGridRange("2026-08-30", "America/Fortaleza");
+
+    expect(grid.localFrom).toBe("2026-07-25");
+    expect(grid.localTo).toBe("2026-09-07");
+    expect(grid.startInclusive.toISOString()).toBe("2026-07-25T03:00:00.000Z");
+    expect(grid.endExclusive.toISOString()).toBe("2026-09-08T03:00:00.000Z");
   });
 
   it("preserves DST boundaries in configured timezones", () => {

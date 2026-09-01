@@ -158,7 +158,9 @@ async function ingestMessage(
     await admin
       .from("whatsapp_conversations")
       .update({
-        unread_count: inbound ? current.unread_count + 1 : current.unread_count,
+        // Uma resposta enviada pelo aparelho também lê todas as mensagens que
+        // estavam aguardando retorno nessa conversa.
+        unread_count: inbound ? current.unread_count + 1 : 0,
         last_message_at: nowIso,
         last_message_preview: preview,
         // Uma nova atividade externa, recebida ou enviada pelo aparelho,

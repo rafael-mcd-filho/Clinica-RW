@@ -8,6 +8,8 @@ export async function GET(request: Request) {
     !context.organization ||
     !hasAnyPermission(context.permissionCodes, [
       "paciente.ver",
+      "clinico.ver_prontuario",
+      "clinico.ver_prontuario_proprios",
       "agenda.criar_agendamento",
       "agenda.editar_agendamento",
       "funil.gerenciar",

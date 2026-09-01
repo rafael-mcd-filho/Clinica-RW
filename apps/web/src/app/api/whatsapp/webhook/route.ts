@@ -74,7 +74,7 @@ async function handleEvent(payload: EvolutionEvent): Promise<void> {
           instanceName,
           parsed.waMessageId,
           parsed.mediaMimeType,
-          payload.data,
+          Array.isArray(payload.data) ? payload.data[0] : payload.data,
         );
       }
       const { direction, ...message } = parsed;

@@ -12,7 +12,6 @@ import {
   ChatCenteredText as MessageSquareText,
   Phone,
   Stethoscope,
-  UserCircle as UserRound,
   X,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
@@ -21,6 +20,7 @@ import {
   rejectOnlineBookingRequest,
   type AgendaActionState,
 } from "@/app/(app)/agenda/actions";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
@@ -72,13 +72,13 @@ export function CompanyOperationsPanel({
   canRejectOnlineRequests: boolean;
 }) {
   return (
-    <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+    <section className="grid gap-4">
+      <WaitlistCard entries={waitlist} />
       <OnlineRequestsCard
         requests={onlineRequests}
         canConfirm={canConfirmOnlineRequests}
         canReject={canRejectOnlineRequests}
       />
-      <WaitlistCard entries={waitlist} />
     </section>
   );
 }
@@ -94,101 +94,106 @@ function OnlineRequestsCard({
 }) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Globe2 className="size-4 text-primary" aria-hidden="true" />
-            <h2 className="font-semibold">Solicitações online</h2>
+            <h2 className="text-heading-sm font-semibold">
+              Solicitações online
+            </h2>
           </div>
           <Badge variant={requests.length ? "warning" : "neutral"}>
             {requests.length}
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-3">
-        {requests.map((request) => (
-          <div
-            key={request.id}
-            className="grid gap-4 rounded-md border border-border bg-background p-4 lg:grid-cols-[minmax(0,1fr)_15rem]"
-          >
-            <div className="grid min-w-0 gap-3">
-              <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+      <CardContent className="p-4">
+        {requests.length ? (
+          <ul className="divide-y divide-border">
+            {requests.map((request) => (
+              <li
+                key={request.id}
+                className="grid gap-3 py-4 first:pt-0 last:pb-0 xl:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)]"
+              >
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <UserRound
-                      className="size-4 shrink-0 text-primary"
-                      aria-hidden="true"
-                    />
-                    <p className="truncate text-sm font-semibold">
-                      {request.patient_name}
-                    </p>
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar name={request.patient_name} size="sm" />
+                      <div className="min-w-0">
+                        <p className="truncate text-body font-semibold">
+                          {request.patient_name}
+                        </p>
+                        <p className="text-body-sm text-muted-foreground">
+                          Solicitação recebida pelo portal online
+                        </p>
+                      </div>
+                    </div>
+                    <Badge variant="warning" className="w-fit">
+                      Pendente
+                    </Badge>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Solicitação recebida pelo portal online
-                  </p>
+
+                  <div className="mt-3 grid gap-x-5 gap-y-2 text-body-sm text-muted-foreground sm:grid-cols-2 2xl:grid-cols-3">
+                    <RequestInfoRow
+                      icon={Clock3}
+                      text={`${formatDateTime(
+                        request.requested_start_at,
+                      )} - ${formatTime(request.requested_end_at)}`}
+                    />
+                    <RequestInfoRow
+                      icon={Stethoscope}
+                      text={`${request.procedures?.name ?? "Procedimento"} · ${
+                        request.professionals?.name ?? "Profissional"
+                      }`}
+                    />
+                    <RequestInfoRow
+                      icon={Phone}
+                      text={request.patient_phone || "Telefone não informado"}
+                    />
+                    <RequestInfoRow
+                      icon={Mail}
+                      text={request.patient_email || "E-mail não informado"}
+                    />
+                    <RequestInfoRow
+                      icon={Building2}
+                      text={[
+                        request.units?.name,
+                        request.health_insurances?.name ?? "Particular",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    />
+                  </div>
+
+                  {request.patient_notes ? (
+                    <div className="mt-3 flex gap-2 rounded-md border border-border bg-muted/25 px-3 py-2 text-body-sm">
+                      <MessageSquareText
+                        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                      <p className="min-w-0 whitespace-pre-wrap break-words">
+                        {request.patient_notes}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
-                <Badge variant="warning" className="w-fit">
-                  Pendente
-                </Badge>
-              </div>
-
-              <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
-                <RequestInfoRow
-                  icon={Clock3}
-                  text={`${formatDateTime(
-                    request.requested_start_at,
-                  )} - ${formatTime(request.requested_end_at)}`}
-                />
-                <RequestInfoRow
-                  icon={Stethoscope}
-                  text={`${request.procedures?.name ?? "Procedimento"} · ${
-                    request.professionals?.name ?? "Profissional"
-                  }`}
-                />
-                <RequestInfoRow
-                  icon={Phone}
-                  text={request.patient_phone || "Telefone não informado"}
-                />
-                <RequestInfoRow
-                  icon={Mail}
-                  text={request.patient_email || "E-mail não informado"}
-                />
-                <RequestInfoRow
-                  icon={Building2}
-                  text={[
-                    request.units?.name,
-                    request.health_insurances?.name ?? "Particular",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                />
-              </div>
-
-              {request.patient_notes ? (
-                <div className="flex gap-2 rounded-md border border-border bg-muted/25 px-3 py-2 text-sm">
-                  <MessageSquareText
-                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
+                {canConfirm || canReject ? (
+                  <OnlineRequestActions
+                    requestId={request.id}
+                    canConfirm={canConfirm}
+                    canReject={canReject}
                   />
-                  <p>{request.patient_notes}</p>
-                </div>
-              ) : null}
-            </div>
-            {canConfirm || canReject ? (
-              <OnlineRequestActions
-                requestId={request.id}
-                canConfirm={canConfirm}
-                canReject={canReject}
-              />
-            ) : null}
-          </div>
-        ))}
-        {!requests.length ? (
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
           <EmptyState
             icon={CalendarClock}
             title="Nenhuma solicitação online pendente."
+            className="py-6"
           />
-        ) : null}
+        )}
       </CardContent>
     </Card>
   );
@@ -227,7 +232,7 @@ function OnlineRequestActions({
   useToastState(rejectState);
 
   return (
-    <div className="grid content-start gap-3 rounded-md bg-muted/35 p-3">
+    <div className="grid content-start gap-2 rounded-md border border-border bg-muted/35 p-3">
       {canConfirm ? (
         <form action={confirmAction}>
           <Button type="submit" disabled={pending} className="w-full">
@@ -288,7 +293,10 @@ function RequestInfoRow({
 }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <Icon
+        className="size-4 shrink-0 text-muted-foreground"
+        aria-hidden="true"
+      />
       <span className="truncate">{text}</span>
     </div>
   );
@@ -297,50 +305,67 @@ function RequestInfoRow({
 function WaitlistCard({ entries }: { entries: DashboardWaitlistEntry[] }) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ListPlus className="size-4 text-primary" aria-hidden="true" />
-            <h2 className="font-semibold">Fila de espera</h2>
+            <h2 className="text-heading-sm font-semibold">Fila de espera</h2>
           </div>
           <Badge variant={entries.length ? "primary" : "neutral"}>
             {entries.length}
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-2">
-        {entries.map((entry) => (
-          <div
-            key={entry.id}
-            className="rounded-md border border-border bg-background p-3"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
-                  {entry.patients?.social_name ||
-                    entry.patients?.full_name ||
-                    "Paciente"}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {entry.procedures?.name ?? "Qualquer procedimento"}
-                  {entry.professionals?.name
-                    ? ` · ${entry.professionals.name}`
-                    : ""}
-                </p>
-              </div>
-              <Badge variant="neutral">
-                {periodLabel[entry.preferred_period || "any"] ?? "Período"}
-              </Badge>
-            </div>
-            {entry.notes ? <p className="mt-2 text-sm">{entry.notes}</p> : null}
-          </div>
-        ))}
-        {!entries.length ? (
+      <CardContent className="p-4">
+        {entries.length ? (
+          <ul className="divide-y divide-border">
+            {entries.map((entry) => {
+              const patientName =
+                entry.patients?.social_name ||
+                entry.patients?.full_name ||
+                "Paciente";
+
+              return (
+                <li
+                  key={entry.id}
+                  className="flex min-w-0 items-start gap-3 py-3 first:pt-0 last:pb-0"
+                >
+                  <Avatar name={patientName} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                      <div className="min-w-0">
+                        <p className="truncate text-body font-semibold">
+                          {patientName}
+                        </p>
+                        <p className="text-body-sm text-muted-foreground">
+                          {entry.procedures?.name ?? "Qualquer procedimento"}
+                          {entry.professionals?.name
+                            ? ` · ${entry.professionals.name}`
+                            : ""}
+                        </p>
+                      </div>
+                      <Badge variant="neutral" className="w-fit">
+                        {periodLabel[entry.preferred_period || "any"] ??
+                          "Período"}
+                      </Badge>
+                    </div>
+                    {entry.notes ? (
+                      <p className="mt-1 whitespace-pre-wrap break-words text-body-sm text-secondary-foreground">
+                        {entry.notes}
+                      </p>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
           <EmptyState
             icon={ListPlus}
             title="Nenhum paciente aguardando vaga."
+            className="py-6"
           />
-        ) : null}
+        )}
       </CardContent>
     </Card>
   );

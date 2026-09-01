@@ -20,13 +20,13 @@ import {
   UsersThree as UsersRound,
 } from "@phosphor-icons/react";
 import { setPatientArchived } from "./actions";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
 import { PatientCompletenessRing } from "@/components/patients/patient-completeness-ring";
-import { initialsFromName } from "@/lib/utils";
 import { formatPhoneBR } from "@/lib/validation/br";
 
 export type PatientTagOption = { id: string; name: string; color: string };
@@ -519,15 +519,7 @@ function PatientListAvatar({
   size: "sm" | "md";
 }) {
   const displayName = patient.social_name || patient.full_name;
-  const avatar = (
-    <span
-      className={`flex ${
-        size === "sm" ? "size-9" : "size-10"
-      } items-center justify-center rounded-full bg-primary-muted text-xs font-semibold text-primary`}
-    >
-      {initialsFromName(displayName)}
-    </span>
-  );
+  const avatar = <Avatar name={displayName} size={size} />;
 
   if (patient.completenessAvailable || patient.deceased_at) {
     return (

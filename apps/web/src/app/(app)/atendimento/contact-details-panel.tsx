@@ -4,27 +4,36 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowCounterClockwise,
+  ArrowsLeftRight,
   ArrowSquareOut,
   CalendarDots,
   CalendarPlus,
   CaretRight,
+  CheckCircle,
   ClockCounterClockwise,
   File as FileIcon,
   FileAudio,
   FileImage,
   FileVideo,
+  FunnelSimple,
   LinkSimple,
+  MagnifyingGlass,
   Paperclip,
+  Play,
   Tag as TagIcon,
   TrendUp,
   UserCircle,
+  WhatsappLogo,
   X,
+  type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import {
   useActionState,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
 } from "react";
@@ -35,6 +44,7 @@ import {
   type ContactAppointmentView,
   type ContactAttendanceEventView,
   type ContactDetailsData,
+  type ContactDetailsResult,
   type ContactFileView,
   type ContactOnlineBookingView,
   type ContactOpportunityMovementView,
@@ -42,17 +52,95 @@ import {
 } from "./contact-actions";
 import { linkPatientAction, setConversationTagAction } from "./actions";
 import { createAppointment, type AgendaActionState } from "../agenda/actions";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
+import { Timeline } from "@/components/ui/timeline";
 import type {
   ConversationListItem,
   ConversationTagView,
 } from "@/lib/whatsapp/types";
 import { cn } from "@/lib/utils";
+
+type LoadedContactDetails = {
+  conversationId: string;
+  data: ContactDetailsData | null;
+  error: string | null;
+};
+
+type ContactDetailsCacheEntry = {
+  expiresAt: number;
+  promise: Promise<LoadedContactDetails>;
+  value?: LoadedContactDetails;
+};
+
+const contactDetailsCache = new Map<string, ContactDetailsCacheEntry>();
+const contactDetailsCacheTtlMs = 60_000;
+
+function contactDetailsCacheKey(
+  organizationId: string,
+  conversationId: string,
+) {
+  return `${organizationId}:${conversationId}`;
+}
+
+function normalizeContactDetailsResult(
+  result: ContactDetailsResult,
+  conversationId: string,
+  organizationId: string,
+): LoadedContactDetails {
+  if (result.ok && result.data.organizationId === organizationId) {
+    return { conversationId, data: result.data, error: null };
+  }
+  return {
+    conversationId,
+    data: null,
+    error: result.ok ? "Empresa inválida." : result.error,
+  };
+}
+
+/**
+ * Starts loading the contact sidebar before it is opened.
+ * The inbox should call this as soon as the selected conversation changes.
+ */
+export function preloadContactDetails(
+  conversationId: string,
+  organizationId: string,
+  force = false,
+): Promise<LoadedContactDetails> {
+  const key = contactDetailsCacheKey(organizationId, conversationId);
+  const cached = contactDetailsCache.get(key);
+  if (!force && cached && cached.expiresAt > Date.now()) {
+    return cached.promise;
+  }
+
+  const promise = loadContactDetailsAction(conversationId).then((result) =>
+    normalizeContactDetailsResult(result, conversationId, organizationId),
+  );
+  const entry: ContactDetailsCacheEntry = {
+    expiresAt: Date.now() + contactDetailsCacheTtlMs,
+    promise,
+  };
+  contactDetailsCache.set(key, entry);
+  void promise.then((value) => {
+    if (contactDetailsCache.get(key) === entry) entry.value = value;
+  });
+  return promise;
+}
+
+function cachedContactDetails(
+  conversationId: string,
+  organizationId: string,
+): LoadedContactDetails | undefined {
+  const entry = contactDetailsCache.get(
+    contactDetailsCacheKey(organizationId, conversationId),
+  );
+  return entry && entry.expiresAt > Date.now() ? entry.value : undefined;
+}
 
 export function ContactDetailsPanel({
   conversation,
@@ -70,38 +158,29 @@ export function ContactDetailsPanel({
   onTagsChange: (tags: ConversationTagView[]) => void;
 }) {
   const [loadRevision, setLoadRevision] = useState(0);
-  const [loaded, setLoaded] = useState<{
-    conversationId: string;
-    data: ContactDetailsData | null;
-    error: string | null;
-  } | null>(null);
+  const [activeTab, setActiveTab] = useState("contato");
+  const [loaded, setLoaded] = useState<LoadedContactDetails | null>(
+    () => cachedContactDetails(conversation.id, organizationId) ?? null,
+  );
 
   useEffect(() => {
     let active = true;
-    void loadContactDetailsAction(conversation.id).then((result) => {
-      if (!active) return;
-      if (result.ok && result.data.organizationId === organizationId) {
-        setLoaded({
-          conversationId: conversation.id,
-          data: result.data,
-          error: null,
-        });
-      } else {
-        setLoaded({
-          conversationId: conversation.id,
-          data: null,
-          error: result.ok ? "Empresa inválida." : result.error,
-        });
-      }
-    });
+    void preloadContactDetails(conversation.id, organizationId, false).then(
+      (result) => {
+        if (active) setLoaded(result);
+      },
+    );
     return () => {
       active = false;
     };
   }, [conversation.id, loadRevision, organizationId]);
 
   const refresh = useCallback(() => {
+    contactDetailsCache.delete(
+      contactDetailsCacheKey(organizationId, conversation.id),
+    );
     setLoadRevision((value) => value + 1);
-  }, []);
+  }, [conversation.id, organizationId]);
   const current =
     loaded?.conversationId === conversation.id ? loaded : undefined;
 
@@ -119,15 +198,32 @@ export function ContactDetailsPanel({
       >
         <header className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
           <div className="flex min-w-0 items-center gap-3">
-            <ContactAvatar conversation={conversation} />
-            <div className="min-w-0">
-              <p className="truncate text-body-sm font-semibold">
-                {conversation.contactName}
-              </p>
-              <p className="truncate text-label tabular-nums text-muted-foreground">
-                {formatPhone(conversation.contactPhone)}
-              </p>
-            </div>
+            {activeTab === "arquivos" ? (
+              <>
+                <Paperclip
+                  className="size-5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <p className="truncate text-body-sm font-semibold">
+                  Arquivos na conversa
+                </p>
+              </>
+            ) : (
+              <>
+                <Avatar
+                  name={conversation.contactName}
+                  photoUrl={conversation.contactPhotoUrl}
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-body-sm font-semibold">
+                    {conversation.contactName}
+                  </p>
+                  <p className="truncate text-label tabular-nums text-muted-foreground">
+                    {formatPhone(conversation.contactPhone)}
+                  </p>
+                </div>
+              </>
+            )}
           </div>
           <Button
             type="button"
@@ -147,6 +243,9 @@ export function ContactDetailsPanel({
         ) : (
           <Tabs
             ariaLabel="Informações do contato"
+            iconOnly
+            value={activeTab}
+            onValueChange={setActiveTab}
             className="flex min-h-0 flex-1 flex-col px-4 pt-3"
             contentClassName="min-h-0 flex-1 overflow-y-auto pb-6 outline-none"
             items={[
@@ -177,7 +276,12 @@ export function ContactDetailsPanel({
                 id: "arquivos",
                 label: "Arquivos",
                 icon: <Paperclip />,
-                content: <FilesTab files={current.data.files} />,
+                content: (
+                  <FilesTab
+                    files={current.data.files}
+                    contactName={conversation.contactName}
+                  />
+                ),
               },
               {
                 id: "historico",
@@ -292,27 +396,58 @@ function ContactTab({
         destructive
         onConfirm={removeTag}
       />
-      <PanelSection title="Dados do contato">
-        <dl className="grid gap-3 text-body-sm">
-          <DetailRow label="Nome" value={data.contact.name} />
-          <DetailRow label="WhatsApp" value={formatPhone(data.contact.phone)} />
-          {data.patient?.email ? (
-            <DetailRow label="E-mail" value={data.patient.email} />
-          ) : null}
-          {data.patient?.phone && data.patient.phone !== data.contact.phone ? (
-            <DetailRow
-              label="Telefone do paciente"
-              value={formatPhone(data.patient.phone)}
-            />
-          ) : null}
-          <DetailRow
-            label="Contato desde"
-            value={formatDateTime(data.contact.createdAt)}
-          />
-        </dl>
+      <div className="flex flex-col items-center border-b border-border pb-5 text-center">
+        <Avatar
+          name={conversation.contactName}
+          photoUrl={conversation.contactPhotoUrl}
+          size="lg"
+        />
+        <h2 className="mt-3 max-w-full truncate text-base font-semibold">
+          {data.contact.name}
+        </h2>
+        {data.patient ? (
+          <p className="mt-1 text-label text-muted-foreground">
+            Paciente vinculado
+          </p>
+        ) : null}
+      </div>
+
+      <section className="grid gap-5 border-b border-border px-1 pb-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-label text-muted-foreground">Telefone</p>
+            <p className="mt-0.5 truncate text-body-sm font-medium tabular-nums">
+              {formatPhone(data.contact.phone)}
+            </p>
+          </div>
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-sm"
+            className="rounded-full border border-border text-[#128c7e]"
+          >
+            <a
+              href={`https://wa.me/${whatsappPhone(data.contact.phone)}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Abrir conversa no WhatsApp"
+            >
+              <WhatsappLogo className="size-4" aria-hidden="true" />
+            </a>
+          </Button>
+        </div>
+
+        {data.patient?.email ? (
+          <div>
+            <p className="text-label text-muted-foreground">E-mail</p>
+            <p className="mt-0.5 break-words text-body-sm font-medium">
+              {data.patient.email}
+            </p>
+          </div>
+        ) : null}
 
         {data.contact.patientId ? (
-          <div className="mt-4 grid gap-2 rounded-lg border border-border bg-muted/40 p-3">
+          <div className="grid gap-2 rounded-lg bg-muted/50 p-3">
             {data.patient ? (
               <>
                 <div className="flex items-center justify-between gap-2">
@@ -370,7 +505,7 @@ function ContactTab({
             Contato ainda não vinculado a um paciente.
           </p>
         )}
-      </PanelSection>
+      </section>
 
       <PanelSection
         title="Etiquetas"
@@ -639,41 +774,58 @@ function AttendancesTab({ events }: { events: ContactAttendanceEventView[] }) {
   }
 
   return (
-    <ol className="relative ml-2 border-l border-border pl-5">
-      {events.map((event) => {
-        const description = attendanceEventDescription(event);
+    <Timeline
+      items={events.map((event) => {
         const reason = metadataText(event.metadata, "reason");
-        return (
-          <li key={event.id} className="relative pb-5 last:pb-0">
-            <span className="absolute -left-[1.6rem] top-1.5 size-3 rounded-full border-2 border-card bg-primary" />
-            <article className="rounded-lg border border-border p-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="text-body-sm font-medium">
-                  {attendanceEventLabel(event.eventType)}
-                </p>
-                <time className="text-caption tabular-nums text-muted-foreground">
-                  {formatDateTime(event.occurredAt)}
-                </time>
-              </div>
-              {description ? (
-                <p className="mt-1 text-label text-muted-foreground">
-                  {description}
-                </p>
-              ) : null}
-              {reason ? (
-                <p className="mt-2 rounded-md bg-muted px-2.5 py-2 text-label">
-                  Motivo: {reason}
-                </p>
-              ) : null}
-            </article>
-          </li>
-        );
+        return {
+          id: event.id,
+          icon: attendanceEventIcon(event.eventType),
+          title: attendanceEventLabel(event.eventType),
+          timestamp: formatDateTime(event.occurredAt),
+          dateTime: event.occurredAt,
+          description: attendanceEventDescription(event),
+          detail: reason ? `Motivo: ${reason}` : null,
+        };
       })}
-    </ol>
+    />
   );
 }
 
-function FilesTab({ files }: { files: ContactFileView[] }) {
+type FileFilter = "all" | "image" | "audio" | "video" | "document";
+
+const fileSizeCache = new Map<string, number | null>();
+
+function FilesTab({
+  files,
+  contactName,
+}: {
+  files: ContactFileView[];
+  contactName: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<FileFilter>("all");
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const filteredFiles = useMemo(
+    () =>
+      files.filter((file) => {
+        const normalizedType =
+          file.messageType === "sticker" ? "image" : file.messageType;
+        const matchesFilter = filter === "all" || normalizedType === filter;
+        const matchesQuery =
+          !normalizedQuery ||
+          [
+            file.name,
+            file.mediaMimeType,
+            fileTypeLabel(file.messageType),
+            file.direction === "inbound" ? contactName : "Equipe",
+          ].some((value) =>
+            value?.toLocaleLowerCase("pt-BR").includes(normalizedQuery),
+          );
+        return matchesFilter && matchesQuery;
+      }),
+    [contactName, files, filter, normalizedQuery],
+  );
+
   if (!files.length) {
     return (
       <EmptyPanel
@@ -685,41 +837,180 @@ function FilesTab({ files }: { files: ContactFileView[] }) {
   }
 
   return (
-    <ul className="grid gap-2">
-      {files.map((file) => (
-        <li key={file.id}>
-          <a
-            href={`/api/whatsapp/media/${file.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-3 rounded-lg border border-border p-3 transition-colors hover:border-border-strong hover:bg-muted/50"
+    <div className="grid gap-4">
+      <div className="flex items-center gap-2">
+        <label className="relative min-w-0 flex-1">
+          <span className="sr-only">Buscar arquivos</span>
+          <MagnifyingGlass
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar"
+            className="rounded-full pl-9"
+          />
+        </label>
+        <label className="relative">
+          <span className="sr-only">Filtrar arquivos por tipo</span>
+          <FunnelSimple
+            className="pointer-events-none absolute left-2.5 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Select
+            value={filter}
+            onValueChange={(value) => setFilter(value as FileFilter)}
+            className="w-10 px-2 [&>span]:sr-only [&>svg]:hidden"
+            aria-label="Filtrar arquivos por tipo"
           >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-muted text-primary">
-              {fileTypeIcon(file.messageType)}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-body-sm font-medium">
-                {file.name || fileTypeLabel(file.messageType)}
-              </span>
-              <span className="mt-0.5 block text-caption text-muted-foreground">
-                {file.direction === "inbound" ? "Recebido" : "Enviado"} ·{" "}
-                {formatDateTime(file.createdAt)}
-              </span>
-              {file.mediaMimeType ? (
-                <span className="block truncate text-caption text-muted-foreground">
-                  {file.mediaMimeType}
-                </span>
-              ) : null}
-            </span>
-            <ArrowSquareOut
-              className="size-4 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-          </a>
-        </li>
-      ))}
-    </ul>
+            <option value="all">Todos</option>
+            <option value="image">Imagens</option>
+            <option value="audio">Áudios</option>
+            <option value="video">Vídeos</option>
+            <option value="document">Documentos</option>
+          </Select>
+        </label>
+      </div>
+
+      {filteredFiles.length ? (
+        <ul className="grid gap-2">
+          {filteredFiles.map((file) => (
+            <FileItem key={file.id} file={file} contactName={contactName} />
+          ))}
+        </ul>
+      ) : (
+        <EmptyPanel
+          icon={<MagnifyingGlass className="size-5" />}
+          title="Nenhum arquivo encontrado"
+          description="Ajuste a busca ou o tipo de arquivo."
+        />
+      )}
+    </div>
   );
+}
+
+function FileItem({
+  file,
+  contactName,
+}: {
+  file: ContactFileView;
+  contactName: string;
+}) {
+  const mediaEndpoint = `/api/whatsapp/media/${file.id}`;
+  const sender = file.direction === "inbound" ? contactName : "Equipe";
+
+  return (
+    <li>
+      <a
+        href={mediaEndpoint}
+        target="_blank"
+        rel="noreferrer"
+        className="group flex min-w-0 items-center gap-2.5 rounded-md bg-muted/70 p-2 transition-colors hover:bg-muted"
+      >
+        <FilePreview file={file} endpoint={mediaEndpoint} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-body-sm font-medium">
+            {file.name || fileTypeLabel(file.messageType)}
+          </span>
+          <span className="mt-0.5 block truncate text-caption text-muted-foreground">
+            <FileSizeLabel fileId={file.id} endpoint={mediaEndpoint} />
+            {" · "}
+            {fileTypeLabel(file.messageType)}
+            {" · "}
+            {sender}
+          </span>
+          <span className="block truncate text-caption text-muted-foreground">
+            {formatDateTime(file.createdAt)}
+          </span>
+        </span>
+        <ArrowSquareOut
+          className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+          aria-hidden="true"
+        />
+      </a>
+    </li>
+  );
+}
+
+function FilePreview({
+  file,
+  endpoint,
+}: {
+  file: ContactFileView;
+  endpoint: string;
+}) {
+  if (file.messageType === "image" || file.messageType === "sticker") {
+    return (
+      <Image
+        unoptimized
+        src={endpoint}
+        alt=""
+        width={48}
+        height={48}
+        loading="lazy"
+        className="size-12 shrink-0 rounded-md bg-card object-cover"
+      />
+    );
+  }
+  return (
+    <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-card text-primary">
+      {fileTypeIcon(file.messageType)}
+    </span>
+  );
+}
+
+function FileSizeLabel({
+  fileId,
+  endpoint,
+}: {
+  fileId: string;
+  endpoint: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [size, setSize] = useState<number | null | undefined>(() =>
+    fileSizeCache.has(fileId) ? fileSizeCache.get(fileId) : undefined,
+  );
+
+  useEffect(() => {
+    if (size !== undefined) return;
+    const element = ref.current;
+    if (!element) return;
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const response = await fetch(endpoint, {
+          method: "HEAD",
+          cache: "force-cache",
+          signal: controller.signal,
+        });
+        const value = Number(response.headers.get("content-length"));
+        const nextSize =
+          response.ok && Number.isFinite(value) && value > 0 ? value : null;
+        fileSizeCache.set(fileId, nextSize);
+        setSize(nextSize);
+      } catch {
+        if (!controller.signal.aborted) {
+          fileSizeCache.set(fileId, null);
+          setSize(null);
+        }
+      }
+    };
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        observer.disconnect();
+        void load();
+      }
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      controller.abort();
+    };
+  }, [endpoint, fileId, size]);
+
+  return <span ref={ref}>{size ? formatFileSize(size) : "Tamanho n/d"}</span>;
 }
 
 function HistoryTab({ data }: { data: ContactDetailsData }) {
@@ -1032,7 +1323,7 @@ function PanelSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border p-4">
+    <section className="border-b border-border px-1 pb-5 last:border-b-0">
       <h2 className="mb-3 flex items-center gap-2 text-body-sm font-semibold">
         {icon}
         {title}
@@ -1054,15 +1345,6 @@ function HistorySection({
       <h2 className="mb-3 text-body-sm font-semibold">{title}</h2>
       {children}
     </section>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[minmax(6rem,0.8fr)_minmax(0,1.2fr)] gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-right font-medium">{value}</dd>
-    </div>
   );
 }
 
@@ -1141,27 +1423,6 @@ function PanelError({
   );
 }
 
-function ContactAvatar({
-  conversation,
-}: {
-  conversation: ConversationListItem;
-}) {
-  return conversation.contactPhotoUrl ? (
-    <Image
-      unoptimized
-      src={conversation.contactPhotoUrl}
-      alt={`Foto de ${conversation.contactName}`}
-      width={40}
-      height={40}
-      className="size-10 shrink-0 rounded-full object-cover"
-    />
-  ) : (
-    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-body-sm font-semibold text-primary">
-      {initials(conversation.contactName)}
-    </span>
-  );
-}
-
 function attendanceEventLabel(eventType: string): string {
   const normalized = eventType.toLowerCase();
   if (normalized.includes("transfer")) return "Atendimento transferido";
@@ -1175,6 +1436,18 @@ function attendanceEventLabel(eventType: string): string {
   return eventType
     .replaceAll("_", " ")
     .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+/** Mesmos ramos de `attendanceEventLabel` — mantenha os dois em sincronia. */
+function attendanceEventIcon(eventType: string): PhosphorIcon {
+  const normalized = eventType.toLowerCase();
+  if (normalized.includes("transfer")) return ArrowsLeftRight;
+  if (normalized.includes("complete") || normalized.includes("resolv")) {
+    return CheckCircle;
+  }
+  if (normalized.includes("reopen")) return ArrowCounterClockwise;
+  if (normalized.includes("start") || normalized.includes("claim")) return Play;
+  return ClockCounterClockwise;
 }
 
 function attendanceEventDescription(
@@ -1299,11 +1572,15 @@ function formatPhone(phone: string): string {
   return phone;
 }
 
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
+function whatsappPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.startsWith("55") ? digits : `55${digits}`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 ** 2).toLocaleString("pt-BR", {
+    maximumFractionDigits: 1,
+  })} MB`;
 }

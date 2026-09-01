@@ -3,6 +3,7 @@ import type { ConversationStatus } from "./types";
 import {
   getAttendanceCapabilities,
   getAttendanceQueue,
+  getAttendanceQueueCounts,
 } from "./attendance-state";
 
 const none = {
@@ -141,5 +142,72 @@ describe("getAttendanceQueue", () => {
     expect(getAttendanceQueue("resolved", "current-user", "current-user")).toBe(
       "resolved",
     );
+  });
+});
+
+describe("getAttendanceQueueCounts", () => {
+  it("counts only conversations with unread customer responses in active queues", () => {
+    expect(
+      getAttendanceQueueCounts(
+        [
+          {
+            status: "pending",
+            assignedUserId: null,
+            unreadCount: 3,
+          },
+          {
+            status: "pending",
+            assignedUserId: null,
+            unreadCount: 0,
+          },
+          {
+            status: "open",
+            assignedUserId: "current-user",
+            unreadCount: 1,
+          },
+          {
+            status: "open",
+            assignedUserId: "other-user",
+            unreadCount: 0,
+          },
+        ],
+        "current-user",
+      ),
+    ).toEqual({ new: 1, mine: 1, others: 0, resolved: 0 });
+  });
+
+  it("counts an unread conversation once regardless of its message count", () => {
+    expect(
+      getAttendanceQueueCounts(
+        [
+          {
+            status: "open",
+            assignedUserId: "current-user",
+            unreadCount: 42,
+          },
+        ],
+        "current-user",
+      ).mine,
+    ).toBe(1);
+  });
+
+  it("keeps the resolved shortcut as a conversation total", () => {
+    expect(
+      getAttendanceQueueCounts(
+        [
+          {
+            status: "resolved",
+            assignedUserId: "current-user",
+            unreadCount: 0,
+          },
+          {
+            status: "resolved",
+            assignedUserId: null,
+            unreadCount: 0,
+          },
+        ],
+        "current-user",
+      ).resolved,
+    ).toBe(2);
   });
 });

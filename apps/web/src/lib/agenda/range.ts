@@ -92,6 +92,29 @@ export function resolveAgendaVisibleRange(
   };
 }
 
+// Faixa coberta pelo mini calendario: o mes do dia selecionado mais uma folga
+// de sete dias em cada ponta, que cobre os dias vizinhos exibidos nas semanas
+// de borda da grade.
+export function resolveAgendaMonthGridRange(
+  date: string,
+  timeZoneInput?: string,
+) {
+  const timeZone = normalizeAgendaTimeZone(timeZoneInput);
+  const selectedDate = isDateKey(date)
+    ? date
+    : formatInTimeZone(new Date(), timeZone, "yyyy-MM-dd");
+  const monthStart = `${selectedDate.slice(0, 7)}-01`;
+  const localFrom = addCalendarDays(monthStart, -7);
+  const endKey = addCalendarDays(addCalendarMonths(monthStart, 1), 7);
+
+  return {
+    localFrom,
+    localTo: addCalendarDays(endKey, -1),
+    startInclusive: fromZonedTime(`${localFrom}T00:00:00`, timeZone),
+    endExclusive: fromZonedTime(`${endKey}T00:00:00`, timeZone),
+  };
+}
+
 export function addAgendaPeriod(
   date: string,
   view: AgendaView,

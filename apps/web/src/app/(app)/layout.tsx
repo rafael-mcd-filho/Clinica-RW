@@ -38,6 +38,17 @@ export default async function AppLayout({
   const userSubtitle = context.isSuperAdmin
     ? "Super Admin"
     : (context.organization?.name ?? "Conta sem vínculo interno");
+  const userRole = context.isSuperAdmin
+    ? "Super administrador"
+    : resolveUserRoleLabel(context.permissionCodes);
+  const patientSearchEnabled = Boolean(
+    context.organization &&
+    hasAnyPermission(context.permissionCodes, [
+      "paciente.ver",
+      "clinico.ver_prontuario",
+      "clinico.ver_prontuario_proprios",
+    ]),
+  );
 
   const todayRailEnabled = Boolean(
     !context.isSuperAdmin &&
@@ -53,6 +64,8 @@ export default async function AppLayout({
       sidebarSubtitle={sidebarSubtitle}
       userName={userName}
       userSubtitle={userSubtitle}
+      userRole={userRole}
+      patientSearchEnabled={patientSearchEnabled}
       todayRailEnabled={todayRailEnabled}
       initialSidebarPinned={
         cookieStore.get("hi-clinic-sidebar-pinned")?.value !== "false"
@@ -74,6 +87,36 @@ export default async function AppLayout({
   );
 }
 
+function resolveUserRoleLabel(permissionCodes: Set<string>) {
+  if (hasAnyPermission(permissionCodes, ["config.geral", "config.usuarios"])) {
+    return "Administrador";
+  }
+  if (
+    hasAnyPermission(permissionCodes, [
+      "clinico.ver_prontuario",
+      "clinico.ver_prontuario_proprios",
+      "clinico.preencher_prontuario",
+    ])
+  ) {
+    return "Profissional clínico";
+  }
+  if (
+    hasAnyPermission(permissionCodes, [
+      "financeiro.ver_geral",
+      "financeiro.gerenciar_contas_pagar",
+    ])
+  ) {
+    return "Financeiro";
+  }
+  if (permissionCodes.has("atendimento.ver")) {
+    return "Atendimento";
+  }
+  if (permissionCodes.has("agenda.ver")) {
+    return "Agenda e recepção";
+  }
+  return "Equipe da clínica";
+}
+
 function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
   const navItems: AppShellNavItem[] = [
     { href: "/dashboard", label: "Painel", icon: "dashboard" },
@@ -88,7 +131,11 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
   }
 
   if (hasAnyPermission(permissionCodes, ["agenda.ver"])) {
-    navItems.push({ href: "/agenda", label: "Agenda", icon: "agenda" });
+    navItems.push({
+      href: "/agenda",
+      label: "Agenda",
+      icon: "agenda",
+    });
   }
 
   if (

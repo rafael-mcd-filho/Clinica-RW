@@ -20,9 +20,6 @@ type ConversationRow = {
   last_message_preview: string | null;
 };
 
-export type QuickReplyTemplate = { id: string; name: string; body: string };
-type AttendantRpcRow = { user_id: string; name: string; email: string };
-
 export default async function AtendimentoPage({
   searchParams,
 }: {
@@ -41,54 +38,26 @@ export default async function AtendimentoPage({
 
   const supabase = await createSupabaseServerClient();
 
-  // Onda única para tudo que depende só da organização (a config do
-  // Evolution, os templates e os atendentes não dependem das conversas).
-  const [
-    evolutionConfig,
-    { data: conversationRows },
-    { data: tagRows },
-    { data: instanceRow },
-    { data: templates },
-    { data: attendants },
-  ] = await Promise.all([
-    getOrganizationEvolutionConfig(organizationId),
-    supabase
-      .from("whatsapp_conversations")
-      .select(
-        "id, status, contact_id, assigned_user_id, funnel_card_id, unread_count, last_message_at, last_message_preview",
-      )
-      .eq("organization_id", organizationId)
-      .order("last_message_at", { ascending: false, nullsFirst: false })
-      .limit(200)
-      .returns<ConversationRow[]>(),
-    supabase
-      .from("tags")
-      .select("id, name, color")
-      .eq("organization_id", organizationId)
-      .order("name")
-      .returns<ConversationTagView[]>(),
-    supabase
-      .from("whatsapp_instances")
-      .select("status, phone_number, display_name")
-      .eq("organization_id", organizationId)
-      .limit(1)
-      .maybeSingle<{
-        status: "disconnected" | "connecting" | "connected" | "error";
-        phone_number: string | null;
-        display_name: string | null;
-      }>(),
-    supabase
-      .from("message_templates")
-      .select("id, name, body_template")
-      .eq("organization_id", organizationId)
-      .eq("channel", "whatsapp")
-      .eq("active", true)
-      .order("name")
-      .returns<{ id: string; name: string; body_template: string }[]>(),
-    canAttend
-      ? supabase.rpc("list_whatsapp_attendants")
-      : Promise.resolve({ data: [] }),
-  ]);
+  // Onda única para tudo que depende só da organização.
+  const [evolutionConfig, { data: conversationRows }, { data: tagRows }] =
+    await Promise.all([
+      getOrganizationEvolutionConfig(organizationId),
+      supabase
+        .from("whatsapp_conversations")
+        .select(
+          "id, status, contact_id, assigned_user_id, funnel_card_id, unread_count, last_message_at, last_message_preview",
+        )
+        .eq("organization_id", organizationId)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(200)
+        .returns<ConversationRow[]>(),
+      supabase
+        .from("tags")
+        .select("id, name, color")
+        .eq("organization_id", organizationId)
+        .order("name")
+        .returns<ConversationTagView[]>(),
+    ]);
   const evolutionReady = Boolean(evolutionConfig);
 
   let conversations = conversationRows ?? [];
@@ -112,33 +81,59 @@ export default async function AtendimentoPage({
   const contactIds = [...new Set(conversations.map((row) => row.contact_id))];
   const conversationIds = conversations.map((row) => row.id);
 
-  const [{ data: contacts }, { data: conversationTags }] = await Promise.all([
-    contactIds.length
-      ? supabase
-          .from("whatsapp_contacts")
-          .select("id, phone, wa_name, patient_id")
-          .eq("organization_id", organizationId)
-          .in("id", contactIds)
-          .returns<
-            {
-              id: string;
-              phone: string;
-              wa_name: string | null;
-              patient_id: string | null;
-            }[]
-          >()
-      : Promise.resolve({ data: [] }),
-    conversationIds.length
-      ? supabase
-          .from("conversation_tags")
-          .select("conversation_id, tag_id")
-          .eq("organization_id", organizationId)
-          .in("conversation_id", conversationIds)
-          .returns<{ conversation_id: string; tag_id: string }[]>()
-      : Promise.resolve({ data: [] }),
-  ]);
+  const resolvedConversationIds = conversations
+    .filter((row) => row.status === "resolved")
+    .map((row) => row.id);
+
+  const [{ data: contacts }, { data: conversationTags }, { data: sessions }] =
+    await Promise.all([
+      contactIds.length
+        ? supabase
+            .from("whatsapp_contacts")
+            .select("id, phone, wa_name, patient_id")
+            .eq("organization_id", organizationId)
+            .in("id", contactIds)
+            .returns<
+              {
+                id: string;
+                phone: string;
+                wa_name: string | null;
+                patient_id: string | null;
+              }[]
+            >()
+        : Promise.resolve({ data: [] }),
+      conversationIds.length
+        ? supabase
+            .from("conversation_tags")
+            .select("conversation_id, tag_id")
+            .eq("organization_id", organizationId)
+            .in("conversation_id", conversationIds)
+            .returns<{ conversation_id: string; tag_id: string }[]>()
+        : Promise.resolve({ data: [] }),
+      // A conclusão do atendimento vive na sessão, não na conversa: a fila de
+      // concluídos mostra esse fim no lugar da última mensagem.
+      resolvedConversationIds.length
+        ? supabase
+            .from("whatsapp_attendance_sessions")
+            .select("conversation_id, ended_at")
+            .eq("organization_id", organizationId)
+            .eq("end_reason", "completed")
+            .not("ended_at", "is", null)
+            .in("conversation_id", resolvedConversationIds)
+            .order("ended_at", { ascending: false })
+            .returns<{ conversation_id: string; ended_at: string }[]>()
+        : Promise.resolve({ data: [] }),
+    ]);
 
   const contactById = new Map((contacts ?? []).map((c) => [c.id, c]));
+  // A query vem do fim mais recente para o mais antigo, então o primeiro
+  // registro de cada conversa é a conclusão que interessa.
+  const resolvedAtByConversation = new Map<string, string>();
+  for (const session of sessions ?? []) {
+    if (!resolvedAtByConversation.has(session.conversation_id)) {
+      resolvedAtByConversation.set(session.conversation_id, session.ended_at);
+    }
+  }
   const patientIds = [
     ...new Set(
       (contacts ?? [])
@@ -208,15 +203,18 @@ export default async function AtendimentoPage({
     const patient = contact?.patient_id
       ? patientById.get(contact.patient_id)
       : undefined;
+    const patientPhotoUrl = contact?.patient_id
+      ? (photoByPatientId.get(contact.patient_id) ?? null)
+      : null;
     return {
       id: row.id,
       status: row.status,
       contactId: row.contact_id,
       contactName: contact?.wa_name || contact?.phone || "Contato",
       contactPhone: contact?.phone ?? "",
-      contactPhotoUrl: contact?.patient_id
-        ? (photoByPatientId.get(contact.patient_id) ?? null)
-        : null,
+      contactPhotoUrl:
+        patientPhotoUrl ??
+        (contact ? `/api/whatsapp/contact-photo/${contact.id}` : null),
       patientId: contact?.patient_id ?? null,
       patientName: patient ? patient.social_name || patient.full_name : null,
       assignedUserId: row.assigned_user_id,
@@ -227,29 +225,18 @@ export default async function AtendimentoPage({
       unreadCount: row.unread_count,
       lastMessageAt: row.last_message_at,
       lastMessagePreview: row.last_message_preview,
+      resolvedAt: resolvedAtByConversation.get(row.id) ?? null,
       tags: tagsByConversation.get(row.id) ?? [],
     };
   });
 
-  const quickReplies: QuickReplyTemplate[] = (templates ?? []).map((t) => ({
-    id: t.id,
-    name: t.name,
-    body: t.body_template,
-  }));
-
   return (
-    <div className="min-h-0">
+    <div className="h-full min-h-0">
       <AttendanceInbox
         key={requestedConversationId ?? "attendance-inbox"}
         organizationId={organizationId}
         currentUserId={currentUserId}
         currentUserName={context.effectiveUser?.name ?? null}
-        attendants={((attendants ?? []) as AttendantRpcRow[]).map(
-          (attendant) => ({
-            id: attendant.user_id,
-            name: attendant.name,
-          }),
-        )}
         canAttend={canAttend}
         canConfigure={canConfigure}
         evolutionReady={evolutionReady}
@@ -261,16 +248,6 @@ export default async function AtendimentoPage({
             : null
         }
         availableTags={tagRows ?? []}
-        quickReplies={quickReplies}
-        instance={
-          instanceRow
-            ? {
-                status: instanceRow.status,
-                phoneNumber: instanceRow.phone_number,
-                displayName: instanceRow.display_name,
-              }
-            : null
-        }
       />
     </div>
   );

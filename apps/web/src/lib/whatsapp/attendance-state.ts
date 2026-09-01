@@ -9,6 +9,13 @@ export type AttendanceCapabilities = Readonly<{
 }>;
 
 export type AttendanceQueue = "new" | "mine" | "others" | "resolved";
+export type AttendanceQueueCounts = Record<AttendanceQueue, number>;
+
+type CountableConversation = Readonly<{
+  status: ConversationStatus;
+  assignedUserId: string | null;
+  unreadCount: number;
+}>;
 
 const noCapabilities: AttendanceCapabilities = {
   start: false,
@@ -71,4 +78,34 @@ export function getAttendanceQueue(
   if (status === "resolved") return "resolved";
 
   return currentUserId && assignedUserId === currentUserId ? "mine" : "others";
+}
+
+/**
+ * Counts active queues by conversations that still have an unread customer
+ * response. Resolved conversations keep their total count for the archive
+ * shortcut, which is not an unread indicator.
+ */
+export function getAttendanceQueueCounts(
+  conversations: readonly CountableConversation[],
+  currentUserId: string | null,
+): AttendanceQueueCounts {
+  const counts: AttendanceQueueCounts = {
+    new: 0,
+    mine: 0,
+    others: 0,
+    resolved: 0,
+  };
+
+  for (const conversation of conversations) {
+    const queue = getAttendanceQueue(
+      conversation.status,
+      conversation.assignedUserId,
+      currentUserId,
+    );
+    if (queue === "resolved" || conversation.unreadCount > 0) {
+      counts[queue] += 1;
+    }
+  }
+
+  return counts;
 }

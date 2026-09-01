@@ -20,13 +20,19 @@ import {
   Tag,
   UserCircle as UserRound,
 } from "@phosphor-icons/react/dist/ssr";
-import { type ClinicalSummary, type TagRow } from "./patient-detail-panels";
+import {
+  ClinicalQuickEditButton,
+  type ClinicalSummary,
+  type TagRow,
+} from "./patient-detail-panels";
+import { PatientAppointmentActions } from "./patient-appointment-actions";
 import { PatientPhotoForm } from "./patient-photo-form";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Tabs, TabSelectionButton } from "@/components/ui/tabs";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { getPatientCompleteness } from "@/lib/patients/completeness";
 import { createPatientPhotoSignedUrl } from "@/lib/storage/patient-photos";
@@ -176,6 +182,9 @@ export default async function PatientDetailsPage({
     context.permissionCodes.has("financeiro.ver_geral") ||
     context.permissionCodes.has("financeiro.receber_pagamento");
   const canSeeAgenda = context.permissionCodes.has("agenda.ver");
+  const canEditAgenda = context.permissionCodes.has(
+    "agenda.editar_agendamento",
+  );
   const canSeeMessages = context.permissionCodes.has("atendimento.ver");
   const canEdit = context.permissionCodes.has("paciente.editar");
   const rawSection = (await searchParams)?.section;
@@ -207,25 +216,25 @@ export default async function PatientDetailsPage({
   if (!patientResult.data) notFound();
   const patient = patientResult.data;
 
-  let documentsQuery = supabase
+  const documentsQuery = supabase
     .from("clinical_documents")
     .select("id, document_type, title, issued_at", { count: "exact" })
     .eq("patient_id", id)
     .eq("organization_id", organizationId)
-    .order("issued_at", { ascending: false });
-  documentsQuery = documentsQuery.limit(section === "documents" ? 100 : 5);
+    .order("issued_at", { ascending: false })
+    .limit(100);
 
-  let receivablesQuery = supabase
+  const receivablesQuery = supabase
     .from("accounts_receivable")
     .select("id, description, amount, paid_amount, due_date, status", {
       count: "exact",
     })
     .eq("patient_id", id)
     .eq("organization_id", organizationId)
-    .order("due_date", { ascending: false });
-  receivablesQuery = receivablesQuery.limit(section === "finance" ? 100 : 5);
+    .order("due_date", { ascending: false })
+    .limit(100);
 
-  let encountersQuery = supabase
+  const encountersQuery = supabase
     .from("encounters")
     .select(
       "id, professional_id, appointment_id, status, started_at, finalized_at",
@@ -233,10 +242,10 @@ export default async function PatientDetailsPage({
     )
     .eq("patient_id", id)
     .eq("organization_id", organizationId)
-    .order("started_at", { ascending: false });
-  encountersQuery = encountersQuery.limit(section === "history" ? 100 : 5);
+    .order("started_at", { ascending: false })
+    .limit(100);
 
-  let patientAppointmentsQuery = supabase
+  const patientAppointmentsQuery = supabase
     .from("appointments")
     .select(
       "id, professional_id, start_at, end_at, status, procedures(name), health_insurances(name)",
@@ -244,10 +253,8 @@ export default async function PatientDetailsPage({
     )
     .eq("patient_id", id)
     .eq("organization_id", organizationId)
-    .order("start_at", { ascending: false });
-  patientAppointmentsQuery = patientAppointmentsQuery.limit(
-    section === "history" ? 100 : 5,
-  );
+    .order("start_at", { ascending: false })
+    .limit(100);
 
   const [
     addressResult,
@@ -398,7 +405,7 @@ export default async function PatientDetailsPage({
   const conversations = conversationsResult.data ?? [];
   const conversationIds = conversations.map((conversation) => conversation.id);
   const messagesResult =
-    section === "messages" && conversationIds.length
+    canSeeMessages && conversationIds.length
       ? await supabase
           .from("whatsapp_messages")
           .select(
@@ -623,7 +630,11 @@ export default async function PatientDetailsPage({
             ) : null}
 
             {canSeeSensitive ? (
-              <ClinicalSidebar summary={clinicalResult.data} />
+              <ClinicalSidebar
+                patientId={patient.id}
+                summary={clinicalResult.data}
+                canEdit={canEdit}
+              />
             ) : (
               <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
                 Dados clínicos permanentes protegidos.
@@ -632,210 +643,169 @@ export default async function PatientDetailsPage({
           </div>
         </aside>
 
-        <main id="conteudo-paciente" className="grid min-w-0 gap-5">
-          <PatientModuleNavigation
-            patientId={patient.id}
-            activeSection={section}
-            canSeeHistory={canSeeAgenda || canSeeClinicalRecords}
-            canSeeDocuments={canSeeClinicalRecords}
-            canSeeFinance={canSeeFinance}
-            canSeeMessages={canSeeMessages}
+        <main id="conteudo-paciente" className="min-w-0 self-start">
+          <Tabs
+            ariaLabel="Módulos do paciente"
+            defaultTab={section}
+            urlParam="section"
+            contentClassName="grid gap-5"
+            items={[
+              {
+                id: "overview",
+                label: "Resumo",
+                icon: <UserRound className="size-4" aria-hidden="true" />,
+                urlValue: null,
+                content: (
+                  <>
+                    <ModuleHeading
+                      title="Visão geral do paciente"
+                      description="Agenda, registros clínicos, documentos, financeiro e comunicação reunidos em um só lugar."
+                    />
+
+                    {canSeeAgenda || canSeeClinicalRecords ? (
+                      <PatientHistoryModule
+                        appointments={patientAppointments}
+                        appointmentTotal={
+                          patientAppointmentsResult.count ??
+                          patientAppointments.length
+                        }
+                        encounters={encounters}
+                        encounterTotal={
+                          encountersResult.count ?? encounters.length
+                        }
+                        entryByEncounter={entryByEncounter}
+                        diagnosisByEncounter={diagnosisByEncounter}
+                        professionalName={professionalName}
+                        appointmentById={appointmentById}
+                        canSeeAgenda={canSeeAgenda}
+                        canEditAgenda={canEditAgenda}
+                        canSeeClinicalRecords={canSeeClinicalRecords}
+                        viewAll
+                      />
+                    ) : null}
+
+                    <section className="grid gap-4 xl:grid-cols-2">
+                      {canSeeClinicalRecords ? (
+                        <DocumentsPanel
+                          documents={documentsResult.data ?? []}
+                          total={documentsResult.count ?? 0}
+                          viewAll
+                        />
+                      ) : null}
+                      {canSeeFinance ? (
+                        <FinancePanel
+                          receivables={receivablesResult.data ?? []}
+                          total={receivablesResult.count ?? 0}
+                          openBalance={openBalance}
+                          partialBalance={
+                            (receivablesResult.count ?? 0) >
+                            (receivablesResult.data?.length ?? 0)
+                          }
+                          viewAll
+                        />
+                      ) : null}
+                    </section>
+
+                    {canSeeMessages ? (
+                      <MessagesPanel
+                        conversations={conversations}
+                        contactById={contactById}
+                        messages={[]}
+                        viewAll
+                      />
+                    ) : null}
+                  </>
+                ),
+              },
+              ...(canSeeAgenda || canSeeClinicalRecords
+                ? [
+                    {
+                      id: "history",
+                      label: "Histórico",
+                      icon: <History className="size-4" aria-hidden="true" />,
+                      content: (
+                        <PatientHistoryModule
+                          appointments={patientAppointments}
+                          appointmentTotal={
+                            patientAppointmentsResult.count ??
+                            patientAppointments.length
+                          }
+                          encounters={encounters}
+                          encounterTotal={
+                            encountersResult.count ?? encounters.length
+                          }
+                          entryByEncounter={entryByEncounter}
+                          diagnosisByEncounter={diagnosisByEncounter}
+                          professionalName={professionalName}
+                          appointmentById={appointmentById}
+                          canSeeAgenda={canSeeAgenda}
+                          canEditAgenda={canEditAgenda}
+                          canSeeClinicalRecords={canSeeClinicalRecords}
+                        />
+                      ),
+                    },
+                  ]
+                : []),
+              ...(canSeeClinicalRecords
+                ? [
+                    {
+                      id: "documents",
+                      label: "Documentos",
+                      icon: <FileText className="size-4" aria-hidden="true" />,
+                      content: (
+                        <DocumentsPanel
+                          documents={documentsResult.data ?? []}
+                          total={documentsResult.count ?? 0}
+                        />
+                      ),
+                    },
+                  ]
+                : []),
+              ...(canSeeFinance
+                ? [
+                    {
+                      id: "finance",
+                      label: "Financeiro",
+                      icon: (
+                        <CreditCard className="size-4" aria-hidden="true" />
+                      ),
+                      content: (
+                        <FinancePanel
+                          receivables={receivablesResult.data ?? []}
+                          total={receivablesResult.count ?? 0}
+                          openBalance={openBalance}
+                          partialBalance={
+                            (receivablesResult.count ?? 0) >
+                            (receivablesResult.data?.length ?? 0)
+                          }
+                        />
+                      ),
+                    },
+                  ]
+                : []),
+              ...(canSeeMessages
+                ? [
+                    {
+                      id: "messages",
+                      label: "Mensagens",
+                      icon: (
+                        <MessageSquare className="size-4" aria-hidden="true" />
+                      ),
+                      content: (
+                        <MessagesPanel
+                          conversations={conversations}
+                          contactById={contactById}
+                          messages={messagesResult.data ?? []}
+                        />
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
           />
-
-          {section === "overview" ? (
-            <>
-              <ModuleHeading
-                title="Visão geral do paciente"
-                description="Agenda, registros clínicos, documentos, financeiro e comunicação reunidos em um só lugar."
-              />
-
-              {canSeeAgenda || canSeeClinicalRecords ? (
-                <PatientHistoryModule
-                  patientId={patient.id}
-                  appointments={patientAppointments}
-                  appointmentTotal={
-                    patientAppointmentsResult.count ??
-                    patientAppointments.length
-                  }
-                  encounters={encounters}
-                  encounterTotal={encountersResult.count ?? encounters.length}
-                  entryByEncounter={entryByEncounter}
-                  diagnosisByEncounter={diagnosisByEncounter}
-                  professionalName={professionalName}
-                  appointmentById={appointmentById}
-                  canSeeAgenda={canSeeAgenda}
-                  canSeeClinicalRecords={canSeeClinicalRecords}
-                  viewAll
-                />
-              ) : null}
-
-              <section className="grid gap-4 xl:grid-cols-2">
-                {canSeeClinicalRecords ? (
-                  <DocumentsPanel
-                    patientId={patient.id}
-                    documents={documentsResult.data ?? []}
-                    total={documentsResult.count ?? 0}
-                    viewAll
-                  />
-                ) : null}
-                {canSeeFinance ? (
-                  <FinancePanel
-                    patientId={patient.id}
-                    receivables={receivablesResult.data ?? []}
-                    total={receivablesResult.count ?? 0}
-                    openBalance={openBalance}
-                    partialBalance
-                    viewAll
-                  />
-                ) : null}
-              </section>
-
-              {canSeeMessages ? (
-                <MessagesPanel
-                  patientId={patient.id}
-                  conversations={conversations}
-                  contactById={contactById}
-                  messages={[]}
-                  viewAll
-                />
-              ) : null}
-            </>
-          ) : null}
-
-          {section === "history" ? (
-            <PatientHistoryModule
-              patientId={patient.id}
-              appointments={patientAppointments}
-              appointmentTotal={
-                patientAppointmentsResult.count ?? patientAppointments.length
-              }
-              encounters={encounters}
-              encounterTotal={encountersResult.count ?? encounters.length}
-              entryByEncounter={entryByEncounter}
-              diagnosisByEncounter={diagnosisByEncounter}
-              professionalName={professionalName}
-              appointmentById={appointmentById}
-              canSeeAgenda={canSeeAgenda}
-              canSeeClinicalRecords={canSeeClinicalRecords}
-            />
-          ) : null}
-
-          {section === "documents" && canSeeClinicalRecords ? (
-            <DocumentsPanel
-              patientId={patient.id}
-              documents={documentsResult.data ?? []}
-              total={documentsResult.count ?? 0}
-            />
-          ) : null}
-
-          {section === "finance" && canSeeFinance ? (
-            <FinancePanel
-              patientId={patient.id}
-              receivables={receivablesResult.data ?? []}
-              total={receivablesResult.count ?? 0}
-              openBalance={openBalance}
-              partialBalance={
-                (receivablesResult.count ?? 0) >
-                (receivablesResult.data?.length ?? 0)
-              }
-            />
-          ) : null}
-
-          {section === "messages" && canSeeMessages ? (
-            <MessagesPanel
-              patientId={patient.id}
-              conversations={conversations}
-              contactById={contactById}
-              messages={messagesResult.data ?? []}
-            />
-          ) : null}
         </main>
       </div>
     </div>
-  );
-}
-
-function PatientModuleNavigation({
-  activeSection,
-  canSeeDocuments,
-  canSeeFinance,
-  canSeeHistory,
-  canSeeMessages,
-  patientId,
-}: {
-  activeSection: PatientSection;
-  canSeeDocuments: boolean;
-  canSeeFinance: boolean;
-  canSeeHistory: boolean;
-  canSeeMessages: boolean;
-  patientId: string;
-}) {
-  const items = [
-    {
-      id: "overview" as const,
-      label: "Resumo",
-      icon: UserRound,
-      visible: true,
-    },
-    {
-      id: "history" as const,
-      label: "Histórico",
-      icon: History,
-      visible: canSeeHistory,
-    },
-    {
-      id: "documents" as const,
-      label: "Documentos",
-      icon: FileText,
-      visible: canSeeDocuments,
-    },
-    {
-      id: "finance" as const,
-      label: "Financeiro",
-      icon: CreditCard,
-      visible: canSeeFinance,
-    },
-    {
-      id: "messages" as const,
-      label: "Mensagens",
-      icon: MessageSquare,
-      visible: canSeeMessages,
-    },
-  ].filter((item) => item.visible);
-
-  return (
-    <nav
-      aria-label="Módulos do paciente"
-      className="max-w-full overflow-x-auto pb-1"
-    >
-      <div className="inline-flex min-w-max items-center gap-1 rounded-lg border border-border bg-muted p-1 shadow-[var(--shadow-soft)]">
-        {items.map((item) => {
-          const Icon = item.icon;
-          const active = item.id === activeSection;
-          const href =
-            item.id === "overview"
-              ? `/pacientes/${patientId}#conteudo-paciente`
-              : `/pacientes/${patientId}?section=${item.id}#conteudo-paciente`;
-
-          return (
-            <Link
-              key={item.id}
-              href={href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
-                active
-                  ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
-                  : "text-muted-foreground hover:bg-card/70 hover:text-foreground",
-              )}
-            >
-              <Icon className="size-4" aria-hidden="true" />
-              {item.label}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
   );
 }
 
@@ -863,29 +833,32 @@ function PatientHistoryModule({
   appointmentById,
   appointmentTotal,
   appointments,
+  canEditAgenda,
   canSeeAgenda,
   canSeeClinicalRecords,
   diagnosisByEncounter,
   encounterTotal,
   encounters,
   entryByEncounter,
-  patientId,
   professionalName,
   viewAll = false,
 }: {
   appointmentById: Map<string, AppointmentRow>;
   appointmentTotal: number;
   appointments: AppointmentRow[];
+  canEditAgenda: boolean;
   canSeeAgenda: boolean;
   canSeeClinicalRecords: boolean;
   diagnosisByEncounter: Map<string, DiagnosisRow>;
   encounterTotal: number;
   encounters: EncounterRow[];
   entryByEncounter: Map<string, EncounterEntryRow>;
-  patientId: string;
   professionalName: Map<string, string>;
   viewAll?: boolean;
 }) {
+  const visibleAppointments = viewAll ? appointments.slice(0, 5) : appointments;
+  const visibleEncounters = viewAll ? encounters.slice(0, 5) : encounters;
+
   return (
     <section className="grid gap-4">
       <ModuleHeading
@@ -898,12 +871,10 @@ function PatientHistoryModule({
         action={
           viewAll ? (
             <Button asChild variant="secondary" size="sm">
-              <Link
-                href={`/pacientes/${patientId}?section=history#conteudo-paciente`}
-              >
+              <TabSelectionButton value="history">
                 Ver histórico
                 <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
+              </TabSelectionButton>
             </Button>
           ) : undefined
         }
@@ -911,7 +882,9 @@ function PatientHistoryModule({
 
       {canSeeAgenda ? (
         <AppointmentsPanel
-          appointments={appointments}
+          appointments={visibleAppointments}
+          canEditAgenda={canEditAgenda}
+          encounters={encounters}
           professionalName={professionalName}
           total={appointmentTotal}
         />
@@ -926,7 +899,7 @@ function PatientHistoryModule({
             </p>
           </div>
           <EncounterTimeline
-            encounters={encounters}
+            encounters={visibleEncounters}
             entryByEncounter={entryByEncounter}
             diagnosisByEncounter={diagnosisByEncounter}
             professionalName={professionalName}
@@ -945,13 +918,25 @@ function PatientHistoryModule({
 
 function AppointmentsPanel({
   appointments,
+  canEditAgenda,
+  encounters,
   professionalName,
   total,
 }: {
   appointments: AppointmentRow[];
+  canEditAgenda: boolean;
+  encounters: EncounterRow[];
   professionalName: Map<string, string>;
   total: number;
 }) {
+  const encounterByAppointmentId = new Map(
+    encounters.flatMap((encounter) =>
+      encounter.appointment_id
+        ? ([[encounter.appointment_id, encounter]] as const)
+        : [],
+    ),
+  );
+
   return (
     <Card>
       <CardHeader>
@@ -965,37 +950,36 @@ function AppointmentsPanel({
         </p>
       </CardHeader>
       <CardContent className="grid gap-2">
-        {appointments.map((appointment) => (
-          <div
-            key={appointment.id}
-            className="flex flex-col justify-between gap-3 rounded-md border border-border px-3 py-3 sm:flex-row sm:items-center"
-          >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-sm font-semibold">
-                  {appointment.procedures?.name ?? "Atendimento"}
-                </p>
-                <Badge variant={appointmentStatusVariant(appointment.status)}>
-                  {appointmentStatusLabel(appointment.status)}
-                </Badge>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {formatDateTimeRange(appointment.start_at, appointment.end_at)}{" "}
-                ·{" "}
-                {professionalName.get(appointment.professional_id) ??
-                  "Profissional"}
-                {appointment.health_insurances?.name
-                  ? ` · ${appointment.health_insurances.name}`
-                  : ""}
-              </p>
-            </div>
-            <Button asChild variant="ghost" size="sm">
-              <Link href={`/agenda?date=${appointment.start_at.slice(0, 10)}`}>
-                Ver na agenda
-              </Link>
-            </Button>
-          </div>
-        ))}
+        {appointments.map((appointment) => {
+          const encounter = encounterByAppointmentId.get(appointment.id);
+
+          return (
+            <PatientAppointmentActions
+              key={appointment.id}
+              id={appointment.id}
+              procedureName={appointment.procedures?.name ?? "Atendimento"}
+              status={appointment.status}
+              statusLabel={appointmentStatusLabel(appointment.status)}
+              statusVariant={appointmentStatusVariant(appointment.status)}
+              dateTimeLabel={formatDateTimeRange(
+                appointment.start_at,
+                appointment.end_at,
+              )}
+              professionalName={
+                professionalName.get(appointment.professional_id) ??
+                "Profissional"
+              }
+              insuranceName={appointment.health_insurances?.name ?? null}
+              agendaHref={`/agenda?date=${appointment.start_at.slice(0, 10)}`}
+              canEditAgenda={canEditAgenda}
+              encounterHref={
+                encounter
+                  ? `/prontuario/${encounter.id}?from=paciente`
+                  : undefined
+              }
+            />
+          );
+        })}
         {!appointments.length ? (
           <EmptyState
             icon={CalendarDays}
@@ -1126,16 +1110,59 @@ function EncounterTimeline({
   );
 }
 
-function ClinicalSidebar({ summary }: { summary: ClinicalSummary | null }) {
+function ClinicalSidebar({
+  canEdit,
+  patientId,
+  summary,
+}: {
+  canEdit: boolean;
+  patientId: string;
+  summary: ClinicalSummary | null;
+}) {
+  function editAction(
+    field:
+      | "allergies"
+      | "comorbidities"
+      | "medications"
+      | "medical_history"
+      | "family_history"
+      | "habits",
+    label: string,
+    value: string | null | undefined,
+  ) {
+    return canEdit ? (
+      <ClinicalQuickEditButton
+        patientId={patientId}
+        field={field}
+        label={label}
+        value={value}
+      />
+    ) : undefined;
+  }
+
   return (
     <div className="grid gap-3">
-      <SidebarSection icon={ShieldAlert} title="Alergias" tone="danger">
+      <SidebarSection
+        icon={ShieldAlert}
+        title="Alergias"
+        tone="danger"
+        action={editAction("allergies", "Alergias", summary?.allergies)}
+      >
         <BulletList
           items={splitSummary(summary?.allergies)}
           empty="Sem alergias registradas."
         />
       </SidebarSection>
-      <SidebarSection icon={HeartPulse} title="Comorbidades" tone="warning">
+      <SidebarSection
+        icon={HeartPulse}
+        title="Comorbidades"
+        tone="warning"
+        action={editAction(
+          "comorbidities",
+          "Comorbidades",
+          summary?.comorbidities,
+        )}
+      >
         <BulletList
           items={splitSummary(summary?.comorbidities)}
           empty="Nenhuma comorbidade registrada."
@@ -1145,19 +1172,53 @@ function ClinicalSidebar({ summary }: { summary: ClinicalSummary | null }) {
         icon={Stethoscope}
         title="Medicações contínuas"
         tone="primary"
+        action={editAction(
+          "medications",
+          "Medicações contínuas",
+          summary?.medications,
+        )}
       >
         <BulletList
           items={splitSummary(summary?.medications)}
           empty="Nenhuma medicação registrada."
         />
       </SidebarSection>
-      <SidebarSection icon={FileText} title="História familiar" tone="neutral">
+      <SidebarSection
+        icon={FileText}
+        title="Antecedentes pessoais"
+        tone="neutral"
+        action={editAction(
+          "medical_history",
+          "Antecedentes pessoais",
+          summary?.medical_history,
+        )}
+      >
+        <BulletList
+          items={splitSummary(summary?.medical_history)}
+          empty="Sem antecedentes pessoais registrados."
+        />
+      </SidebarSection>
+      <SidebarSection
+        icon={FileText}
+        title="História familiar"
+        tone="neutral"
+        action={editAction(
+          "family_history",
+          "História familiar",
+          summary?.family_history,
+        )}
+      >
         <BulletList
           items={splitSummary(summary?.family_history)}
           empty="Sem história familiar registrada."
         />
       </SidebarSection>
-      <SidebarSection icon={UserRound} title="Hábitos" tone="success">
+      <SidebarSection
+        icon={UserRound}
+        title="Hábitos"
+        tone="success"
+        action={editAction("habits", "Hábitos", summary?.habits)}
+      >
         <BulletList
           items={splitSummary(summary?.habits)}
           empty="Sem hábitos registrados."
@@ -1221,11 +1282,13 @@ function SidebarSection({
   icon: Icon,
   title,
   tone,
+  action,
   children,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   tone?: keyof typeof sectionTones;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const style = tone ? sectionTones[tone] : null;
@@ -1236,22 +1299,25 @@ function SidebarSection({
         style ? `rounded-md border p-3 ${style.box}` : "grid gap-2",
       )}
     >
-      <div className="flex items-center gap-2">
-        <Icon
-          className={cn(
-            "size-3.5",
-            style ? style.icon : "text-muted-foreground",
-          )}
-          aria-hidden="true"
-        />
-        <h3
-          className={cn(
-            "text-caption font-semibold uppercase tracking-wide",
-            style ? style.title : "text-muted-foreground",
-          )}
-        >
-          {title}
-        </h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon
+            className={cn(
+              "size-3.5 shrink-0",
+              style ? style.icon : "text-muted-foreground",
+            )}
+            aria-hidden="true"
+          />
+          <h3
+            className={cn(
+              "text-caption font-semibold uppercase tracking-wide",
+              style ? style.title : "text-muted-foreground",
+            )}
+          >
+            {title}
+          </h3>
+        </div>
+        {action}
       </div>
       {children}
     </section>
@@ -1264,9 +1330,9 @@ function BulletList({ items, empty }: { items: string[]; empty: string }) {
   }
 
   return (
-    <ul className="grid gap-1 text-sm">
-      {items.map((item) => (
-        <li key={item}>• {item}</li>
+    <ul className="grid list-disc gap-1 pl-4 text-sm marker:text-current">
+      {items.map((item, index) => (
+        <li key={`${index}-${item}`}>{item}</li>
       ))}
     </ul>
   );
@@ -1274,15 +1340,15 @@ function BulletList({ items, empty }: { items: string[]; empty: string }) {
 
 function DocumentsPanel({
   documents,
-  patientId,
   total,
   viewAll = false,
 }: {
   documents: PatientDocumentRow[];
-  patientId: string;
   total: number;
   viewAll?: boolean;
 }) {
+  const visibleDocuments = viewAll ? documents.slice(0, 5) : documents;
+
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-3">
@@ -1297,22 +1363,20 @@ function DocumentsPanel({
         </div>
         {viewAll ? (
           <Button asChild variant="ghost" size="sm">
-            <Link
-              href={`/pacientes/${patientId}?section=documents#conteudo-paciente`}
-            >
+            <TabSelectionButton value="documents">
               Ver todos
               <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+            </TabSelectionButton>
           </Button>
         ) : null}
       </CardHeader>
       <CardContent className="grid gap-3">
-        {total > documents.length ? (
+        {total > visibleDocuments.length ? (
           <p className="text-xs text-muted-foreground">
-            Exibindo os {documents.length} documentos mais recentes.
+            Exibindo os {visibleDocuments.length} documentos mais recentes.
           </p>
         ) : null}
-        {documents.map((document) => (
+        {visibleDocuments.map((document) => (
           <div
             key={document.id}
             className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
@@ -1332,7 +1396,7 @@ function DocumentsPanel({
             </Button>
           </div>
         ))}
-        {!documents.length ? (
+        {!visibleDocuments.length ? (
           <EmptyState icon={FileText} title="Nenhum documento emitido" />
         ) : null}
       </CardContent>
@@ -1343,18 +1407,18 @@ function DocumentsPanel({
 function FinancePanel({
   openBalance,
   partialBalance = false,
-  patientId,
   receivables,
   total,
   viewAll = false,
 }: {
   openBalance: number;
   partialBalance?: boolean;
-  patientId: string;
   receivables: PatientReceivableRow[];
   total: number;
   viewAll?: boolean;
 }) {
+  const visibleReceivables = viewAll ? receivables.slice(0, 5) : receivables;
+
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-3">
@@ -1371,22 +1435,20 @@ function FinancePanel({
         </div>
         {viewAll ? (
           <Button asChild variant="ghost" size="sm">
-            <Link
-              href={`/pacientes/${patientId}?section=finance#conteudo-paciente`}
-            >
+            <TabSelectionButton value="finance">
               Ver todos
               <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+            </TabSelectionButton>
           </Button>
         ) : null}
       </CardHeader>
       <CardContent className="grid gap-3">
-        {total > receivables.length ? (
+        {total > visibleReceivables.length ? (
           <p className="text-xs text-muted-foreground">
-            Exibindo os {receivables.length} lançamentos mais recentes.
+            Exibindo os {visibleReceivables.length} lançamentos mais recentes.
           </p>
         ) : null}
-        {receivables.map((receivable) => (
+        {visibleReceivables.map((receivable) => (
           <div
             key={receivable.id}
             className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
@@ -1423,7 +1485,7 @@ function FinancePanel({
             </Badge>
           </div>
         ))}
-        {!receivables.length ? (
+        {!visibleReceivables.length ? (
           <EmptyState icon={CreditCard} title="Nenhuma pendência financeira" />
         ) : null}
       </CardContent>
@@ -1435,13 +1497,11 @@ function MessagesPanel({
   contactById,
   conversations,
   messages,
-  patientId,
   viewAll = false,
 }: {
   contactById: Map<string, WhatsAppContactRow>;
   conversations: WhatsAppConversationRow[];
   messages: WhatsAppMessageRow[];
-  patientId: string;
   viewAll?: boolean;
 }) {
   const visibleConversations = viewAll
@@ -1468,12 +1528,10 @@ function MessagesPanel({
         </div>
         {viewAll && conversations.length ? (
           <Button asChild variant="ghost" size="sm">
-            <Link
-              href={`/pacientes/${patientId}?section=messages#conteudo-paciente`}
-            >
+            <TabSelectionButton value="messages">
               Ver mensagens
               <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+            </TabSelectionButton>
           </Button>
         ) : null}
       </CardHeader>
@@ -1671,7 +1729,7 @@ function messageTypeLabel(type: string) {
 function splitSummary(value?: string | null) {
   return (value ?? "")
     .split(/\r?\n|;/)
-    .map((item) => item.trim())
+    .map((item) => item.replace(/^[\s•·–—*-]+/, "").trim())
     .filter(Boolean);
 }
 

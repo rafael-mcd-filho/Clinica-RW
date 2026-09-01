@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/auth/context";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+type MediaRouteContext = { params: Promise<{ id: string }> };
+
+export async function GET(_request: Request, { params }: MediaRouteContext) {
   const context = await getRequestContext();
   if (
     !context.organization ||
@@ -33,12 +32,22 @@ export async function GET(
     .download(message.media_url);
   if (error || !data)
     return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return new Response(await data.arrayBuffer(), {
+  const buffer = await data.arrayBuffer();
+  return new Response(buffer, {
     headers: {
       "Content-Type":
         message.media_mime_type ?? data.type ?? "application/octet-stream",
+      "Content-Length": String(buffer.byteLength),
       "Cache-Control": "private, max-age=300",
       "Content-Disposition": "inline",
     },
+  });
+}
+
+export async function HEAD(request: Request, context: MediaRouteContext) {
+  const response = await GET(request, context);
+  return new Response(null, {
+    status: response.status,
+    headers: response.headers,
   });
 }

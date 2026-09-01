@@ -6,7 +6,6 @@ import {
   CheckCircle as CheckCircle2,
   CaretRight as ChevronRight,
   Clock as Clock3,
-  SidebarSimple as PanelRightOpen,
   PushPin as Pin,
   PushPinSlash as PinOff,
   ArrowsClockwise as RefreshCw,
@@ -25,6 +24,9 @@ type TodayAppointmentsRailProps = {
   pinned: boolean;
   onOpenChange: (open: boolean) => void;
   onPinnedChange: (pinned: boolean) => void;
+  onAppointmentCountChange?: (count: number | null) => void;
+  preload?: boolean;
+  showTrigger?: boolean;
 };
 
 const statusLabels: Record<string, string> = {
@@ -37,13 +39,16 @@ const statusLabels: Record<string, string> = {
   cancelled: "Cancelado",
 };
 
-const completedStatuses = new Set(["confirmed", "in_progress", "attended"]);
+const completedStatuses = new Set(["attended"]);
 
 export function TodayAppointmentsRail({
   open,
   pinned,
   onOpenChange,
   onPinnedChange,
+  onAppointmentCountChange,
+  preload = false,
+  showTrigger = true,
 }: TodayAppointmentsRailProps) {
   const [appointments, setAppointments] = useState<TodayAppointmentItem[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">(
@@ -54,52 +59,64 @@ export function TodayAppointmentsRail({
   const loadedRef = useRef(false);
   const lastLoadedAtRef = useRef(0);
 
-  const loadAppointments = useCallback(async (force = false) => {
-    if (
-      !force &&
-      loadedRef.current &&
-      Date.now() - lastLoadedAtRef.current < 30_000
-    ) {
-      return;
-    }
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStatus("loading");
-
-    try {
-      const response = await fetch("/api/today-appointments", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const payload = (await response.json()) as {
-        appointments?: TodayAppointmentItem[];
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Falha ao carregar pacientes do dia.");
+  const loadAppointments = useCallback(
+    async (force = false) => {
+      if (
+        !force &&
+        loadedRef.current &&
+        Date.now() - lastLoadedAtRef.current < 30_000
+      ) {
+        return;
       }
 
-      setAppointments(
-        Array.isArray(payload.appointments) ? payload.appointments : [],
-      );
-      loadedRef.current = true;
-      lastLoadedAtRef.current = Date.now();
-      setHasLoaded(true);
-      setStatus("ready");
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setStatus("error");
-    }
-  }, []);
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setStatus("loading");
+
+      try {
+        const response = await fetch("/api/today-appointments", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as {
+          appointments?: TodayAppointmentItem[];
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(
+            payload.error ?? "Falha ao carregar pacientes do dia.",
+          );
+        }
+
+        const nextAppointments = Array.isArray(payload.appointments)
+          ? payload.appointments
+          : [];
+        setAppointments(nextAppointments);
+        onAppointmentCountChange?.(nextAppointments.length);
+        loadedRef.current = true;
+        lastLoadedAtRef.current = Date.now();
+        setHasLoaded(true);
+        setStatus("ready");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
+        onAppointmentCountChange?.(null);
+        setStatus("error");
+      }
+    },
+    [onAppointmentCountChange],
+  );
 
   useEffect(() => {
-    if (!open) return;
-    const timer = window.setTimeout(() => void loadAppointments(), 0);
+    if (!open && !preload) return;
+    const timer = window.setTimeout(
+      () => void loadAppointments(),
+      open ? 0 : 350,
+    );
     return () => window.clearTimeout(timer);
-  }, [loadAppointments, open]);
+  }, [loadAppointments, open, preload]);
 
   useEffect(
     () => () => {
@@ -110,17 +127,17 @@ export function TodayAppointmentsRail({
 
   return (
     <>
-      {!open ? (
-        <Tooltip content="Pacientes do dia" side="bottom">
+      {showTrigger && !open ? (
+        <Tooltip content="Atendimentos do dia" side="bottom">
           <Button
             type="button"
             size="icon"
             variant="secondary"
-            aria-label="Abrir pacientes do dia"
-            className="fixed right-3 top-16 z-30 shadow-[var(--shadow-hover)] lg:top-4"
+            aria-label="Abrir atendimentos do dia"
+            className="fixed right-3 top-20 z-30 shadow-[var(--shadow-hover)]"
             onClick={() => onOpenChange(true)}
           >
-            <PanelRightOpen className="size-4" aria-hidden="true" />
+            <CalendarCheck2 className="size-4" aria-hidden="true" />
           </Button>
         </Tooltip>
       ) : null}
@@ -128,7 +145,7 @@ export function TodayAppointmentsRail({
       {open && !pinned ? (
         <button
           type="button"
-          aria-label="Fechar pacientes do dia"
+          aria-label="Fechar atendimentos do dia"
           className="fixed inset-0 z-30 bg-black/10 lg:bg-transparent"
           onClick={() => onOpenChange(false)}
         />
@@ -137,16 +154,18 @@ export function TodayAppointmentsRail({
       <aside
         className={cn(
           "fixed inset-y-0 right-0 z-40 flex w-[21rem] max-w-[calc(100vw-1rem)] flex-col border-l border-border bg-card shadow-[var(--shadow-hover)] transition-transform duration-[var(--motion-drawer)] ease-[var(--ease-out)]",
-          open ? "translate-x-0" : "translate-x-full",
+          open ? "translate-x-0" : "pointer-events-none translate-x-full",
         )}
-        aria-label="Pacientes do dia"
+        aria-label="Atendimentos do dia"
         aria-busy={status === "loading"}
+        aria-hidden={!open}
+        inert={!open}
       >
         <header className="flex h-16 items-center justify-between gap-3 border-b border-border px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <CalendarCheck2 className="size-4 text-primary" aria-hidden />
-              <h2 className="truncate font-semibold">Pacientes do dia</h2>
+              <h2 className="truncate font-semibold">Atendimentos do dia</h2>
               <Badge
                 variant={
                   hasLoaded && appointments.length ? "primary" : "neutral"
@@ -161,12 +180,12 @@ export function TodayAppointmentsRail({
           </div>
 
           <div className="flex items-center gap-1">
-            <Tooltip content="Atualizar pacientes" side="bottom">
+            <Tooltip content="Atualizar atendimentos" side="bottom">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Atualizar pacientes do dia"
+                aria-label="Atualizar atendimentos do dia"
                 disabled={status === "loading"}
                 onClick={() => void loadAppointments(true)}
               >
@@ -189,6 +208,7 @@ export function TodayAppointmentsRail({
                 size="icon"
                 aria-label={pinned ? "Desfixar painel" : "Fixar painel"}
                 onClick={() => onPinnedChange(!pinned)}
+                className="hidden xl:inline-flex"
               >
                 {pinned ? (
                   <PinOff className="size-4" aria-hidden />
@@ -202,7 +222,7 @@ export function TodayAppointmentsRail({
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Fechar pacientes do dia"
+                aria-label="Fechar atendimentos do dia"
                 onClick={() => {
                   onPinnedChange(false);
                   onOpenChange(false);
@@ -221,7 +241,7 @@ export function TodayAppointmentsRail({
             <div className="p-5">
               <div className="rounded-lg border border-dashed border-destructive/40 bg-destructive-muted/40 px-4 py-8 text-center">
                 <p className="text-sm font-medium text-destructive-foreground">
-                  Não foi possível carregar os pacientes do dia.
+                  Não foi possível carregar os atendimentos do dia.
                 </p>
                 <Button
                   type="button"
@@ -259,7 +279,7 @@ export function TodayAppointmentsRail({
 function TodayAppointmentsSkeleton() {
   return (
     <div className="divide-y divide-border" role="status">
-      <span className="sr-only">Carregando pacientes do dia</span>
+      <span className="sr-only">Carregando atendimentos do dia</span>
       {Array.from({ length: 4 }).map((_, index) => (
         <div key={index} className="flex gap-3 px-5 py-4">
           <div className="grid w-12 shrink-0 content-start gap-2">
