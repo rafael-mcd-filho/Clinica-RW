@@ -10,12 +10,16 @@ import {
   parseAgendaLocalDateTime,
 } from "@/lib/agenda/range";
 import { buildWeeklyAvailabilityIntervals } from "@/lib/agenda/weekly-availability";
+import type { AppointmentFormData } from "@/lib/agenda/slots";
 import {
   createQuickPatient,
   type QuickPatientActionState,
 } from "@/lib/patients/quick-create";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+/** Horizonte de dias que o modal de agendamento carrega fora da agenda. */
+const APPOINTMENT_FORM_WINDOW_DAYS = 45;
 
 export type AgendaActionState = {
   error?: string;
@@ -1496,4 +1500,125 @@ export async function rejectOnlineBookingRequest(
   revalidatePath("/agenda");
   revalidatePath("/dashboard");
   return { success: "Solicitação rejeitada." };
+}
+
+/**
+ * Catálogos + grade para o modal de agendamento fora da tela da agenda (hoje,
+ * o painel de contato do atendimento). A agenda já tem tudo isso carregado na
+ * página; aqui a mesma coisa é montada sob demanda, para uma janela curta, e
+ * é o que faz o campo de horário oferecer os horários livres também lá.
+ */
+export async function loadAppointmentFormData(): Promise<{
+  ok: boolean;
+  data?: AppointmentFormData;
+  error?: string;
+}> {
+  const context = await requireAgendaPermission("agenda.criar_agendamento");
+  if (!context?.organization) return { ok: false, error: "Acesso negado." };
+
+  const organizationId = context.organization.id;
+  const supabase = await createSupabaseServerClient();
+  const { data: settings } = await supabase
+    .from("organization_settings")
+    .select("timezone")
+    .eq("organization_id", organizationId)
+    .maybeSingle<{ timezone: string | null }>();
+
+  const timeZone = normalizeAgendaTimeZone(settings?.timezone);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone }).format(
+    new Date(),
+  );
+  // Janela de 45 dias: cobre o horizonte real de marcação sem trazer a agenda
+  // inteira para dentro de um painel lateral.
+  const horizon = new Date(`${today}T12:00:00Z`);
+  horizon.setUTCDate(horizon.getUTCDate() + APPOINTMENT_FORM_WINDOW_DAYS);
+  const visibleTo = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "UTC",
+  }).format(horizon);
+  const rangeStart = `${today}T00:00:00.000Z`;
+  const rangeEnd = `${visibleTo}T23:59:59.999Z`;
+
+  const [
+    schedules,
+    procedures,
+    rooms,
+    insurances,
+    paymentMethods,
+    availability,
+    appointments,
+    blocks,
+  ] = await Promise.all([
+    supabase
+      .from("schedules")
+      .select("id, professional_id, unit_id, name")
+      .eq("organization_id", organizationId)
+      .eq("active", true)
+      .order("name"),
+    supabase
+      .from("procedures")
+      .select("id, name, duration_minutes")
+      .eq("organization_id", organizationId)
+      .eq("active", true)
+      .order("name"),
+    supabase
+      .from("rooms")
+      .select("id, unit_id, name")
+      .eq("organization_id", organizationId)
+      .eq("active", true)
+      .order("name"),
+    supabase
+      .from("health_insurances")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("active", true)
+      .order("name"),
+    supabase
+      .from("payment_methods")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .eq("active", true)
+      .order("name"),
+    supabase
+      .from("schedule_availability")
+      .select("id, schedule_id, weekday, start_time, end_time, slot_minutes")
+      .eq("organization_id", organizationId)
+      .order("weekday")
+      .order("start_time"),
+    supabase
+      .from("appointments")
+      .select("id, professional_id, schedule_id, start_at, end_at")
+      .eq("organization_id", organizationId)
+      .gte("start_at", rangeStart)
+      .lte("start_at", rangeEnd)
+      .neq("status", "cancelled"),
+    supabase
+      .from("schedule_blocks")
+      .select("id, schedule_id, start_at, end_at")
+      .eq("organization_id", organizationId)
+      .lt("start_at", rangeEnd)
+      .gt("end_at", rangeStart),
+  ]);
+
+  return {
+    ok: true,
+    data: {
+      timeZone,
+      selectedDate: today,
+      visibleFrom: today,
+      visibleTo,
+      schedules: (schedules.data ?? []) as AppointmentFormData["schedules"],
+      rooms: (rooms.data ?? []) as AppointmentFormData["rooms"],
+      // A busca de paciente do formulário é remota; a lista local fica vazia.
+      patients: [],
+      procedures: (procedures.data ?? []) as AppointmentFormData["procedures"],
+      insurances: (insurances.data ?? []) as AppointmentFormData["insurances"],
+      paymentMethods: (paymentMethods.data ??
+        []) as AppointmentFormData["paymentMethods"],
+      appointments: (appointments.data ??
+        []) as AppointmentFormData["appointments"],
+      blocks: (blocks.data ?? []) as AppointmentFormData["blocks"],
+      availability: (availability.data ??
+        []) as AppointmentFormData["availability"],
+    },
+  };
 }

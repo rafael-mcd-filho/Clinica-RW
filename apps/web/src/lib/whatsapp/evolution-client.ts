@@ -79,17 +79,44 @@ export function toWhatsAppNumber(phone: string): string {
   return digits;
 }
 
+/**
+ * Mensagem citada em uma resposta. A Evolution só precisa da chave (o id que
+ * o WhatsApp deu à mensagem original e de que lado ela veio); o corpo vai
+ * junto porque alguns clientes mostram a prévia a partir dele.
+ */
+export type QuotedMessage = {
+  waMessageId: string;
+  fromMe: boolean;
+  body?: string | null;
+};
+
+function toQuotedPayload(quoted: QuotedMessage, phone: string) {
+  return {
+    key: {
+      remoteJid: `${toWhatsAppNumber(phone)}@s.whatsapp.net`,
+      fromMe: quoted.fromMe,
+      id: quoted.waMessageId,
+    },
+    message: { conversation: quoted.body ?? "" },
+  };
+}
+
 export async function sendTextMessage(
   phone: string,
   text: string,
   providedConfig?: EvolutionConfig,
+  quoted?: QuotedMessage | null,
 ): Promise<SendResult> {
   const config = providedConfig ?? getEvolutionConfig();
   const payload = await evolutionFetch(
     `/message/sendText/${config.instance}`,
     {
       method: "POST",
-      body: JSON.stringify({ number: toWhatsAppNumber(phone), text }),
+      body: JSON.stringify({
+        number: toWhatsAppNumber(phone),
+        text,
+        ...(quoted ? { quoted: toQuotedPayload(quoted, phone) } : {}),
+      }),
     },
     config,
   );

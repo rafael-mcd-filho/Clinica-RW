@@ -29,13 +29,13 @@ import {
   CalendarDots as CalendarDays,
   Columns as Columns3,
   FunnelSimple as Filter,
-  DotsSixVertical as GripVertical,
   Tray as Inbox,
   ListBullets as List,
   ChatCircle as MessageCircle,
   DotsThreeVertical as MoreVertical,
   MagnifyingGlass as Search,
   User,
+  WhatsappLogo,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { moveCard } from "../actions";
@@ -48,6 +48,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Select } from "@/components/ui/field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
+import { formatPhoneBR } from "@/lib/validation/br";
 import { useCoalescedRouterRefresh } from "@/hooks/use-coalesced-router-refresh";
 
 export type FunnelBoardStage = {
@@ -67,8 +68,11 @@ export type FunnelBoardStage = {
 export type FunnelBoardCard = {
   id: string;
   stage_id: string;
-  patient_id: string;
+  /** Card criado pelo atendimento pode ainda não ter paciente cadastrado. */
+  patient_id: string | null;
   patient_name: string;
+  contact_id: string | null;
+  contact_phone: string | null;
   assigned_professional_name: string | null;
   next_action: string | null;
   next_action_date: string | null;
@@ -773,32 +777,21 @@ function FunnelCardItem({
     isDragging,
   } = useSortable({ id: card.id, disabled: !canManage });
 
+  // O cartão inteiro é a alça: segurar em qualquer ponto já arrasta. O clique
+  // curto continua abrindo o painel — quem separa os dois é o sensor de
+  // distância (8px) configurado no board.
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn((isDragging || dragging) && "opacity-30")}
+      className={cn(
+        (isDragging || dragging) && "opacity-30",
+        canManage && "cursor-grab touch-none active:cursor-grabbing",
+      )}
+      {...(canManage ? attributes : {})}
+      {...(canManage ? listeners : {})}
     >
-      <CardPreview
-        card={card}
-        onClick={() => onClick(card.id)}
-        dragHandle={
-          canManage ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="cursor-grab active:cursor-grabbing"
-              aria-label={`Mover ${card.patient_name}`}
-              onClick={(event) => event.stopPropagation()}
-              {...attributes}
-              {...listeners}
-            >
-              <GripVertical className="size-4" aria-hidden="true" />
-            </Button>
-          ) : null
-        }
-      />
+      <CardPreview card={card} onClick={() => onClick(card.id)} />
     </div>
   );
 }
@@ -806,12 +799,10 @@ function FunnelCardItem({
 function CardPreview({
   card,
   onClick,
-  dragHandle,
   dragging,
 }: {
   card: FunnelBoardCard;
   onClick?: () => void;
-  dragHandle?: React.ReactNode;
   dragging?: boolean;
 }) {
   return (
@@ -843,6 +834,14 @@ function CardPreview({
           <h3 className="mt-1 truncate text-body-sm font-semibold text-foreground">
             {card.patient_name}
           </h3>
+          {card.contact_phone ? (
+            // Card que veio do atendimento carrega o telefone do contato: é por
+            // ele que a recepção retoma a conversa.
+            <p className="mt-0.5 flex items-center gap-1 text-label tabular-nums text-muted-foreground">
+              <WhatsappLogo className="size-3.5 shrink-0" aria-hidden="true" />
+              {formatPhoneBR(card.contact_phone)}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {card.assigned_professional_name ? (
@@ -853,7 +852,6 @@ function CardPreview({
               </span>
             </span>
           ) : null}
-          {dragHandle}
         </div>
       </div>
 

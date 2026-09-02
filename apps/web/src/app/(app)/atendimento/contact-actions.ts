@@ -105,23 +105,6 @@ export type ContactOpportunityView = {
   updatedAt: string;
 };
 
-export type ContactAppointmentCreationOptions = {
-  schedules: Array<{
-    id: string;
-    name: string;
-    unitId: string;
-    professionalId: string;
-  }>;
-  procedures: Array<{
-    id: string;
-    name: string;
-    durationMinutes: number;
-  }>;
-  rooms: Array<{ id: string; name: string; unitId: string }>;
-  healthInsurances: Array<{ id: string; name: string }>;
-  paymentMethods: Array<{ id: string; name: string }>;
-};
-
 export type ContactDetailsData = {
   organizationId: string;
   conversationId: string;
@@ -151,7 +134,6 @@ export type ContactDetailsData = {
   files: ContactFileView[];
   opportunities: ContactOpportunityView[];
   opportunityMovements: ContactOpportunityMovementView[];
-  creationOptions: ContactAppointmentCreationOptions | null;
 };
 
 export type ContactDetailsResult =
@@ -372,69 +354,27 @@ export async function loadContactDetailsAction(
     .limit(20)
     .returns<Array<{ id: string }>>();
 
-  const opportunitiesPromise =
-    permissions.canViewFunnel && contact.patient_id
-      ? supabase
-          .from("funnel_cards")
-          .select(
-            "id, funnel_id, stage_id, assigned_professional_id, next_action, next_action_date, value, archived_at, created_at, updated_at",
-          )
-          .eq("organization_id", organizationId)
-          .eq("patient_id", contact.patient_id)
-          .order("created_at", { ascending: false })
-          .limit(30)
-          .returns<OpportunityRow[]>()
-      : Promise.resolve({ data: [] as OpportunityRow[], error: null });
+  // Cards do paciente e cards criados direto da conversa (que podem nem ter
+  // paciente ainda) contam como oportunidades do mesmo contato.
+  const opportunityFilters = [
+    `contact_id.eq.${contact.id}`,
+    ...(contact.patient_id ? [`patient_id.eq.${contact.patient_id}`] : []),
+  ];
+  const opportunitiesPromise = permissions.canViewFunnel
+    ? supabase
+        .from("funnel_cards")
+        .select(
+          "id, funnel_id, stage_id, assigned_professional_id, next_action, next_action_date, value, archived_at, created_at, updated_at",
+        )
+        .eq("organization_id", organizationId)
+        .or(opportunityFilters.join(","))
+        .order("created_at", { ascending: false })
+        .limit(30)
+        .returns<OpportunityRow[]>()
+    : Promise.resolve({ data: [] as OpportunityRow[], error: null });
 
-  const creationOptionsPromise = permissions.canCreateAppointment
-    ? Promise.all([
-        supabase
-          .from("schedules")
-          .select("id, name, unit_id, professional_id")
-          .eq("organization_id", organizationId)
-          .eq("active", true)
-          .order("name")
-          .returns<
-            Array<{
-              id: string;
-              name: string;
-              unit_id: string;
-              professional_id: string;
-            }>
-          >(),
-        supabase
-          .from("procedures")
-          .select("id, name, duration_minutes")
-          .eq("organization_id", organizationId)
-          .eq("active", true)
-          .order("name")
-          .returns<
-            Array<{ id: string; name: string; duration_minutes: number }>
-          >(),
-        supabase
-          .from("rooms")
-          .select("id, name, unit_id")
-          .eq("organization_id", organizationId)
-          .eq("active", true)
-          .order("name")
-          .returns<Array<{ id: string; name: string; unit_id: string }>>(),
-        supabase
-          .from("health_insurances")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .eq("active", true)
-          .order("name")
-          .returns<Array<{ id: string; name: string }>>(),
-        supabase
-          .from("payment_methods")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .eq("active", true)
-          .order("name")
-          .returns<Array<{ id: string; name: string }>>(),
-      ])
-    : Promise.resolve(null);
-
+  // Os catálogos do agendamento não vêm mais daqui: o modal compartilhado
+  // (components/agenda/appointment-form-modal) carrega os seus quando abre.
   const [
     patientResult,
     allAppointmentsResult,
@@ -442,7 +382,6 @@ export async function loadContactDetailsAction(
     onlineBookingsResult,
     contactConversationsResult,
     opportunitiesResult,
-    creationOptionResults,
   ] = await Promise.all([
     patientPromise,
     allAppointmentsPromise,
@@ -450,7 +389,6 @@ export async function loadContactDetailsAction(
     onlineBookingsPromise,
     contactConversationsPromise,
     opportunitiesPromise,
-    creationOptionsPromise,
   ]);
 
   const allAppointments = allAppointmentsResult.data ?? [];
@@ -744,32 +682,6 @@ export async function loadContactDetailsAction(
         movedAt: movement.moved_at,
         note: movement.note,
       })),
-      creationOptions: creationOptionResults
-        ? {
-            schedules: (creationOptionResults[0].data ?? []).map((item) => ({
-              id: item.id,
-              name: item.name,
-              unitId: item.unit_id,
-              professionalId: item.professional_id,
-            })),
-            procedures: (creationOptionResults[1].data ?? []).map((item) => ({
-              id: item.id,
-              name: item.name,
-              durationMinutes: item.duration_minutes,
-            })),
-            rooms: (creationOptionResults[2].data ?? []).map((item) => ({
-              id: item.id,
-              name: item.name,
-              unitId: item.unit_id,
-            })),
-            healthInsurances: (creationOptionResults[3].data ?? []).map(
-              (item) => ({ id: item.id, name: item.name }),
-            ),
-            paymentMethods: (creationOptionResults[4].data ?? []).map(
-              (item) => ({ id: item.id, name: item.name }),
-            ),
-          }
-        : null,
     },
   };
 }

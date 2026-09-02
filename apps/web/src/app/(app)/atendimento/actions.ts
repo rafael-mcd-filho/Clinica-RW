@@ -10,9 +10,14 @@ import {
   sendWhatsAppAudio,
 } from "@/lib/whatsapp/evolution-client";
 import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
+import {
+  CONVERSATION_PAGE_SIZE,
+  loadConversationPage,
+} from "@/lib/whatsapp/conversation-list";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest";
 import {
   toMessagePreview,
+  type ConversationListItem,
   type ConversationMessage,
   type ConversationStatus,
 } from "@/lib/whatsapp/types";
@@ -256,6 +261,7 @@ async function recordOutboundActivity({
 export async function sendMessageAction(
   conversationId: string,
   text: string,
+  replyToMessageId?: string | null,
 ): Promise<AttendanceResult> {
   const auth = await requireAttendant();
   if (!auth) return { ok: false, error: "Acesso negado." };
@@ -290,12 +296,45 @@ export async function sendMessageAction(
     };
   }
 
+  // Citação: a Evolution precisa da chave que o WhatsApp deu à mensagem
+  // original. Sem wa_message_id (nota interna, ou envio que nunca voltou do
+  // provedor) a resposta segue sem citar, em vez de falhar.
+  let quoted: {
+    waMessageId: string;
+    fromMe: boolean;
+    body: string | null;
+  } | null = null;
+  if (replyToMessageId) {
+    const { data: quotedRow } = await supabase
+      .from("whatsapp_messages")
+      .select("id, wa_message_id, direction, body, message_type")
+      .eq("organization_id", auth.organizationId)
+      .eq("conversation_id", conversationId)
+      .eq("id", replyToMessageId)
+      .maybeSingle<{
+        id: string;
+        wa_message_id: string | null;
+        direction: "inbound" | "outbound";
+        body: string | null;
+        message_type: string;
+      }>();
+
+    if (quotedRow?.wa_message_id && quotedRow.message_type !== "note") {
+      quoted = {
+        waMessageId: quotedRow.wa_message_id,
+        fromMe: quotedRow.direction === "outbound",
+        body: quotedRow.body,
+      };
+    }
+  }
+
   let waMessageId: string | null = null;
   try {
     const result = await sendTextMessage(
       context.phone,
       trimmed,
       evolutionConfig,
+      quoted,
     );
     waMessageId = result.waMessageId;
   } catch (error) {
@@ -319,6 +358,9 @@ export async function sendMessageAction(
         body: trimmed,
         status: "sent",
         sent_at: nowIso,
+        // Só entra no insert quando há citação: assim um banco sem a migration
+        // da coluna continua registrando os envios normais.
+        ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
       })
       .select("id, created_at")
       .single<{ id: string; created_at: string }>();
@@ -354,6 +396,7 @@ export async function sendMessageAction(
       createdAt: storedMessage.created_at,
       waMessageId,
       sentAt: nowIso,
+      replyToMessageId: replyToMessageId ?? null,
     },
   };
 }
@@ -868,4 +911,43 @@ export async function simulateInboundAction(
   });
 
   return { ok: true };
+}
+
+/**
+ * Próxima página da fila, para o "Carregar mais" da lista.
+ *
+ * A primeira carga vem com a página (200 conversas); daí em diante a fila
+ * cresce por aqui, em vez de ficar presa naquele teto. Só leitura: exige
+ * `atendimento.ver`, e a montagem é a mesma da página.
+ */
+export async function loadMoreConversationsAction(offset: number): Promise<{
+  ok: boolean;
+  conversations?: ConversationListItem[];
+  hasMore?: boolean;
+  error?: string;
+}> {
+  const context = await getRequestContext();
+  if (
+    !context.organization ||
+    !context.permissionCodes.has("atendimento.ver")
+  ) {
+    return { ok: false, error: "Acesso negado." };
+  }
+
+  const safeOffset = Number.isFinite(offset)
+    ? Math.min(Math.max(Math.trunc(offset), 0), 100_000)
+    : 0;
+  const supabase = await createSupabaseServerClient();
+
+  try {
+    const { items, hasMore } = await loadConversationPage({
+      supabase,
+      organizationId: context.organization.id,
+      offset: safeOffset,
+      limit: CONVERSATION_PAGE_SIZE,
+    });
+    return { ok: true, conversations: items, hasMore };
+  } catch {
+    return { ok: false, error: "Não foi possível carregar mais conversas." };
+  }
 }

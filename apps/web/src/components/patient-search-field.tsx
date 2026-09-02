@@ -229,7 +229,7 @@ export function PatientSearchField({
               setActiveOptionIndex(-1);
             }
           }}
-          placeholder="Digite 3 letras para buscar..."
+          placeholder="Nome, CPF ou telefone (3+ caracteres)"
           className="w-full pl-9"
           autoComplete="off"
         />

@@ -11,6 +11,7 @@ import { StageSettingsDialog } from "./stage-settings-dialog";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireCompanyPermission } from "@/lib/authz/guards";
+import { formatPhoneBR } from "@/lib/validation/br";
 import { parseFunnelBoardAggregate } from "@/lib/funnels/aggregates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -31,13 +32,15 @@ type StageRow = {
 type CardRow = {
   id: string;
   stage_id: string;
-  patient_id: string;
+  patient_id: string | null;
+  contact_id: string | null;
   next_action: string | null;
   next_action_date: string | null;
   value: number | null;
   created_at: string;
   archived_at: string | null;
   patients: { full_name: string; social_name: string | null } | null;
+  whatsapp_contacts: { phone: string; wa_name: string | null } | null;
   professionals: { name: string } | null;
 };
 type FunnelMovementRow = {
@@ -88,7 +91,7 @@ export default async function FunilBoardPage({
       supabase
         .from("funnel_cards")
         .select(
-          "id, stage_id, patient_id, next_action, next_action_date, value, created_at, archived_at, patients(full_name, social_name), professionals(name)",
+          "id, stage_id, patient_id, contact_id, next_action, next_action_date, value, created_at, archived_at, patients(full_name, social_name), whatsapp_contacts(phone, wa_name), professionals(name)",
         )
         .eq("organization_id", organizationId)
         .eq("funnel_id", id)
@@ -142,8 +145,16 @@ export default async function FunilBoardPage({
       id: row.id,
       stage_id: row.stage_id,
       patient_id: row.patient_id,
+      // Sem paciente cadastrado o card ainda tem dono: o contato da conversa.
       patient_name:
-        row.patients?.social_name || row.patients?.full_name || "Paciente",
+        row.patients?.social_name ||
+        row.patients?.full_name ||
+        row.whatsapp_contacts?.wa_name ||
+        (row.whatsapp_contacts?.phone
+          ? formatPhoneBR(row.whatsapp_contacts.phone)
+          : "Sem nome"),
+      contact_id: row.contact_id,
+      contact_phone: row.whatsapp_contacts?.phone ?? null,
       assigned_professional_name: row.professionals?.name ?? null,
       next_action: row.next_action,
       next_action_date: row.next_action_date,

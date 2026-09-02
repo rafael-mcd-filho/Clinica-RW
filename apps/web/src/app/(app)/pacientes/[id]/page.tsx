@@ -26,6 +26,7 @@ import {
   type TagRow,
 } from "./patient-detail-panels";
 import { PatientAppointmentActions } from "./patient-appointment-actions";
+import { PatientConversationPreview } from "./patient-conversation-preview";
 import { PatientPhotoForm } from "./patient-photo-form";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
@@ -139,14 +140,19 @@ type WhatsAppConversationRow = {
   last_message_preview: string | null;
 };
 
-type WhatsAppMessageRow = {
+/** Um disparo de comunicação (lembrete, confirmação, automação) ao paciente. */
+type PatientCommunicationRow = {
   id: string;
-  conversation_id: string;
-  direction: "inbound" | "outbound";
-  message_type: string;
-  body: string | null;
+  channel: string;
+  recipient: string;
+  subject: string | null;
+  body: string;
+  status: string;
+  scheduled_at: string;
   sent_at: string | null;
-  created_at: string;
+  error_message: string | null;
+  template_name: string | null;
+  automation_name: string | null;
 };
 
 type PatientSection =
@@ -403,20 +409,19 @@ export default async function PatientDetailsPage({
   ]);
 
   const conversations = conversationsResult.data ?? [];
-  const conversationIds = conversations.map((conversation) => conversation.id);
-  const messagesResult =
-    canSeeMessages && conversationIds.length
-      ? await supabase
-          .from("whatsapp_messages")
-          .select(
-            "id, conversation_id, direction, message_type, body, sent_at, created_at",
-          )
-          .eq("organization_id", organizationId)
-          .in("conversation_id", conversationIds)
-          .order("created_at", { ascending: false })
-          .limit(100)
-          .returns<WhatsAppMessageRow[]>()
-      : { data: [] as WhatsAppMessageRow[] };
+  // Comunicações disparadas para o paciente (lembretes e automações). O
+  // conteúdo da conversa em si fica no atendimento — aqui interessa o que a
+  // clínica mandou por conta própria. Enquanto a migration da RPC não
+  // estiver aplicada a seção só não aparece.
+  const communicationsResult = canSeeMessages
+    ? await supabase.rpc("get_patient_communications", {
+        p_patient_id: patient.id,
+        p_limit: 20,
+      })
+    : { data: null };
+  const communications = Array.isArray(communicationsResult.data)
+    ? (communicationsResult.data as unknown as PatientCommunicationRow[])
+    : [];
 
   const displayName = patient.social_name || patient.full_name;
   const photoUrl = await createPatientPhotoSignedUrl(patient.photo_path);
@@ -710,7 +715,8 @@ export default async function PatientDetailsPage({
                       <MessagesPanel
                         conversations={conversations}
                         contactById={contactById}
-                        messages={[]}
+                        communications={[]}
+                        organizationId={organizationId}
                         viewAll
                       />
                     ) : null}
@@ -795,7 +801,8 @@ export default async function PatientDetailsPage({
                         <MessagesPanel
                           conversations={conversations}
                           contactById={contactById}
-                          messages={messagesResult.data ?? []}
+                          communications={communications}
+                          organizationId={organizationId}
                         />
                       ),
                     },
@@ -1496,20 +1503,19 @@ function FinancePanel({
 function MessagesPanel({
   contactById,
   conversations,
-  messages,
+  communications,
+  organizationId,
   viewAll = false,
 }: {
   contactById: Map<string, WhatsAppContactRow>;
   conversations: WhatsAppConversationRow[];
-  messages: WhatsAppMessageRow[];
+  communications: PatientCommunicationRow[];
+  organizationId: string;
   viewAll?: boolean;
 }) {
   const visibleConversations = viewAll
     ? conversations.slice(0, 3)
     : conversations;
-  const conversationById = new Map(
-    conversations.map((conversation) => [conversation.id, conversation]),
-  );
 
   return (
     <Card>
@@ -1566,11 +1572,16 @@ function MessagesPanel({
                   </p>
                 ) : null}
               </div>
-              <Button asChild variant="secondary" size="sm">
-                <Link href={`/atendimento?conversation=${conversation.id}`}>
-                  Abrir conversa
-                </Link>
-              </Button>
+              <PatientConversationPreview
+                conversationId={conversation.id}
+                organizationId={organizationId}
+                contactName={
+                  contact?.wa_name ||
+                  (contact?.phone
+                    ? formatPhoneBR(contact.phone)
+                    : "contato do WhatsApp")
+                }
+              />
             </div>
           );
         })}
@@ -1583,49 +1594,60 @@ function MessagesPanel({
           />
         ) : null}
 
-        {!viewAll && messages.length ? (
+        {!viewAll ? (
           <section className="grid gap-2 border-t border-border pt-4">
             <div>
-              <h3 className="font-semibold">Mensagens recentes</h3>
+              <h3 className="font-semibold">Comunicações enviadas</h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                As 100 mensagens mais recentes são exibidas aqui. Abra a
-                conversa para consultar todo o conteúdo.
+                Lembretes, confirmações e demais disparos das automações para
+                este paciente. O conteúdo da conversa fica no atendimento.
               </p>
             </div>
-            {messages.map((message) => {
-              const conversation = conversationById.get(
-                message.conversation_id,
-              );
-              return (
-                <div
-                  key={message.id}
-                  className="flex items-start justify-between gap-3 rounded-md bg-muted/45 px-3 py-2.5"
-                >
-                  <div className="min-w-0">
-                    <p className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-                      {message.direction === "outbound"
-                        ? "Enviada pela clínica"
-                        : "Recebida do paciente"}
-                    </p>
-                    <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-                      {message.body || messageTypeLabel(message.message_type)}
-                    </p>
-                    <p className="mt-1 text-caption text-muted-foreground">
-                      {formatDateTime(message.sent_at ?? message.created_at)}
-                    </p>
-                  </div>
-                  {conversation ? (
-                    <Button asChild variant="ghost" size="sm">
-                      <Link
-                        href={`/atendimento?conversation=${conversation.id}`}
-                      >
-                        Abrir
-                      </Link>
-                    </Button>
-                  ) : null}
+            {communications.map((communication) => (
+              <div
+                key={communication.id}
+                className="grid gap-1 rounded-md bg-muted/45 px-3 py-2.5"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
+                    {communication.automation_name ??
+                      communication.template_name ??
+                      "Comunicação avulsa"}
+                  </p>
+                  <Badge variant="neutral">
+                    {communicationChannelLabel(communication.channel)}
+                  </Badge>
+                  <Badge
+                    variant={communicationStatusVariant(communication.status)}
+                  >
+                    {communicationStatusLabel(communication.status)}
+                  </Badge>
                 </div>
-              );
-            })}
+                {communication.subject ? (
+                  <p className="text-sm font-medium">{communication.subject}</p>
+                ) : null}
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {communication.body}
+                </p>
+                <p className="text-caption text-muted-foreground">
+                  {communication.sent_at
+                    ? `Enviada em ${formatDateTime(communication.sent_at)}`
+                    : `Agendada para ${formatDateTime(communication.scheduled_at)}`}
+                  {" · "}
+                  {communication.recipient}
+                </p>
+                {communication.error_message ? (
+                  <p className="text-caption text-destructive">
+                    {communication.error_message}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+            {!communications.length ? (
+              <p className="rounded-md bg-muted/45 px-3 py-2.5 text-sm text-muted-foreground">
+                Nenhuma comunicação registrada para este paciente.
+              </p>
+            ) : null}
           </section>
         ) : null}
       </CardContent>
@@ -1712,18 +1734,33 @@ function conversationStatusVariant(
   return "neutral";
 }
 
-function messageTypeLabel(type: string) {
+function communicationChannelLabel(channel: string) {
   const labels: Record<string, string> = {
-    image: "Imagem",
-    audio: "Áudio",
-    video: "Vídeo",
-    document: "Documento",
-    sticker: "Figurinha",
-    location: "Localização",
-    contact: "Contato",
-    system: "Mensagem do sistema",
+    whatsapp: "WhatsApp",
+    email: "E-mail",
+    sms: "SMS",
   };
-  return labels[type] ?? "Mensagem";
+  return labels[channel] ?? channel;
+}
+
+function communicationStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    queued: "Na fila",
+    sending: "Enviando",
+    sent: "Enviada",
+    failed: "Falhou",
+    skipped: "Não enviada",
+  };
+  return labels[status] ?? status;
+}
+
+function communicationStatusVariant(
+  status: string,
+): "neutral" | "primary" | "success" | "warning" | "destructive" {
+  if (status === "sent") return "success";
+  if (status === "failed") return "destructive";
+  if (status === "skipped") return "neutral";
+  return "warning";
 }
 
 function splitSummary(value?: string | null) {

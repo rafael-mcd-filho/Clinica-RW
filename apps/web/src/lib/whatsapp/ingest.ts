@@ -39,24 +39,11 @@ async function resolveInstance(
   return (data as ResolvedInstance | null) ?? null;
 }
 
-async function findPatientByPhone(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
-  organizationId: string,
-  phone: string,
-): Promise<{ id: string } | null> {
-  const digits = phone.replace(/\D/g, "");
-  const last8 = digits.slice(-8);
-  if (last8.length < 8) return null;
-
-  const { data } = await admin
-    .from("patients")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .or(`phone.ilike.%${last8}%,whatsapp.ilike.%${last8}%`)
-    .limit(1)
-    .maybeSingle();
-  return (data as { id: string } | null) ?? null;
-}
+// O vínculo contato ⇄ paciente por telefone é do banco: o gatilho
+// link_whatsapp_contact_to_patient casa pelos últimos 8 dígitos (absorvendo
+// DDI e nono dígito) em todo insert, e o gatilho irmão em `patients` adota os
+// contatos soltos quando o cadastro chega depois. Ver a migration
+// 20260901130000_whatsapp_contact_patient_autolink.sql.
 
 /**
  * Registra uma mensagem recebida: garante contato (com auto-vínculo a paciente),
@@ -118,22 +105,6 @@ async function ingestMessage(
     .select("id, patient_id")
     .single();
   const contact = contactRow as { id: string; patient_id: string | null };
-
-  // Auto-vínculo com paciente existente por telefone.
-  if (!contact.patient_id) {
-    const patient = await findPatientByPhone(
-      admin,
-      organizationId,
-      input.phone,
-    );
-    if (patient) {
-      await admin
-        .from("whatsapp_contacts")
-        .update({ patient_id: patient.id })
-        .eq("organization_id", organizationId)
-        .eq("id", contact.id);
-    }
-  }
 
   // Conversa (uma por contato+instância).
   const preview = toMessagePreview(input.type, input.body);

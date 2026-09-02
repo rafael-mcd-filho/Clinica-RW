@@ -3,13 +3,14 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
+  Archive,
+  ArrowBendUpLeft,
   ArrowLeft,
   ArrowsLeftRight,
+  ChatCircleDots,
   Checks as CheckCheck,
   CheckCircle,
-  Archive,
   ClockCounterClockwise as SortClock,
-  Eye,
   Note,
   Play,
   Tray as Inbox,
@@ -22,10 +23,15 @@ import {
   Smiley as Smile,
   Square,
   Trash,
+  UserCircle,
+  UsersThree,
   WhatsappLogo,
   X,
 } from "@phosphor-icons/react";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import {
+  Fragment,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -41,6 +47,7 @@ import {
 import {
   addInternalNoteAction,
   assignToMeAction,
+  loadMoreConversationsAction,
   sendMediaMessageAction,
   sendMessageAction,
   setConversationStatusAction,
@@ -71,13 +78,45 @@ import { cn } from "@/lib/utils";
 type InboxView = "new" | "mine" | "others" | "resolved";
 type ConversationReadFilter = "all" | "unread";
 type ConversationSortOrder = "newest" | "oldest";
-const tabs: InboxView[] = ["new", "mine", "others"];
+const messageSelectWithoutReply =
+  "id, conversation_id, wa_message_id, direction, message_type, body, media_url, media_mime_type, status, ai_suggested, sender_user_id, created_at, sent_at";
+const messageSelectWithReply = `${messageSelectWithoutReply}, reply_to_message_id`;
+
+/** Linhas por página da fila; o resto entra pelo "Carregar mais". */
+const conversationPageSize = 100;
+/** Janela de agrupamento dos refreshes disparados pelo realtime. */
+const REFRESH_INTERVAL_MS = 2500;
+/** Rede de segurança da thread aberta, caso um evento do realtime se perca. */
+const MESSAGE_POLL_INTERVAL_MS = 8000;
 const tabLabels: Record<InboxView, string> = {
   new: "Novos",
   mine: "Meus",
   others: "Outros",
-  resolved: "Concluídos",
+  resolved: "Fechados",
 };
+
+// Abas da fila: ícone com a cor do estado + rótulo + contador flutuante no
+// canto. Concluídos deixou de ser um botão só de ícone e entrou na mesma
+// régua — quatro pílulas iguais, sem trilho cinza em volta.
+const inboxTabs: Array<{
+  id: InboxView;
+  icon: PhosphorIcon;
+  tone: string;
+  /** Fechados vira só o ícone (maior, para compensar): o rótulo roubaria
+      largura dos três filtros do dia a dia, e o contador não diz nada — o
+      arquivo só cresce. O nome fica no aria-label e no title. */
+  iconOnly?: boolean;
+}> = [
+  { id: "new", icon: ChatCircleDots, tone: "text-success-foreground" },
+  { id: "mine", icon: UserCircle, tone: "text-primary" },
+  { id: "others", icon: UsersThree, tone: "text-warning-foreground" },
+  {
+    id: "resolved",
+    icon: Archive,
+    tone: "text-muted-foreground",
+    iconOnly: true,
+  },
+];
 
 type MessageRow = {
   id: string;
@@ -93,6 +132,7 @@ type MessageRow = {
   sender_user_id: string | null;
   created_at: string;
   sent_at: string | null;
+  reply_to_message_id?: string | null;
 };
 
 type AttendanceEventRow = {
@@ -122,6 +162,7 @@ export function AttendanceInbox({
   evolutionReady,
   initialConversations,
   initialConversationId,
+  initialHasMore,
   availableTags,
 }: {
   organizationId: string;
@@ -132,6 +173,8 @@ export function AttendanceInbox({
   evolutionReady: boolean;
   initialConversations: ConversationListItem[];
   initialConversationId: string | null;
+  /** Ainda há conversas além da primeira carga (o "Carregar mais" busca). */
+  initialHasMore: boolean;
   availableTags: ConversationTagView[];
 }) {
   const initialConversation = initialConversationId
@@ -165,15 +208,77 @@ export function AttendanceInbox({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const selectedIdRef = useRef<string | null>(initialConversation?.id ?? null);
   const supabaseRef = useRef(createSupabaseBrowserClient());
+  // Vira false se o banco ainda não tem a coluna de citação (migration nova).
+  const replySupportedRef = useRef(true);
   const router = useRouter();
 
+  // Cada router.refresh() re-executa a página inteira no servidor (conversas,
+  // contatos, tags, sessões, URLs assinadas das fotos) e remonta a lista. Numa
+  // caixa movimentada os eventos do realtime chegam em rajada, e um refresh
+  // por evento é o que fazia a rolagem e a digitação travarem. Aqui eles são
+  // agrupados: no máximo um refresh a cada REFRESH_INTERVAL_MS, e nenhum
+  // enquanto a aba está em segundo plano — ao voltar, o refresh pendente sai.
+  const refreshTimerRef = useRef<number | null>(null);
+  const lastRefreshRef = useRef(0);
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current !== null) return;
+    const elapsed = Date.now() - lastRefreshRef.current;
+    const delay = Math.max(0, REFRESH_INTERVAL_MS - elapsed);
+
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      lastRefreshRef.current = Date.now();
+      router.refresh();
+    }, delay);
+  }, [router]);
+
+  useEffect(
+    () => () => {
+      if (refreshTimerRef.current !== null) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  // A carga do servidor manda sobre o que ela cobre, mas não apaga as páginas
+  // que o "Carregar mais" trouxe: ela é só o topo da fila por recência.
   useEffect(() => {
-    const task = window.setTimeout(
-      () => setConversations(initialConversations),
-      0,
-    );
+    const task = window.setTimeout(() => {
+      setConversations((current) => {
+        if (!current.length) return initialConversations;
+        const byId = new Map(current.map((item) => [item.id, item]));
+        for (const item of initialConversations) byId.set(item.id, item);
+        return [...byId.values()];
+      });
+    }, 0);
     return () => window.clearTimeout(task);
   }, [initialConversations]);
+
+  const serverOffsetRef = useRef(initialConversations.length);
+  const [hasMoreOnServer, setHasMoreOnServer] = useState(initialHasMore);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const loadMoreConversations = useCallback(async () => {
+    setLoadingMore(true);
+    const result = await loadMoreConversationsAction(serverOffsetRef.current);
+    setLoadingMore(false);
+
+    if (!result.ok || !result.conversations) {
+      toast.error(result.error ?? "Não foi possível carregar mais conversas.");
+      return;
+    }
+
+    serverOffsetRef.current += result.conversations.length;
+    setHasMoreOnServer(Boolean(result.hasMore));
+    setConversations((current) => {
+      const byId = new Map(current.map((item) => [item.id, item]));
+      for (const item of result.conversations ?? []) {
+        if (!byId.has(item.id)) byId.set(item.id, item);
+      }
+      return [...byId.values()];
+    });
+  }, []);
 
   const selected = useMemo(
     () => conversations.find((item) => item.id === selectedId) ?? null,
@@ -353,7 +458,7 @@ export function AttendanceInbox({
             lastMessagePreview: row.last_message_preview,
             assignedUserId: row.assigned_user_id,
           });
-          router.refresh();
+          scheduleRefresh();
         },
       )
       .on(
@@ -364,7 +469,7 @@ export function AttendanceInbox({
           table: "conversation_tags",
           filter: `organization_id=eq.${organizationId}`,
         },
-        () => router.refresh(),
+        () => scheduleRefresh(),
       )
       .on(
         "postgres_changes",
@@ -374,7 +479,7 @@ export function AttendanceInbox({
           table: "whatsapp_contacts",
           filter: `organization_id=eq.${organizationId}`,
         },
-        () => router.refresh(),
+        () => scheduleRefresh(),
       )
       .on(
         "postgres_changes",
@@ -384,28 +489,40 @@ export function AttendanceInbox({
           table: "whatsapp_instances",
           filter: `organization_id=eq.${organizationId}`,
         },
-        () => router.refresh(),
+        () => scheduleRefresh(),
       )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [organizationId, router, upsertConversation]);
+  }, [organizationId, scheduleRefresh, upsertConversation]);
 
   const reloadMessages = useCallback(
     async (id: string) => {
-      const [{ data }, { data: eventRows }] = await Promise.all([
+      const loadMessages = async (withReply: boolean) =>
         supabaseRef.current
           .from("whatsapp_messages")
           .select(
-            "id, conversation_id, wa_message_id, direction, message_type, body, media_url, media_mime_type, status, ai_suggested, sender_user_id, created_at, sent_at",
+            withReply ? messageSelectWithReply : messageSelectWithoutReply,
           )
           .eq("organization_id", organizationId)
           .eq("conversation_id", id)
           .order("created_at", { ascending: false })
           .limit(300)
-          .returns<MessageRow[]>(),
+          .returns<MessageRow[]>();
+
+      const [messagesResult, { data: eventRows }] = await Promise.all([
+        // A citação depende da coluna reply_to_message_id. Enquanto a migration
+        // não estiver aplicada, a consulta cai para o conjunto antigo em vez de
+        // deixar a thread vazia — só as respostas ficam sem a citação.
+        loadMessages(replySupportedRef.current).then(async (result) => {
+          if (result.error && replySupportedRef.current) {
+            replySupportedRef.current = false;
+            return loadMessages(false);
+          }
+          return result;
+        }),
         supabaseRef.current
           .from("whatsapp_attendance_events")
           .select(
@@ -444,7 +561,7 @@ export function AttendanceInbox({
 
       if (selectedIdRef.current === id) {
         setMessages((current) => [
-          ...(data ?? []).map(toMessage).reverse(),
+          ...(messagesResult.data ?? []).map(toMessage).reverse(),
           ...current.filter((message) => message.id.startsWith("optimistic-")),
         ]);
         setAttendanceEvents(
@@ -500,22 +617,31 @@ export function AttendanceInbox({
     void reloadMessages(initialConversationId);
   }, [initialConversationId, reloadMessages]);
 
+  // Rede de segurança para o realtime da conversa aberta. Só as mensagens: a
+  // lista já vem pelo canal do postgres_changes, e recarregar a página inteira
+  // a cada 5s era o outro motivo de a thread engasgar. Em segundo plano nem
+  // isso roda.
   useEffect(() => {
     if (!selectedId) return;
     const timer = window.setInterval(() => {
+      if (document.hidden) return;
       void reloadMessages(selectedId);
-      router.refresh();
-    }, 5000);
+    }, MESSAGE_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [reloadMessages, router, selectedId]);
+  }, [reloadMessages, selectedId]);
 
-  async function openConversation(id: string) {
-    selectedIdRef.current = id;
-    setSelectedId(id);
-    setMessages([]);
-    setAttendanceEvents([]);
-    await reloadMessages(id);
-  }
+  // Identidade estável: é o que permite o memo das linhas da fila segurar o
+  // re-render de 100 itens a cada tecla digitada na busca.
+  const openConversation = useCallback(
+    async (id: string) => {
+      selectedIdRef.current = id;
+      setSelectedId(id);
+      setMessages([]);
+      setAttendanceEvents([]);
+      await reloadMessages(id);
+    },
+    [reloadMessages],
+  );
 
   function addOptimisticMessage(message: ConversationMessage) {
     setMessages((current) => [...current, message]);
@@ -557,8 +683,10 @@ export function AttendanceInbox({
   return (
     <div
       className={cn(
-        "grid h-full min-h-0 grid-cols-1 overflow-hidden overscroll-none bg-card lg:grid-cols-[21rem_minmax(0,1fr)]",
-        detailsOpen && "xl:grid-cols-[21rem_minmax(0,1fr)_24rem]",
+        // 23rem: largura mínima para as abas (três rótulos + o ícone de
+        // fechados) caberem sem truncar em 12px.
+        "grid h-full min-h-0 grid-cols-1 overflow-hidden overscroll-none bg-card lg:grid-cols-[23rem_minmax(0,1fr)]",
+        detailsOpen && "xl:grid-cols-[23rem_minmax(0,1fr)_24rem]",
       )}
     >
       <ConversationListColumn
@@ -575,6 +703,9 @@ export function AttendanceInbox({
         conversations={visibleConversations}
         selectedId={selectedId}
         onSelect={openConversation}
+        onLoadMore={() => void loadMoreConversations()}
+        loadingMore={loadingMore}
+        hasMoreOnServer={hasMoreOnServer}
         mobileHidden={Boolean(selected)}
       />
 
@@ -666,6 +797,9 @@ function ConversationListColumn({
   conversations,
   selectedId,
   onSelect,
+  onLoadMore,
+  loadingMore,
+  hasMoreOnServer,
   mobileHidden,
 }: {
   tab: InboxView;
@@ -681,10 +815,29 @@ function ConversationListColumn({
   conversations: ConversationListItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Busca a próxima página no servidor quando a memória se esgota. */
+  onLoadMore: () => void;
+  loadingMore: boolean;
+  hasMoreOnServer: boolean;
   /** No mobile (master-detail), a lista sai de cena quando há conversa aberta. */
   mobileHidden?: boolean;
 }) {
   const [searchOpen, setSearchOpen] = useState(Boolean(query));
+  // A fila inteira fica em memória, mas só uma página vai para o DOM: com
+  // muitos atendimentos, montar mil linhas trava a rolagem. Trocar de aba ou
+  // de filtro volta para a primeira página — ajuste em render, não em efeito,
+  // para não renderizar a lista longa antes de cortá-la.
+  const [visibleCount, setVisibleCount] = useState(conversationPageSize);
+  const queueKey = `${tab}|${readFilter}|${sortOrder}|${query}`;
+  const [lastQueueKey, setLastQueueKey] = useState(queueKey);
+  if (queueKey !== lastQueueKey) {
+    setLastQueueKey(queueKey);
+    setVisibleCount(conversationPageSize);
+  }
+
+  const pageConversations = conversations.slice(0, visibleCount);
+  const remainingCount = conversations.length - pageConversations.length;
+
   return (
     <aside
       className={cn(
@@ -693,63 +846,54 @@ function ConversationListColumn({
       )}
     >
       <div className="shrink-0 border-b border-border bg-card p-3">
-        {/* Mesma casca das abas do painel de contato: trilho em bg-muted com
-            borda, item ativo em card elevado e sublinhado no primary. */}
+        {/* O contador é um disco flutuante no canto da pílula, então a régua
+            precisa de folga no topo para ele não ser cortado. */}
         <div
-          className="flex items-center gap-1 rounded-lg border border-border bg-muted p-1 shadow-[var(--shadow-soft)]"
+          className="flex items-center gap-0.5 pt-1.5"
           role="tablist"
           aria-label="Filtrar atendimentos"
         >
-          {tabs.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => onTabChange(item)}
-              role="tab"
-              aria-selected={tab === item}
-              className={cn(
-                "relative inline-flex h-9 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border px-2 text-[13px] font-medium leading-none transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
-                tab === item
-                  ? "border-border-strong bg-card text-foreground shadow-[var(--shadow-soft)] after:absolute after:inset-x-2.5 after:bottom-1 after:h-0.5 after:rounded-full after:bg-primary"
-                  : "border-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground",
-              )}
-            >
-              <span className="truncate">{tabLabels[item]}</span>
-              {counts[item] > 0 ? (
-                <span
+          {inboxTabs.map(({ id, icon: Icon, tone, iconOnly }) => {
+            const active = tab === id;
+            const count = counts[id];
+
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onTabChange(id)}
+                role="tab"
+                aria-selected={active}
+                aria-label={iconOnly ? tabLabels[id] : undefined}
+                title={tabLabels[id]}
+                className={cn(
+                  "relative inline-flex h-9 cursor-pointer items-center justify-center gap-1 rounded-lg border text-label leading-none transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
+                  iconOnly ? "w-9 shrink-0" : "min-w-0 flex-1 px-2",
+                  active
+                    ? "border-border-strong bg-card font-semibold text-foreground shadow-[var(--shadow-soft)]"
+                    : "border-transparent font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Icon
                   className={cn(
-                    "inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none tabular-nums",
-                    tab === item
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-border text-secondary-foreground",
+                    "shrink-0",
+                    iconOnly ? "size-5" : "size-4",
+                    tone,
                   )}
-                >
-                  {counts[item]}
+                  weight={active ? "fill" : "regular"}
+                  aria-hidden="true"
+                />
+                <span className={iconOnly ? "sr-only" : "truncate"}>
+                  {tabLabels[id]}
                 </span>
-              ) : null}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => onTabChange("resolved")}
-            role="tab"
-            aria-selected={tab === "resolved"}
-            aria-label={`Concluídos (${counts.resolved})`}
-            title="Concluídos"
-            className={cn(
-              "relative inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md border px-2 transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
-              tab === "resolved"
-                ? "border-border-strong bg-card text-foreground shadow-[var(--shadow-soft)] after:absolute after:inset-x-2 after:bottom-1 after:h-0.5 after:rounded-full after:bg-primary"
-                : "border-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground",
-            )}
-          >
-            <Archive className="size-4 shrink-0" aria-hidden="true" />
-            {counts.resolved > 0 ? (
-              <span className="text-[10px] font-semibold leading-none tabular-nums">
-                {counts.resolved}
-              </span>
-            ) : null}
-          </button>
+                {!iconOnly && count > 0 ? (
+                  <span className="absolute -right-1 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-caption font-semibold leading-none tabular-nums text-primary-foreground ring-2 ring-card">
+                    {count}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
 
         <div className="mt-2 flex min-h-8 items-center justify-between gap-2 border-t border-border pt-2">
@@ -776,7 +920,7 @@ function ConversationListColumn({
                   aria-pressed={readFilter === option.id}
                   onClick={() => onReadFilterChange(option.id)}
                   className={cn(
-                    "cursor-pointer rounded px-2.5 py-1 text-[13px] leading-5 transition-colors duration-[var(--motion-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                    "cursor-pointer rounded px-2.5 py-1 text-body-sm leading-5 transition-colors duration-[var(--motion-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
                     readFilter === option.id
                       ? "bg-card font-medium text-foreground shadow-[var(--shadow-soft)]"
                       : "text-muted-foreground hover:text-foreground",
@@ -886,31 +1030,67 @@ function ConversationListColumn({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {conversations.length ? (
-          <ul className="divide-y divide-border">
-            {conversations.map((item) => (
-              <li key={item.id}>
-                <ConversationRow
-                  item={item}
-                  active={item.id === selectedId}
-                  resolved={tab === "resolved"}
-                  onSelect={() => onSelect(item.id)}
-                />
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="divide-y divide-border">
+              {pageConversations.map((item) => (
+                // content-visibility deixa o navegador pular o layout das
+                // linhas fora da viewport; com o tamanho intrínseco declarado
+                // a barra de rolagem não pula. É o que segura a rolagem rápida
+                // de uma fila longa sem virtualizar a lista.
+                <li
+                  key={item.id}
+                  className="[content-visibility:auto] [contain-intrinsic-size:auto_76px]"
+                >
+                  <ConversationRow
+                    item={item}
+                    active={item.id === selectedId}
+                    resolved={tab === "resolved"}
+                    onSelect={onSelect}
+                  />
+                </li>
+              ))}
+            </ul>
+          </>
         ) : (
-          <div className="flex h-full items-center justify-center p-6 text-center">
+          <div className="flex items-center justify-center p-6 text-center">
             <div>
               <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
                 <Inbox className="size-5" aria-hidden="true" />
               </div>
-              <p className="mt-3 text-sm font-medium">Nenhuma conversa</p>
+              <p className="mt-3 text-body font-medium">Nenhuma conversa</p>
               <p className="mt-1 text-label text-muted-foreground">
                 As conversas aparecerão aqui em tempo real.
               </p>
             </div>
           </div>
         )}
+
+        {/* Primeiro mostra o que já está em memória; esgotado isso, busca a
+            próxima página no servidor. */}
+        {remainingCount > 0 || hasMoreOnServer ? (
+          <div className="border-t border-border p-3">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-full"
+              disabled={loadingMore}
+              onClick={() => {
+                if (remainingCount > 0) {
+                  setVisibleCount((current) => current + conversationPageSize);
+                  return;
+                }
+                void onLoadMore();
+              }}
+            >
+              {loadingMore
+                ? "Carregando..."
+                : remainingCount > 0
+                  ? `Carregar mais (${remainingCount})`
+                  : "Carregar mais"}
+            </Button>
+          </div>
+        ) : null}
       </div>
     </aside>
   );
@@ -919,7 +1099,7 @@ function ConversationListColumn({
 // A linha da fila é um <button> cru de propósito: o Button do design system
 // afunda 1px no :active e, num alvo desta altura, o clique parecia um tranco.
 // Aqui a seleção é só cor + barra lateral, que aparecem sem mover nada.
-function ConversationRow({
+const ConversationRow = memo(function ConversationRow({
   item,
   active,
   resolved,
@@ -929,14 +1109,21 @@ function ConversationRow({
   active: boolean;
   /** Fila de concluídos: sem prévia, sem não lidos — só contato e fim. */
   resolved: boolean;
-  onSelect: () => void;
+  onSelect: (id: string) => void;
 }) {
   const unread = !resolved && item.unreadCount > 0;
+  // Conversa fechada sem sessão de atendimento concluída (encerrada direto no
+  // status, ou anterior ao registro de sessões) não tem hora de conclusão: aí
+  // a última atividade entra no lugar, avisada pelo title.
+  const missingResolvedAt = resolved && !item.resolvedAt;
+  const stamp = resolved
+    ? formatResolvedAt(item.resolvedAt ?? item.lastMessageAt)
+    : formatTime(item.lastMessageAt);
 
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={() => onSelect(item.id)}
       aria-current={active ? "true" : undefined}
       className={cn(
         "relative flex w-full cursor-pointer items-start gap-3 px-3 py-2.5 text-left transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
@@ -952,8 +1139,12 @@ function ConversationRow({
 
       <ContactAvatar name={item.contactName} photoUrl={item.contactPhotoUrl} />
 
+      {/* Item de grid nasce com min-width:auto, então uma linha com nome
+          comprido (ou um número sem espaços) esticava a coluna inteira e
+          empurrava o horário para fora da lista. Daí o min-w-0 em cada
+          linha, sem o qual nem o truncate abaixo entra em ação. */}
       <span className="grid min-w-0 flex-1 gap-0.5">
-        <span className="flex items-baseline gap-2">
+        <span className="flex min-w-0 items-baseline gap-2">
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-body-sm text-foreground",
@@ -962,20 +1153,33 @@ function ConversationRow({
           >
             {item.contactName}
           </span>
+          {/* Coluna do horário: nunca encolhe nem quebra, então nome comprido
+              e prévia longa não empurram a hora para fora da linha. */}
           <span
             className={cn(
-              "shrink-0 text-caption tabular-nums",
-              unread ? "font-semibold text-primary" : "text-muted-foreground",
+              "shrink-0 whitespace-nowrap text-caption tabular-nums",
+              // Na fila de fechados o carimbo é referência, não chamada: mesmo
+              // tamanho da escala, só que apagado.
+              unread
+                ? "font-semibold text-primary"
+                : resolved
+                  ? "font-normal text-muted-foreground/60"
+                  : "text-muted-foreground",
             )}
+            title={
+              missingResolvedAt
+                ? "Sem registro de conclusão: última atividade da conversa"
+                : resolved
+                  ? "Conclusão do atendimento"
+                  : undefined
+            }
           >
-            {resolved
-              ? formatResolvedAt(item.resolvedAt)
-              : formatTime(item.lastMessageAt)}
+            {stamp}
           </span>
         </span>
 
         {resolved ? (
-          <span className="flex items-center gap-1.5 text-label text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1.5 text-label text-muted-foreground">
             <CheckCircle className="size-3.5 shrink-0" aria-hidden="true" />
             <span className="min-w-0 truncate">
               {item.patientName ?? formatPhone(item.contactPhone)}
@@ -983,12 +1187,13 @@ function ConversationRow({
           </span>
         ) : (
           <>
-            <span className="flex items-center gap-2">
+            <span className="flex min-w-0 items-center gap-2">
               <span
                 className={cn(
                   "min-w-0 flex-1 truncate text-label",
                   unread ? "text-foreground" : "text-muted-foreground",
                 )}
+                title={item.lastMessagePreview ?? undefined}
               >
                 {previewText(item.lastMessagePreview)}
               </span>
@@ -999,27 +1204,45 @@ function ConversationRow({
               ) : null}
             </span>
 
-            {item.patientName || item.tags.length ? (
-              <span className="flex flex-wrap items-center gap-1 pt-0.5">
-                {item.patientName ? (
-                  <Badge
-                    variant="neutral"
-                    className="h-4 max-w-full truncate px-1.5 text-[10px] leading-none"
-                    title={item.patientName}
-                  >
-                    {item.patientName}
-                  </Badge>
-                ) : null}
-                {item.tags.map((tag) => (
+            {/* Paciente vinculado tem a linha dele: emendar o nome com as
+                etiquetas fazia os dois parecerem a mesma informação. */}
+            {item.patientName ? (
+              <span className="flex min-w-0 pt-0.5">
+                <Badge
+                  variant="neutral"
+                  className="h-4 max-w-full truncate px-1.5 text-caption leading-none"
+                  title={item.patientName}
+                >
+                  {item.patientName}
+                </Badge>
+              </span>
+            ) : null}
+
+            {item.tags.length ? (
+              <span className="flex min-w-0 flex-wrap items-center gap-1 pt-0.5">
+                {/* No resumo valem até quatro etiquetas; o resto vira "+N"
+                    para o card não crescer sobre a próxima conversa. */}
+                {item.tags.slice(0, 4).map((tag) => (
                   <span
                     key={tag.id}
-                    className="inline-flex h-4 max-w-full shrink-0 items-center truncate whitespace-nowrap rounded px-1.5 text-[10px] font-medium leading-none text-white"
+                    className="inline-flex h-4 max-w-full shrink-0 items-center truncate whitespace-nowrap rounded px-1.5 text-caption font-medium leading-none text-white"
                     style={{ backgroundColor: tag.color }}
                     title={tag.name}
                   >
                     {tag.name}
                   </span>
                 ))}
+                {item.tags.length > 4 ? (
+                  <span
+                    className="text-caption text-muted-foreground"
+                    title={item.tags
+                      .slice(4)
+                      .map((tag) => tag.name)
+                      .join(", ")}
+                  >
+                    +{item.tags.length - 4}
+                  </span>
+                ) : null}
               </span>
             ) : null}
           </>
@@ -1027,7 +1250,7 @@ function ConversationRow({
       </span>
     </button>
   );
-}
+});
 
 function ConversationThread({
   conversation,
@@ -1065,6 +1288,7 @@ function ConversationThread({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const isNearBottomRef = useRef(true);
+  const nearBottomFrameRef = useRef<number | null>(null);
   const hasPositionedInitiallyRef = useRef(false);
   const [pending, startTransition] = useTransition();
   const [confirmingCompletion, setConfirmingCompletion] = useState(false);
@@ -1072,6 +1296,52 @@ function ConversationThread({
     () => groupTimelineByDay(messages, attendanceEvents),
     [attendanceEvents, messages],
   );
+  const messageById = useMemo(
+    () => new Map(messages.map((message) => [message.id, message])),
+    [messages],
+  );
+  const [replyingTo, setReplyingTo] = useState<ConversationMessage | null>(
+    null,
+  );
+  // Trocar de conversa já zera a citação: a thread é remontada por conversa
+  // (key no pai), então não há estado sobrando de uma para a outra.
+
+  // Marca de "não lidas": quantas havia quando a conversa foi aberta. O valor
+  // é congelado na montagem porque a marca tem de continuar no mesmo lugar
+  // enquanto a pessoa lê — ela só sai quando a conversa é dada como lida, e
+  // aí sai desbotando, sem sumir de um quadro para o outro.
+  const [initialUnread] = useState(conversation.unreadCount);
+  // Arrastar mídia para qualquer ponto da conversa entrega os arquivos ao
+  // compositor, que é quem sabe montar a fila de envio.
+  const fileDropRef = useRef<((files: File[]) => void) | null>(null);
+  const registerFileDrop = useCallback(
+    (handler: ((files: File[]) => void) | null) => {
+      fileDropRef.current = handler;
+    },
+    [],
+  );
+  const [draggingFiles, setDraggingFiles] = useState(false);
+  const [unreadMark, setUnreadMark] = useState<"visible" | "leaving" | "gone">(
+    conversation.unreadCount > 0 ? "visible" : "gone",
+  );
+  if (unreadMark === "visible" && conversation.unreadCount === 0) {
+    setUnreadMark("leaving");
+  }
+  useEffect(() => {
+    if (unreadMark !== "leaving") return;
+    const timer = window.setTimeout(() => setUnreadMark("gone"), 400);
+    return () => window.clearTimeout(timer);
+  }, [unreadMark]);
+
+  const firstUnreadId = useMemo(() => {
+    const count = initialUnread;
+    if (count <= 0) return null;
+    const received = messages.filter(
+      (message) => message.direction === "inbound" && message.type !== "note",
+    );
+    return received.slice(-count)[0]?.id ?? null;
+  }, [initialUnread, messages]);
+
   const lastTimelineItem = timelineGroups.at(-1)?.items.at(-1);
   const lastTimelineKey = lastTimelineItem
     ? `${lastTimelineItem.kind}:${lastTimelineItem.id}`
@@ -1136,8 +1406,34 @@ function ConversationThread({
     canAttend,
   );
 
+  // A thread é remontada a cada conversa (key no pai), então o fade de 150ms
+  // marca a troca de contato sem atrasar a leitura.
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
+    <section
+      className="relative flex h-full min-h-0 animate-fade-in flex-col overflow-hidden bg-card"
+      onDragOver={(event) => {
+        if (!fileDropRef.current) return;
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        setDraggingFiles(true);
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+        setDraggingFiles(false);
+      }}
+      onDrop={(event) => {
+        if (!fileDropRef.current) return;
+        const files = [...event.dataTransfer.files];
+        event.preventDefault();
+        setDraggingFiles(false);
+        if (files.length) fileDropRef.current(files);
+      }}
+    >
+      {draggingFiles ? (
+        <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary-muted/80 text-body-sm font-semibold text-primary">
+          Solte para anexar
+        </div>
+      ) : null}
       <ConfirmDialog
         open={confirmingCompletion}
         onClose={() => setConfirmingCompletion(false)}
@@ -1168,7 +1464,15 @@ function ConversationThread({
               <WhatsappLogo className="size-2.5" weight="fill" aria-hidden />
             </span>
           </div>
-          <div className="flex min-w-0 items-center gap-1">
+          {/* O nome e o telefone são o alvo: clicar ali abre os dados do
+              contato, no lugar do olho que ficava ao lado. */}
+          <button
+            type="button"
+            onClick={onToggleDetails}
+            aria-label="Abrir dados do contato"
+            title="Ver dados do contato"
+            className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors duration-[var(--motion-fast)] hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
             <div className="min-w-0">
               <p className="truncate text-body-sm font-semibold">
                 {conversation.contactName}
@@ -1176,19 +1480,35 @@ function ConversationThread({
               <p className="truncate text-label tabular-nums text-muted-foreground">
                 {formatPhone(conversation.contactPhone)}
               </p>
+              {conversation.tags.length ? (
+                // Etiqueta cortada não identifica nada, então aqui elas saem
+                // inteiras: o corte é no número delas (até três no cabeçalho,
+                // o resto no "+N"), não no nome.
+                <span className="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden">
+                  {conversation.tags.slice(0, 3).map((tag) => (
+                    <span
+                      key={tag.id}
+                      className="inline-flex h-4 shrink-0 items-center whitespace-nowrap rounded px-1.5 text-caption font-medium leading-none text-white"
+                      style={{ backgroundColor: tag.color }}
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                  {conversation.tags.length > 3 ? (
+                    <span
+                      className="shrink-0 text-caption text-muted-foreground"
+                      title={conversation.tags
+                        .slice(3)
+                        .map((tag) => tag.name)
+                        .join(", ")}
+                    >
+                      +{conversation.tags.length - 3}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={onToggleDetails}
-              aria-label="Abrir dados do contato"
-              title="Ver dados do contato"
-              className="shrink-0 text-muted-foreground"
-            >
-              <Eye className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
+          </button>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {conversation.assignedUserName &&
@@ -1219,10 +1539,19 @@ function ConversationThread({
 
       <div
         ref={scrollRef}
-        onScroll={(event) => {
-          const target = event.currentTarget;
-          isNearBottomRef.current =
-            target.scrollHeight - target.scrollTop - target.clientHeight <= 24;
+        // Ler scrollHeight força o layout; a cada evento de rolagem, numa
+        // thread de centenas de bolhas, isso é o suficiente para engasgar.
+        // Um quadro por vez basta para saber se ainda estamos no fim.
+        onScroll={() => {
+          if (nearBottomFrameRef.current !== null) return;
+          nearBottomFrameRef.current = window.requestAnimationFrame(() => {
+            nearBottomFrameRef.current = null;
+            const target = scrollRef.current;
+            if (!target) return;
+            isNearBottomRef.current =
+              target.scrollHeight - target.scrollTop - target.clientHeight <=
+              24;
+          });
         }}
         className="min-h-0 flex-1 space-y-1.5 overflow-x-hidden overflow-y-auto overscroll-contain bg-surface-sunken px-4 py-5 sm:px-8"
         style={{
@@ -1241,10 +1570,35 @@ function ConversationThread({
               </div>
               {group.items.map((item) =>
                 item.kind === "message" ? (
-                  <MessageBubble
-                    key={`message-${item.message.id}`}
-                    message={item.message}
-                  />
+                  <Fragment key={`message-${item.message.id}`}>
+                    {unreadMark !== "gone" &&
+                    item.message.id === firstUnreadId ? (
+                      <div
+                        className={cn(
+                          "flex justify-center py-1 transition-opacity duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+                          unreadMark === "leaving"
+                            ? "opacity-0"
+                            : "opacity-100",
+                        )}
+                      >
+                        <span className="rounded-full border border-border bg-card px-3 py-1 text-caption font-semibold text-muted-foreground shadow-[var(--shadow-soft)]">
+                          {initialUnread === 1
+                            ? "1 mensagem não lida"
+                            : `${initialUnread} mensagens não lidas`}
+                        </span>
+                      </div>
+                    ) : null}
+                    <MessageBubble
+                      message={item.message}
+                      quoted={
+                        item.message.replyToMessageId
+                          ? (messageById.get(item.message.replyToMessageId) ??
+                            null)
+                          : null
+                      }
+                      onReply={capabilities.compose ? setReplyingTo : undefined}
+                    />
+                  </Fragment>
                 ) : (
                   <AttendanceEventNotice
                     key={`event-${item.event.id}`}
@@ -1270,6 +1624,9 @@ function ConversationThread({
           onOptimisticMessage={onOptimisticMessage}
           onMessageConfirmed={onMessageConfirmed}
           onMessageFailed={onMessageFailed}
+          replyingTo={replyingTo}
+          onCancelReply={() => setReplyingTo(null)}
+          registerFileDrop={registerFileDrop}
         />
       ) : (
         <AttendanceActionBar
@@ -1407,7 +1764,7 @@ function AttendanceEventNotice({ event }: { event: AttendanceTimelineEvent }) {
   return (
     <div className="flex min-w-0 items-center gap-3 py-2 text-muted-foreground">
       <span className="h-px min-w-4 flex-1 bg-border-strong/60" />
-      <div className="flex max-w-[min(90%,48rem)] items-center justify-center gap-1.5 text-center text-[11px] leading-4">
+      <div className="flex max-w-[min(90%,48rem)] items-center justify-center gap-1.5 text-center text-caption leading-4">
         <span className="shrink-0 text-primary">{icon}</span>
         <span>
           <strong className="font-semibold text-foreground">{actorName}</strong>{" "}
@@ -1430,7 +1787,16 @@ function formatAttendanceEventDateTime(value: string): string {
   return `${attendanceEventDateFormatter.format(date)} às ${timeFormatter.format(date)}`;
 }
 
-function MessageBubble({ message }: { message: ConversationMessage }) {
+const MessageBubble = memo(function MessageBubble({
+  message,
+  quoted,
+  onReply,
+}: {
+  message: ConversationMessage;
+  /** Mensagem citada por esta, já resolvida na thread carregada. */
+  quoted?: ConversationMessage | null;
+  onReply?: (message: ConversationMessage) => void;
+}) {
   const outbound = message.direction === "outbound";
   const isNote = message.type === "note";
   const isMediaMessage = [
@@ -1442,12 +1808,30 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
   ].includes(message.type);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
+  // Nota interna não existe no WhatsApp do contato: não há o que citar.
+  const canReply = Boolean(onReply) && !isNote;
+  // Fora da bolha, centralizado na altura dela e do lado de dentro da tela:
+  // à esquerda no que a clínica enviou, à direita no que o contato mandou.
+  const replyButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={() => onReply?.(message)}
+      className="size-7 shrink-0 self-center rounded-full p-0 text-muted-foreground hover:bg-foreground/5"
+      aria-label="Responder citando esta mensagem"
+      title="Responder"
+    >
+      <ArrowBendUpLeft className="size-4" aria-hidden="true" />
+    </Button>
+  );
   const mediaEndpoint = `/api/whatsapp/media/${message.id}`;
 
   return (
     <div
       className={cn(
-        "flex min-w-0 max-w-full",
+        // Mesma contencao da fila: numa thread longa o navegador pula o
+        // layout das bolhas fora da viewport durante a rolagem.
+        "flex min-w-0 max-w-full items-center gap-1.5 [contain-intrinsic-size:auto_44px] [content-visibility:auto]",
         isNote
           ? "justify-center py-2"
           : outbound
@@ -1455,13 +1839,17 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
             : "justify-start",
       )}
     >
+      {canReply && outbound ? replyButton : null}
       <div
         className={cn(
-          "relative min-w-0 max-w-[86%] overflow-hidden rounded-lg px-3 pb-1.5 pt-2 text-sm leading-5 shadow-sm sm:max-w-[72%] lg:max-w-[66%]",
+          "relative min-w-0 max-w-[86%] overflow-hidden rounded-lg px-3 pb-1.5 pt-2 text-body leading-5 shadow-sm sm:max-w-[72%] lg:max-w-[66%]",
           isNote
             ? "w-[min(92%,42rem)] border border-warning/40 bg-warning-muted px-4 py-3 text-warning-foreground shadow-[var(--shadow-md)]"
             : outbound
-              ? "rounded-tr-sm bg-primary-muted text-foreground"
+              ? // O fundo da thread é uma superfície rebaixada, quase da cor
+                // do primary a 8%: a bolha enviada sumia nele. Fica no tom
+                // seguinte da escala e ganha a borda que a recebida já tinha.
+                "rounded-tr-sm border border-primary/30 bg-primary-muted-hover text-foreground"
               : "rounded-tl-sm border border-border bg-card text-foreground",
         )}
       >
@@ -1473,10 +1861,23 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
         ) : null}
         <div
           className={cn(
-            "grid min-w-0 max-w-full gap-2 pr-5",
+            "grid min-w-0 max-w-full gap-2",
+            "pr-5",
             isNote && "text-center",
           )}
         >
+          {quoted ? (
+            // Citação: mesma leitura do WhatsApp — um bloco menor, com barra
+            // lateral, acima do corpo da resposta.
+            <div className="min-w-0 rounded-md border-l-2 border-primary bg-foreground/5 px-2 py-1 text-label">
+              <p className="font-semibold text-foreground/80">
+                {quoted.direction === "outbound" ? "Você" : "Contato"}
+              </p>
+              <p className="line-clamp-2 break-words text-muted-foreground">
+                {quoted.body?.trim() || labelForType(quoted.type)}
+              </p>
+            </div>
+          ) : null}
           {message.mediaUrl && message.type === "image" ? (
             <button
               type="button"
@@ -1501,13 +1902,26 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
               className="min-w-0 max-w-full"
             />
           ) : message.mediaUrl ? (
+            // "Abrir arquivo" sozinho não diz o que se vai abrir: o nome e o
+            // tipo saem do corpo da mensagem e do mime.
             <a
               href={mediaEndpoint}
               target="_blank"
               rel="noreferrer"
-              className="font-medium text-primary underline"
+              className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card/70 px-2 py-1.5 transition-colors duration-[var(--motion-fast)] hover:border-border-strong"
             >
-              Abrir arquivo
+              <Paperclip
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span className="min-w-0">
+                <span className="block truncate font-medium text-primary underline">
+                  {attachmentName(message)}
+                </span>
+                <span className="block text-caption text-muted-foreground">
+                  {attachmentKind(message)}
+                </span>
+              </span>
             </a>
           ) : null}
           {message.body && !isMediaMessage ? (
@@ -1527,7 +1941,7 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
         </Button>
         <p
           className={cn(
-            "mt-0.5 flex min-h-3 items-center justify-end gap-1 text-[10px] leading-3 tabular-nums",
+            "mt-0.5 flex min-h-3 items-center justify-end gap-1 text-caption leading-3 tabular-nums",
             "text-muted-foreground",
           )}
         >
@@ -1561,7 +1975,7 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
           title="Detalhes da mensagem"
           className="max-w-md"
         >
-          <dl className="grid grid-cols-2 gap-3 text-sm">
+          <dl className="grid grid-cols-2 gap-3 text-body">
             <MessageDetail
               label="Direção"
               value={outbound ? "Enviada" : "Recebida"}
@@ -1592,8 +2006,37 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
           </dl>
         </Modal>
       </div>
+      {canReply && !outbound ? replyButton : null}
     </div>
   );
+});
+
+/** Nome do arquivo para exibir na bolha: o corpo da mensagem carrega o nome
+    (ou a legenda) e, quando não há nada, o tipo vira o rótulo. */
+function attachmentName(message: ConversationMessage) {
+  const body = message.body?.trim();
+  if (body) return body;
+  const extension = attachmentExtension(message);
+  return extension ? `arquivo.${extension}` : labelForType(message.type);
+}
+
+/** Linha de apoio: extensão em caixa alta e, na falta dela, o tipo. */
+function attachmentKind(message: ConversationMessage) {
+  const extension = attachmentExtension(message);
+  return extension
+    ? `${extension.toUpperCase()} · ${labelForType(message.type)}`
+    : labelForType(message.type);
+}
+
+function attachmentExtension(message: ConversationMessage) {
+  const fromName = message.body?.trim().split(".").pop()?.toLowerCase();
+  if (fromName && /^[a-z0-9]{1,8}$/.test(fromName)) return fromName;
+  const fromMime = message.mediaMimeType
+    ?.split("/")[1]
+    ?.split(";")[0]
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  return fromMime || null;
 }
 
 function MessageText({ body }: { body: string }) {
@@ -1826,12 +2269,20 @@ function MessageComposer({
   onOptimisticMessage,
   onMessageConfirmed,
   onMessageFailed,
+  replyingTo,
+  onCancelReply,
+  registerFileDrop,
 }: {
   conversationId: string;
   currentUserName: string | null;
   onOptimisticMessage: (message: ConversationMessage) => void;
   onMessageConfirmed: (tempId: string, message: ConversationMessage) => void;
   onMessageFailed: (tempId: string) => void;
+  /** Mensagem que está sendo citada, escolhida pelo botão de responder. */
+  replyingTo: ConversationMessage | null;
+  onCancelReply: () => void;
+  /** A thread registra aqui o recebimento de arquivos arrastados. */
+  registerFileDrop?: (handler: ((files: File[]) => void) | null) => void;
 }) {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"reply" | "note">("reply");
@@ -1843,6 +2294,40 @@ function MessageComposer({
   const [recordedAudio, setRecordedAudio] = useState<RecordedAudio | null>(
     null,
   );
+  // Anexos ficam em espera antes do envio: dá para colar (Ctrl+V), arrastar
+  // para cima da conversa ou escolher pelo clipe, revisar e só então mandar.
+  // Legenda só existe com um arquivo — o WhatsApp prende a legenda a uma
+  // mídia, e repetir a mesma frase em cada uma seria outra coisa.
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [caption, setCaption] = useState("");
+  const attachmentPreviews = useMemo(
+    () =>
+      attachments.map((file) =>
+        file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+      ),
+    [attachments],
+  );
+  useEffect(
+    () => () => {
+      for (const url of attachmentPreviews) {
+        if (url) URL.revokeObjectURL(url);
+      }
+    },
+    [attachmentPreviews],
+  );
+  const addFiles = useCallback((files: File[]) => {
+    const accepted = files.filter((file) => file.size > 0);
+    if (!accepted.length) return;
+    setAttachments((current) =>
+      [...current, ...accepted].slice(0, MAX_ATTACHMENTS),
+    );
+  }, []);
+
+  useEffect(() => {
+    registerFileDrop?.(addFiles);
+    return () => registerFileDrop?.(null);
+  }, [addFiles, registerFileDrop]);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -1902,6 +2387,8 @@ function MessageComposer({
     const value =
       !isNoteMode && currentUserName ? `*${currentUserName}:*\n${raw}` : raw;
 
+    // Nota interna não vai para o WhatsApp, então não cita ninguém.
+    const quotedId = isNoteMode ? null : (replyingTo?.id ?? null);
     const tempId = `optimistic-${crypto.randomUUID()}`;
     onOptimisticMessage({
       id: tempId,
@@ -1914,12 +2401,14 @@ function MessageComposer({
       aiSuggested: false,
       senderUserName: null,
       createdAt: new Date().toISOString(),
+      replyToMessageId: quotedId,
     });
     setText("");
+    onCancelReply();
     setSending(true);
     const result = isNoteMode
       ? await addInternalNoteAction(conversationId, value)
-      : await sendMessageAction(conversationId, value);
+      : await sendMessageAction(conversationId, value, quotedId);
     setSending(false);
     if (result.ok && result.message) {
       onMessageConfirmed(tempId, result.message);
@@ -1931,7 +2420,10 @@ function MessageComposer({
     }
   }
 
-  async function sendAttachment(file: File): Promise<boolean> {
+  async function sendAttachment(
+    file: File,
+    caption?: string,
+  ): Promise<boolean> {
     const tempId = `optimistic-${crypto.randomUUID()}`;
     const type: MessageType = file.type.startsWith("image/")
       ? "image"
@@ -1944,7 +2436,7 @@ function MessageComposer({
       id: tempId,
       direction: "outbound",
       type,
-      body: file.name,
+      body: caption?.trim() || file.name,
       mediaUrl: null,
       mediaMimeType: file.type || null,
       status: "queued",
@@ -1957,6 +2449,7 @@ function MessageComposer({
       const data = new FormData();
       data.set("conversation_id", conversationId);
       data.set("file", file);
+      if (caption) data.set("caption", caption);
       const result = await sendMediaMessageAction(data);
       if (result.ok && result.message) {
         onMessageConfirmed(tempId, result.message);
@@ -1971,6 +2464,20 @@ function MessageComposer({
       return false;
     } finally {
       setSendingAttachment(false);
+    }
+  }
+
+  async function sendAttachments() {
+    if (!attachments.length || sendingAttachment) return;
+    const files = attachments;
+    const single = files.length === 1;
+    const captionValue = single ? caption.trim() : "";
+    setAttachments([]);
+    setCaption("");
+
+    for (const file of files) {
+      const sent = await sendAttachment(file, captionValue || undefined);
+      if (!sent) break;
     }
   }
 
@@ -2061,8 +2568,38 @@ function MessageComposer({
 
   return (
     <div className="shrink-0 border-t border-border bg-card px-3 py-2">
+      {replyingTo && !isNoteMode ? (
+        <div className="mb-2 flex animate-fade-in items-center justify-between gap-3 rounded-lg border border-border bg-muted px-3 py-2">
+          <span className="flex min-w-0 items-center gap-2">
+            <ArrowBendUpLeft
+              className="size-4 shrink-0 text-primary"
+              aria-hidden="true"
+            />
+            <span className="min-w-0">
+              <span className="block text-caption font-semibold uppercase tracking-wide text-muted-foreground">
+                Respondendo{" "}
+                {replyingTo.direction === "outbound" ? "você" : "o contato"}
+              </span>
+              <span className="block truncate text-label text-foreground">
+                {replyingTo.body?.trim() || labelForType(replyingTo.type)}
+              </span>
+            </span>
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onCancelReply}
+            aria-label="Cancelar resposta"
+            title="Cancelar resposta"
+            className="shrink-0"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ) : null}
       {isNoteMode ? (
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-sm text-warning-foreground">
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning-muted px-3 py-2 text-body text-warning-foreground">
           <span className="flex min-w-0 items-center gap-2 font-semibold">
             <Note
               className="size-4 shrink-0"
@@ -2112,6 +2649,87 @@ function MessageComposer({
               Nenhum emoji encontrado.
             </p>
           ) : null}
+        </div>
+      ) : null}
+      {attachments.length ? (
+        <div className="mb-2 grid animate-fade-in gap-2 rounded-xl border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
+          <ul className="flex flex-wrap gap-2">
+            {attachments.map((file, index) => (
+              <li
+                key={`${file.name}-${index}`}
+                className="relative flex min-w-0 max-w-48 items-center gap-2 rounded-lg border border-border bg-muted/50 py-1.5 pl-2 pr-8"
+              >
+                {attachmentPreviews[index] ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={attachmentPreviews[index] ?? undefined}
+                    alt=""
+                    className="size-8 shrink-0 rounded object-cover"
+                  />
+                ) : (
+                  <Paperclip
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="min-w-0 truncate text-label" title={file.name}>
+                  {file.name}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute right-0.5 top-1/2 -translate-y-1/2"
+                  aria-label={`Remover ${file.name}`}
+                  onClick={() =>
+                    setAttachments((current) =>
+                      current.filter((_, position) => position !== index),
+                    )
+                  }
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center gap-2">
+            {attachments.length === 1 ? (
+              <Input
+                value={caption}
+                onChange={(event) => setCaption(event.target.value)}
+                placeholder="Legenda (opcional)"
+                aria-label="Legenda do arquivo"
+                className="min-w-0 flex-1"
+                maxLength={1000}
+              />
+            ) : (
+              <p className="min-w-0 flex-1 text-label text-muted-foreground">
+                {attachments.length} arquivos — a legenda só vale para envio de
+                um arquivo.
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={sendingAttachment}
+              onClick={() => {
+                setAttachments([]);
+                setCaption("");
+              }}
+            >
+              Descartar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={sendingAttachment}
+              onClick={() => void sendAttachments()}
+            >
+              <Send className="size-4" aria-hidden="true" />
+              {sendingAttachment ? "Enviando…" : "Enviar"}
+            </Button>
+          </div>
         </div>
       ) : null}
       {recordedAudio ? (
@@ -2180,11 +2798,11 @@ function MessageComposer({
         <input
           ref={fileInputRef}
           type="file"
+          multiple
           className="hidden"
           accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
           onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void sendAttachment(file);
+            addFiles([...(event.target.files ?? [])]);
             event.target.value = "";
           }}
         />
@@ -2237,6 +2855,14 @@ function MessageComposer({
               event.preventDefault();
               void send();
             }
+          }}
+          onPaste={(event) => {
+            // Print, imagem copiada de outra conversa, arquivo do explorador:
+            // tudo que vier como arquivo entra na área de anexos.
+            const files = [...(event.clipboardData?.files ?? [])];
+            if (!files.length) return;
+            event.preventDefault();
+            addFiles(files);
           }}
           placeholder={
             recording
@@ -2315,7 +2941,7 @@ function EmptyPanel({
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <Icon className="size-5" aria-hidden="true" />
           </div>
-          <p className="mt-3 text-sm font-medium">{title}</p>
+          <p className="mt-3 text-body font-medium">{title}</p>
           <p className="mt-1 text-label text-muted-foreground">{description}</p>
         </div>
       </div>
@@ -2381,8 +3007,8 @@ function ContactAvatar({
 function MessageDetail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-all rounded-md bg-muted px-2.5 py-2 text-xs">
+      <dt className="text-label font-medium text-muted-foreground">{label}</dt>
+      <dd className="mt-1 break-all rounded-md bg-muted px-2.5 py-2 text-label">
         {value}
       </dd>
     </div>
@@ -2428,6 +3054,7 @@ function toMessage(row: MessageRow): ConversationMessage {
     createdAt: row.created_at,
     waMessageId: row.wa_message_id,
     sentAt: row.sent_at,
+    replyToMessageId: row.reply_to_message_id ?? null,
   };
 }
 
@@ -2497,7 +3124,13 @@ function formatTime(iso: string | null): string {
   return timeFormatter.format(new Date(iso));
 }
 
-const previewCharLimit = 42;
+// Cabe na coluna de 23rem (avatar + prévia + selo de não lidas) sem o texto
+// encostar na borda: acima disso o corte fica por conta do CSS, no meio da
+// palavra.
+/** Teto de arquivos por envio; acima disso o WhatsApp começa a recusar. */
+const MAX_ATTACHMENTS = 10;
+
+const previewCharLimit = 40;
 
 // Corta a prévia na última palavra inteira antes do limite. O `truncate` do
 // CSS já cortaria na largura, mas no meio da letra e em ponto que muda com a
@@ -2517,16 +3150,22 @@ const resolvedDateFormatter = new Intl.DateTimeFormat("pt-BR", {
   month: "2-digit",
 });
 
-// Conclusão do atendimento: hoje e ontem por nome, o resto por data. Sem hora
-// em dias antigos — na fila de encerrados o dia já basta.
+const resolvedYearFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "2-digit",
+});
+
+// Conclusão do atendimento: dia e hora sempre juntos (o ano entra só quando
+// não for o corrente), porque na fila de encerrados o que se procura é
+// exatamente quando aquele atendimento terminou.
 function formatResolvedAt(iso: string | null): string {
   if (!iso) return "";
   const date = new Date(iso);
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000);
+  const day =
+    date.getFullYear() === new Date().getFullYear()
+      ? resolvedDateFormatter.format(date)
+      : resolvedYearFormatter.format(date);
 
-  if (date >= startOfToday) return timeFormatter.format(date);
-  if (date >= startOfYesterday) return `ontem ${timeFormatter.format(date)}`;
-  return resolvedDateFormatter.format(date);
+  return `${day} ${timeFormatter.format(date)}`;
 }

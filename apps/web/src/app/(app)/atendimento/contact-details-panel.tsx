@@ -17,6 +17,7 @@ import {
   FileImage,
   FileVideo,
   FunnelSimple,
+  LinkBreak,
   LinkSimple,
   MagnifyingGlass,
   Paperclip,
@@ -29,7 +30,6 @@ import {
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import {
-  useActionState,
   useCallback,
   useEffect,
   useMemo,
@@ -40,7 +40,6 @@ import {
 import { toast } from "sonner";
 import {
   loadContactDetailsAction,
-  type ContactAppointmentCreationOptions,
   type ContactAppointmentView,
   type ContactAttendanceEventView,
   type ContactDetailsData,
@@ -51,12 +50,19 @@ import {
   type ContactOpportunityView,
 } from "./contact-actions";
 import { linkPatientAction, setConversationTagAction } from "./actions";
-import { createAppointment, type AgendaActionState } from "../agenda/actions";
+import {
+  createCardFromContactAction,
+  listActiveFunnelsAction,
+} from "../funis/actions";
+import { loadAppointmentFormData } from "../agenda/actions";
+import { AppointmentFormModal } from "@/components/agenda/appointment-form-modal";
+import type { AppointmentFormData } from "@/lib/agenda/slots";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
-import { Input, Select, Textarea } from "@/components/ui/field";
+import { Input, Select } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import { Timeline } from "@/components/ui/timeline";
@@ -64,7 +70,6 @@ import type {
   ConversationListItem,
   ConversationTagView,
 } from "@/lib/whatsapp/types";
-import { cn } from "@/lib/utils";
 
 type LoadedContactDetails = {
   conversationId: string;
@@ -287,7 +292,14 @@ export function ContactDetailsPanel({
                 id: "historico",
                 label: "Histórico",
                 icon: <TrendUp />,
-                content: <HistoryTab data={current.data} />,
+                content: (
+                  <HistoryTab
+                    data={current.data}
+                    conversationId={conversation.id}
+                    hasFunnelCard={Boolean(conversation.funnelCardId)}
+                    onRefresh={refresh}
+                  />
+                ),
               },
             ]}
           />
@@ -315,34 +327,41 @@ function ContactTab({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [confirmingUnlink, setConfirmingUnlink] = useState(false);
-  const [tagToRemove, setTagToRemove] = useState<ConversationTagView | null>(
-    null,
-  );
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
   const selectedTagIds = useMemo(
     () => new Set(conversation.tags.map((tag) => tag.id)),
     [conversation.tags],
   );
 
-  function toggleTag(tag: ConversationTagView) {
-    const attach = !selectedTagIds.has(tag.id);
-    if (!attach) {
-      setTagToRemove(tag);
-      return;
-    }
+  // Aplica de uma vez o que o seletor devolveu: só as etiquetas que mudaram
+  // viram chamada, e o painel volta ao estado anterior se alguma falhar.
+  function saveTags(nextIds: Set<string>) {
     const previousTags = conversation.tags;
-    const nextTags = attach
-      ? [...previousTags, tag]
-      : previousTags.filter((item) => item.id !== tag.id);
+    const added = availableTags.filter(
+      (tag) => nextIds.has(tag.id) && !selectedTagIds.has(tag.id),
+    );
+    const removed = previousTags.filter((tag) => !nextIds.has(tag.id));
+    if (!added.length && !removed.length) return;
+
+    const nextTags = [
+      ...previousTags.filter((tag) => nextIds.has(tag.id)),
+      ...added,
+    ];
     onTagsChange(nextTags);
+
     startTransition(async () => {
-      const result = await setConversationTagAction(
-        conversation.id,
-        tag.id,
-        attach,
-      );
-      if (!result.ok) {
+      const results = await Promise.all([
+        ...added.map((tag) =>
+          setConversationTagAction(conversation.id, tag.id, true),
+        ),
+        ...removed.map((tag) =>
+          setConversationTagAction(conversation.id, tag.id, false),
+        ),
+      ]);
+      const failure = results.find((result) => !result.ok);
+      if (failure) {
         onTagsChange(previousTags);
-        toast.error(result.error ?? "Não foi possível atualizar a etiqueta.");
+        toast.error(failure.error ?? "Não foi possível salvar as etiquetas.");
       }
     });
   }
@@ -359,23 +378,6 @@ function ContactTab({
     return true;
   }
 
-  async function removeTag() {
-    if (!tagToRemove) return false;
-    const result = await setConversationTagAction(
-      conversation.id,
-      tagToRemove.id,
-      false,
-    );
-    if (!result.ok) {
-      toast.error(result.error ?? "Não foi possível remover a etiqueta.");
-      return false;
-    }
-    onTagsChange(
-      conversation.tags.filter((item) => item.id !== tagToRemove.id),
-    );
-    return true;
-  }
-
   return (
     <div className="grid gap-5">
       <ConfirmDialog
@@ -387,14 +389,12 @@ function ContactTab({
         destructive
         onConfirm={unlinkPatient}
       />
-      <ConfirmDialog
-        open={Boolean(tagToRemove)}
-        onClose={() => setTagToRemove(null)}
-        title="Remover etiqueta?"
-        description={`A etiqueta “${tagToRemove?.name ?? ""}” será removida desta conversa.`}
-        confirmLabel="Remover etiqueta"
-        destructive
-        onConfirm={removeTag}
+      <TagPickerModal
+        open={tagPickerOpen}
+        onClose={() => setTagPickerOpen(false)}
+        availableTags={availableTags}
+        selectedTagIds={selectedTagIds}
+        onSave={saveTags}
       />
       <div className="flex flex-col items-center border-b border-border pb-5 text-center">
         <Avatar
@@ -412,7 +412,64 @@ function ContactTab({
         ) : null}
       </div>
 
-      <section className="grid gap-5 border-b border-border px-1 pb-5">
+      <section className="grid gap-4 border-b border-border px-1 pb-5">
+        {/* Vínculo com o paciente antes dos dados de contato e em uma linha
+            só: é o que a recepção confere primeiro, e virar cartão dava a ele
+            mais peso do que o próprio contato. */}
+        {data.contact.patientId ? (
+          data.patient ? (
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5">
+              <UserCircle
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Link
+                href={`/pacientes/${data.patient.id}`}
+                className="min-w-0 flex-1 truncate text-label font-medium hover:text-primary"
+                title={`Abrir ficha de ${data.patient.socialName || data.patient.fullName}`}
+              >
+                {data.patient.socialName || data.patient.fullName}
+              </Link>
+              {data.patient.status !== "active" ? (
+                <Badge variant="neutral" className="shrink-0">
+                  Inativo
+                </Badge>
+              ) : null}
+              {canAttend ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={pending}
+                  onClick={() => setConfirmingUnlink(true)}
+                  aria-label="Desvincular paciente"
+                  title="Desvincular paciente"
+                  className="shrink-0"
+                >
+                  <LinkBreak className="size-4" aria-hidden="true" />
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <p className="rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-label text-muted-foreground">
+              Existe um paciente vinculado, mas você não possui permissão para
+              visualizar seus dados.
+            </p>
+          )
+        ) : canAttend && data.permissions.canViewPatient ? (
+          <PatientLinkSearch
+            contactId={data.contact.id}
+            onLinked={() => {
+              onRefresh();
+              router.refresh();
+            }}
+          />
+        ) : (
+          <p className="rounded-md border border-dashed border-border px-2.5 py-1.5 text-label text-muted-foreground">
+            Contato ainda não vinculado a um paciente.
+          </p>
+        )}
+
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-label text-muted-foreground">Telefone</p>
@@ -445,105 +502,54 @@ function ContactTab({
             </p>
           </div>
         ) : null}
-
-        {data.contact.patientId ? (
-          <div className="grid gap-2 rounded-lg bg-muted/50 p-3">
-            {data.patient ? (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-label text-muted-foreground">
-                      Paciente vinculado
-                    </p>
-                    <p className="truncate text-body-sm font-medium">
-                      {data.patient.socialName || data.patient.fullName}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={
-                      data.patient.status === "active" ? "success" : "neutral"
-                    }
-                  >
-                    {data.patient.status === "active" ? "Ativo" : "Inativo"}
-                  </Badge>
-                </div>
-                <Button asChild variant="secondary" size="sm">
-                  <Link href={`/pacientes/${data.patient.id}`}>
-                    <UserCircle className="size-4" aria-hidden="true" />
-                    Abrir ficha do paciente
-                  </Link>
-                </Button>
-              </>
-            ) : (
-              <p className="text-label text-muted-foreground">
-                Existe um paciente vinculado, mas você não possui permissão para
-                visualizar seus dados.
-              </p>
-            )}
-            {canAttend ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={pending}
-                onClick={() => setConfirmingUnlink(true)}
-              >
-                Desvincular paciente
-              </Button>
-            ) : null}
-          </div>
-        ) : canAttend && data.permissions.canViewPatient ? (
-          <PatientLinkSearch
-            contactId={data.contact.id}
-            onLinked={() => {
-              onRefresh();
-              router.refresh();
-            }}
-          />
-        ) : (
-          <p className="mt-4 rounded-lg border border-dashed border-border p-3 text-label text-muted-foreground">
-            Contato ainda não vinculado a um paciente.
-          </p>
-        )}
       </section>
 
       <PanelSection
         title="Etiquetas"
         icon={<TagIcon className="size-4" aria-hidden="true" />}
+        action={
+          canAttend && availableTags.length ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setTagPickerOpen(true)}
+            >
+              <TagIcon className="size-4" aria-hidden="true" />
+              Etiquetas
+            </Button>
+          ) : null
+        }
       >
-        {availableTags.length ? (
-          <div className="flex flex-wrap gap-2">
-            {availableTags.map((tag) => {
-              const selected = selectedTagIds.has(tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  type="button"
-                  disabled={!canAttend || pending}
-                  aria-pressed={selected}
-                  onClick={() => toggleTag(tag)}
-                  className={cn(
-                    "inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 text-label font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50",
-                    selected ? "opacity-100" : "opacity-60 hover:opacity-100",
-                  )}
-                  style={{
-                    borderColor: tag.color,
-                    color: tag.color,
-                    backgroundColor: selected ? `${tag.color}14` : undefined,
-                  }}
-                >
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: tag.color }}
-                    aria-hidden="true"
-                  />
-                  {tag.name}
-                </button>
-              );
-            })}
+        {/* Só as escolhidas ficam à mostra; o catálogo inteiro vive no seletor,
+            senão a lista cresce com o cadastro da clínica. */}
+        {conversation.tags.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {conversation.tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-label font-medium"
+                style={{
+                  borderColor: tag.color,
+                  color: tag.color,
+                  backgroundColor: `${tag.color}14`,
+                }}
+              >
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: tag.color }}
+                  aria-hidden="true"
+                />
+                {tag.name}
+              </span>
+            ))}
           </div>
         ) : (
-          <EmptyText>Nenhuma etiqueta cadastrada.</EmptyText>
+          <EmptyText>
+            {availableTags.length
+              ? "Nenhuma etiqueta nesta conversa."
+              : "Nenhuma etiqueta cadastrada."}
+          </EmptyText>
         )}
       </PanelSection>
 
@@ -567,10 +573,14 @@ function ContactTab({
 
         <div className="mt-3">
           {data.permissions.canCreateAppointment ? (
-            data.contact.patientId && data.creationOptions ? (
+            data.contact.patientId ? (
               <CreateAppointmentDialog
                 patientId={data.contact.patientId}
-                options={data.creationOptions}
+                patientName={
+                  data.patient?.socialName ||
+                  data.patient?.fullName ||
+                  data.contact.name
+                }
                 onCreated={onRefresh}
               />
             ) : (
@@ -595,42 +605,39 @@ function ContactTab({
   );
 }
 
+/**
+ * Botão + modal de agendamento do painel de contato.
+ *
+ * O formulário é o mesmo componente da tela de agenda — mudou lá, mudou aqui.
+ * Os catálogos e a grade chegam por `loadAppointmentFormData`, carregados só
+ * quando o modal abre, e o paciente do contato já vai amarrado.
+ */
 function CreateAppointmentDialog({
   patientId,
-  options,
+  patientName,
   onCreated,
 }: {
   patientId: string;
-  options: ContactAppointmentCreationOptions;
+  patientName: string;
   onCreated: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [scheduleId, setScheduleId] = useState("");
-  const [procedureId, setProcedureId] = useState("");
-  const [roomId, setRoomId] = useState("");
-  const selectedSchedule = options.schedules.find(
-    (schedule) => schedule.id === scheduleId,
-  );
-  const availableRooms = selectedSchedule
-    ? options.rooms.filter((room) => room.unitId === selectedSchedule.unitId)
-    : options.rooms;
+  const [formData, setFormData] = useState<AppointmentFormData | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const submitAppointment = useCallback(
-    async (previousState: AgendaActionState, formData: FormData) => {
-      const result = await createAppointment(previousState, formData);
-      if (result.success) {
-        toast.success(result.success);
-        setOpen(false);
-        setScheduleId("");
-        setProcedureId("");
-        setRoomId("");
-        onCreated();
-      }
-      return result;
-    },
-    [onCreated],
-  );
-  const [state, action, pending] = useActionState(submitAppointment, {});
+  async function openDialog() {
+    setOpen(true);
+    if (formData || loading) return;
+    setLoading(true);
+    const result = await loadAppointmentFormData();
+    setLoading(false);
+    if (!result.ok || !result.data) {
+      setOpen(false);
+      toast.error(result.error ?? "Não foi possível abrir o agendamento.");
+      return;
+    }
+    setFormData(result.data);
+  }
 
   return (
     <>
@@ -638,127 +645,108 @@ function CreateAppointmentDialog({
         type="button"
         size="sm"
         className="w-full"
-        onClick={() => setOpen(true)}
+        disabled={loading}
+        onClick={() => void openDialog()}
       >
         <CalendarPlus className="size-4" aria-hidden="true" />
-        Criar agendamento
+        {loading ? "Abrindo..." : "Criar agendamento"}
       </Button>
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Criar agendamento"
-        description="O paciente deste contato já será vinculado ao agendamento."
-        className="max-w-2xl"
-      >
-        <form action={action} className="grid gap-4 md:grid-cols-2">
-          <input type="hidden" name="patient_id" value={patientId} />
-          <label className="grid gap-2 text-body-sm font-medium">
-            Agenda
-            <Select
-              name="schedule_id"
-              value={scheduleId}
-              onValueChange={(value) => {
-                setScheduleId(value);
-                setRoomId("");
-              }}
-              required
-            >
-              <option value="">Selecione</option>
-              {options.schedules.map((schedule) => (
-                <option key={schedule.id} value={schedule.id}>
-                  {schedule.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="grid gap-2 text-body-sm font-medium">
-            Procedimento
-            <Select
-              name="procedure_id"
-              value={procedureId}
-              onValueChange={setProcedureId}
-              required
-            >
-              <option value="">Selecione</option>
-              {options.procedures.map((procedure) => (
-                <option key={procedure.id} value={procedure.id}>
-                  {procedure.name} ({procedure.durationMinutes} min)
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="grid gap-2 text-body-sm font-medium md:col-span-2">
-            Data e hora
-            <Input
-              type="datetime-local"
-              name="start_at"
-              defaultValue={defaultAppointmentDateTime()}
-              required
-            />
-          </label>
-          <label className="grid gap-2 text-body-sm font-medium">
-            Sala (opcional)
-            <Select name="room_id" value={roomId} onValueChange={setRoomId}>
-              <option value="">Nenhuma</option>
-              {availableRooms.map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="grid gap-2 text-body-sm font-medium">
-            Convênio (opcional)
-            <Select name="health_insurance_id" defaultValue="">
-              <option value="">Nenhum</option>
-              {options.healthInsurances.map((insurance) => (
-                <option key={insurance.id} value={insurance.id}>
-                  {insurance.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="grid gap-2 text-body-sm font-medium md:col-span-2">
-            Forma de pagamento (opcional)
-            <Select name="payment_method_id" defaultValue="">
-              <option value="">Nenhuma</option>
-              {options.paymentMethods.map((method) => (
-                <option key={method.id} value={method.id}>
-                  {method.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="grid gap-2 text-body-sm font-medium md:col-span-2">
-            Observações
-            <Textarea name="notes" maxLength={1000} />
-          </label>
-          {state.error ? (
-            <p
-              className="text-body-sm text-destructive md:col-span-2"
-              role="alert"
-            >
-              {state.error}
-            </p>
-          ) : null}
-          <div className="flex justify-end gap-2 md:col-span-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setOpen(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              disabled={pending || !scheduleId || !procedureId}
-            >
-              {pending ? "Criando..." : "Criar agendamento"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+      {formData ? (
+        <AppointmentFormModal
+          open={open}
+          onClose={() => setOpen(false)}
+          data={formData}
+          patient={{ id: patientId, name: patientName }}
+          onCreated={onCreated}
+        />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Seletor de etiquetas: o catálogo inteiro fica aqui, com caixas de seleção,
+ * e o painel mostra só o que foi marcado. Salvar aplica tudo de uma vez.
+ */
+function TagPickerModal({
+  open,
+  onClose,
+  availableTags,
+  selectedTagIds,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  availableTags: ConversationTagView[];
+  selectedTagIds: Set<string>;
+  onSave: (nextIds: Set<string>) => void;
+}) {
+  // A cada abertura o rascunho parte do que está aplicado hoje.
+  const [draft, setDraft] = useState<Set<string>>(selectedTagIds);
+  const [lastOpen, setLastOpen] = useState(open);
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (open) setDraft(new Set(selectedTagIds));
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Etiquetas da conversa"
+      description="Marque as etiquetas que devem ficar nesta conversa."
+      className="max-w-md"
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            onClick={() => {
+              onSave(draft);
+              onClose();
+            }}
+          >
+            Salvar etiquetas
+          </Button>
+        </>
+      }
+    >
+      <ul className="grid max-h-[50vh] gap-1 overflow-y-auto overscroll-contain">
+        {availableTags.map((tag) => {
+          const checked = draft.has(tag.id);
+          return (
+            <li key={tag.id}>
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted">
+                <Checkbox
+                  checked={checked}
+                  onChange={(event) => {
+                    const next = new Set(draft);
+                    if (event.target.checked) next.add(tag.id);
+                    else next.delete(tag.id);
+                    setDraft(next);
+                  }}
+                />
+                <span
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: tag.color }}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 truncate text-body-sm">
+                  {tag.name}
+                </span>
+              </label>
+            </li>
+          );
+        })}
+        {!availableTags.length ? (
+          <li className="px-2 py-1.5 text-label text-muted-foreground">
+            Nenhuma etiqueta cadastrada.
+          </li>
+        ) : null}
+      </ul>
+    </Modal>
   );
 }
 
@@ -1013,7 +1001,18 @@ function FileSizeLabel({
   return <span ref={ref}>{size ? formatFileSize(size) : "Tamanho n/d"}</span>;
 }
 
-function HistoryTab({ data }: { data: ContactDetailsData }) {
+function HistoryTab({
+  data,
+  conversationId,
+  hasFunnelCard,
+  onRefresh,
+}: {
+  data: ContactDetailsData;
+  conversationId: string;
+  /** A conversa já está em um funil: não oferece criar outro card. */
+  hasFunnelCard: boolean;
+  onRefresh: () => void;
+}) {
   const movementsByCard = useMemo(() => {
     const grouped = new Map<string, ContactOpportunityMovementView[]>();
     for (const movement of data.opportunityMovements) {
@@ -1059,6 +1058,14 @@ function HistoryTab({ data }: { data: ContactDetailsData }) {
       </HistorySection>
 
       <HistorySection title="Oportunidades">
+        {data.permissions.canManageFunnel && !hasFunnelCard ? (
+          <div className="mb-3">
+            <CreateFunnelCardButton
+              conversationId={conversationId}
+              onCreated={onRefresh}
+            />
+          </div>
+        ) : null}
         {!data.permissions.canViewFunnel ? (
           <PermissionNotice>
             Você não possui permissão para visualizar oportunidades.
@@ -1090,6 +1097,94 @@ type PatientSearchResult = {
   full_name: string;
   social_name: string | null;
 };
+
+/**
+ * Cria um card de funil direto da conversa.
+ *
+ * O card nasce ligado ao contato — não exige o paciente cadastrado — e a
+ * conversa passa a apontar para ele. Com mais de um funil ativo, a escolha
+ * vira um passo; com um só, cria direto.
+ */
+function CreateFunnelCardButton({
+  conversationId,
+  onCreated,
+}: {
+  conversationId: string;
+  onCreated: () => void;
+}) {
+  const [funnels, setFunnels] = useState<Array<{ id: string; name: string }>>(
+    [],
+  );
+  const [choosing, setChoosing] = useState(false);
+  const [pending, startCreating] = useTransition();
+
+  function create(funnelId: string) {
+    setChoosing(false);
+    startCreating(async () => {
+      const result = await createCardFromContactAction(
+        funnelId,
+        conversationId,
+      );
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(result.success ?? "Card criado no funil.");
+      onCreated();
+    });
+  }
+
+  async function start() {
+    const options = await listActiveFunnelsAction();
+    if (!options.length) {
+      toast.error("Nenhum funil ativo para receber o card.");
+      return;
+    }
+    if (options.length === 1) {
+      create(options[0].id);
+      return;
+    }
+    setFunnels(options);
+    setChoosing(true);
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={pending}
+        onClick={() => void start()}
+      >
+        <FunnelSimple className="size-4" aria-hidden="true" />
+        {pending ? "Criando..." : "Criar card no funil"}
+      </Button>
+      <Modal
+        open={choosing}
+        onClose={() => setChoosing(false)}
+        title="Em qual funil?"
+        description="O card entra na primeira etapa do funil escolhido."
+        className="max-w-sm"
+      >
+        <ul className="grid gap-1">
+          {funnels.map((funnel) => (
+            <li key={funnel.id}>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full justify-start"
+                onClick={() => create(funnel.id)}
+              >
+                {funnel.name}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Modal>
+    </>
+  );
+}
 
 function PatientLinkSearch({
   contactId,
@@ -1316,18 +1411,24 @@ function OpportunityItem({
 function PanelSection({
   title,
   icon,
+  action,
   children,
 }: {
   title: string;
   icon?: React.ReactNode;
+  /** Ação da seção (ex.: abrir o seletor de etiquetas). */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="border-b border-border px-1 pb-5 last:border-b-0">
-      <h2 className="mb-3 flex items-center gap-2 text-body-sm font-semibold">
-        {icon}
-        {title}
-      </h2>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="flex min-w-0 items-center gap-2 text-body-sm font-semibold">
+          {icon}
+          {title}
+        </h2>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -1531,13 +1632,6 @@ function bookingStatusVariant(
   if (status === "confirmed") return "success";
   if (status === "requested") return "primary";
   return "neutral";
-}
-
-function defaultAppointmentDateTime(): string {
-  const date = new Date(Date.now() + 60 * 60_000);
-  date.setMinutes(Math.ceil(date.getMinutes() / 15) * 15, 0, 0);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
 function formatDateTime(value: string): string {

@@ -53,8 +53,10 @@ export function resolveAgendaSelection(
   const requestedDate = readParam(input, "date");
 
   return {
+    // Sem view valida na URL a agenda abre na semana: e o recorte padrao de
+    // trabalho da recepcao, que precisa enxergar os proximos dias de uma vez.
     view:
-      requestedView && agendaViews.has(requestedView) ? requestedView : "day",
+      requestedView && agendaViews.has(requestedView) ? requestedView : "week",
     date: isDateKey(requestedDate)
       ? requestedDate
       : formatInTimeZone(now, timeZone, "yyyy-MM-dd"),

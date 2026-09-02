@@ -47,6 +47,9 @@ export type PatientListRow = {
   allow_email: boolean;
   status: string;
   source: string | null;
+  photo_path: string | null;
+  /** URL assinada da foto (o bucket é privado); null cai nas iniciais. */
+  photoUrl: string | null;
   deceased_at: string | null;
   deleted_at: string | null;
   created_at: string;
@@ -519,7 +522,9 @@ function PatientListAvatar({
   size: "sm" | "md";
 }) {
   const displayName = patient.social_name || patient.full_name;
-  const avatar = <Avatar name={displayName} size={size} />;
+  const avatar = (
+    <Avatar name={displayName} photoUrl={patient.photoUrl} size={size} />
+  );
 
   if (patient.completenessAvailable || patient.deceased_at) {
     return (

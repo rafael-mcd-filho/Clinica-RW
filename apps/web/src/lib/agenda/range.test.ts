@@ -12,13 +12,13 @@ import {
 } from "./range";
 
 describe("agenda visible range", () => {
-  it("defaults to the clinic's current local day", () => {
+  it("defaults to the weekly view on the clinic's current local day", () => {
     expect(
       resolveAgendaSelection(null, {
         now: new Date("2026-07-14T01:30:00.000Z"),
         timeZone: "America/Fortaleza",
       }),
-    ).toEqual({ date: "2026-07-13", view: "day" });
+    ).toEqual({ date: "2026-07-13", view: "week" });
   });
 
   it("normalizes invalid URL values", () => {
@@ -30,7 +30,19 @@ describe("agenda visible range", () => {
           timeZone: "America/Fortaleza",
         },
       ),
-    ).toEqual({ date: "2026-07-13", view: "day" });
+    ).toEqual({ date: "2026-07-13", view: "week" });
+  });
+
+  it("keeps an explicit daily view from the URL", () => {
+    expect(
+      resolveAgendaSelection(
+        { date: "2026-07-15", view: "day" },
+        {
+          now: new Date("2026-07-13T12:00:00.000Z"),
+          timeZone: "America/Fortaleza",
+        },
+      ),
+    ).toEqual({ date: "2026-07-15", view: "day" });
   });
 
   it("resolves Monday through Sunday for the weekly view", () => {

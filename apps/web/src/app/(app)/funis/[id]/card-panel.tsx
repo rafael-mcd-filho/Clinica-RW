@@ -27,6 +27,7 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Textarea } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
+import { formatPhoneBR } from "@/lib/validation/br";
 
 export function CardPanel({
   funnelId,
@@ -116,13 +117,26 @@ export function CardPanel({
               <p className="truncate text-heading font-semibold text-foreground">
                 {card.patient_name}
               </p>
-              <Link
-                href={`/pacientes/${card.patient_id}`}
-                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-              >
-                Ver ficha do paciente
-                <ExternalLink className="size-3" aria-hidden="true" />
-              </Link>
+              {card.contact_phone ? (
+                <p className="truncate text-label tabular-nums text-muted-foreground">
+                  {formatPhoneBR(card.contact_phone)}
+                </p>
+              ) : null}
+              {card.patient_id ? (
+                <Link
+                  href={`/pacientes/${card.patient_id}`}
+                  className="inline-flex items-center gap-1 text-label font-medium text-primary hover:underline"
+                >
+                  Ver ficha do paciente
+                  <ExternalLink className="size-3" aria-hidden="true" />
+                </Link>
+              ) : (
+                // Card vindo do atendimento sem cadastro ainda: o vínculo é
+                // feito no painel do contato e o card acompanha.
+                <p className="text-label text-muted-foreground">
+                  Contato ainda sem paciente cadastrado.
+                </p>
+              )}
             </div>
           </div>
           <Button type="button" variant="ghost" size="icon" onClick={onClose}>
@@ -138,14 +152,18 @@ export function CardPanel({
             </Link>
           </Button>
           {canManage && !card.archived_at ? (
+            // Ação destrutiva e rara: fica só no ícone, em vermelho, para não
+            // disputar espaço com o que se usa o tempo todo.
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               onClick={() => setConfirmingArchive(true)}
+              aria-label="Arquivar card"
+              title="Arquivar card"
+              className="text-destructive hover:bg-destructive-muted"
             >
               <Archive className="size-4" aria-hidden="true" />
-              Arquivar card
             </Button>
           ) : null}
           {card.archived_at ? <Badge variant="neutral">Arquivado</Badge> : null}

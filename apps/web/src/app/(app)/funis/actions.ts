@@ -35,6 +35,9 @@ function friendlyError(message: string) {
   if (message.includes("funnel_cards_active_patient_key")) {
     return "Este paciente já está ativo neste funil.";
   }
+  if (message.includes("funnel_cards_active_contact_key")) {
+    return "Este contato já tem um card ativo neste funil.";
+  }
   if (message.includes("WIP limit")) {
     return "A etapa de destino atingiu o limite de cards.";
   }
@@ -533,4 +536,105 @@ export async function getCardNotes(cardId: string): Promise<CardNoteEntry[]> {
     note: row.note,
     created_at: row.created_at,
   }));
+}
+
+/**
+ * Cria um card a partir de uma conversa do atendimento.
+ *
+ * O card nasce ligado ao contato (e ao paciente, quando o contato já tem um) e
+ * na primeira etapa do funil — que é onde um lead entra. A conversa passa a
+ * apontar para o card, então a aba de funil do painel mostra o vínculo.
+ */
+export async function createCardFromContactAction(
+  funnelId: string,
+  conversationId: string,
+): Promise<FunilActionState & { cardId?: string }> {
+  const context = await requireFunilPermission("funil.gerenciar");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const organizationId = context.organization.id;
+  const supabase = await createSupabaseServerClient();
+
+  const { data: conversation } = await supabase
+    .from("whatsapp_conversations")
+    .select("id, contact_id, funnel_card_id")
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId)
+    .maybeSingle<{
+      id: string;
+      contact_id: string;
+      funnel_card_id: string | null;
+    }>();
+  if (!conversation) return { error: "Conversa não encontrada." };
+  if (conversation.funnel_card_id) {
+    return { error: "Esta conversa já está em um funil." };
+  }
+
+  const [{ data: contact }, { data: stage }] = await Promise.all([
+    supabase
+      .from("whatsapp_contacts")
+      .select("id, patient_id")
+      .eq("organization_id", organizationId)
+      .eq("id", conversation.contact_id)
+      .maybeSingle<{ id: string; patient_id: string | null }>(),
+    supabase
+      .from("funnel_stages")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("funnel_id", funnelId)
+      .order("position")
+      .limit(1)
+      .maybeSingle<{ id: string }>(),
+  ]);
+
+  if (!contact) return { error: "Contato não encontrado." };
+  if (!stage) return { error: "Este funil não tem etapas configuradas." };
+
+  const { data: card, error } = await supabase
+    .from("funnel_cards")
+    .insert({
+      organization_id: organizationId,
+      funnel_id: funnelId,
+      stage_id: stage.id,
+      contact_id: contact.id,
+      patient_id: contact.patient_id,
+      created_by_user_id: context.effectiveUser?.id ?? null,
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error || !card) return { error: friendlyError(error?.message ?? "") };
+
+  const { error: linkError } = await supabase
+    .from("whatsapp_conversations")
+    .update({ funnel_card_id: card.id })
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId);
+  if (linkError) {
+    return {
+      error: "O card foi criado, mas não pôde ser ligado à conversa.",
+      cardId: card.id,
+    };
+  }
+
+  revalidatePath(`/funis/${funnelId}`);
+  return { success: "Card criado no funil.", cardId: card.id };
+}
+
+/** Funis ativos, para escolher onde o card do atendimento vai entrar. */
+export async function listActiveFunnelsAction(): Promise<
+  Array<{ id: string; name: string }>
+> {
+  const context = await requireFunilPermission("funil.gerenciar");
+  if (!context?.organization) return [];
+
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase
+    .from("funnels")
+    .select("id, name")
+    .eq("organization_id", context.organization.id)
+    .eq("active", true)
+    .order("name")
+    .returns<Array<{ id: string; name: string }>>();
+
+  return data ?? [];
 }

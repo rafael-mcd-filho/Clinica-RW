@@ -66,6 +66,8 @@ export type ConversationMessage = {
   createdAt: string;
   waMessageId?: string | null;
   sentAt?: string | null;
+  /** Mensagem citada por esta resposta, quando houver. */
+  replyToMessageId?: string | null;
 };
 
 export type AttendanceInstance = {

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { updatePatientPhoto, type PatientActionState } from "../actions";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { Modal } from "@/components/ui/modal";
 import { PatientCompletenessRing } from "@/components/patients/patient-completeness-ring";
 import type { PatientCompleteness } from "@/lib/patients/completeness";
 
@@ -37,13 +38,14 @@ export function PatientPhotoForm({
   const [selectedPreview, setSelectedPreview] = useState<string | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const [state, formAction, pending] = useActionState(
     updatePatientPhoto.bind(null, patientId),
     initialState,
   );
   const preview = removePhoto ? null : (selectedPreview ?? photoUrl);
   const hasChange = Boolean(selectedPreview) || removePhoto;
-  const avatar = (
+  const avatarBox = (
     <div className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-heading-lg font-semibold text-primary sm:size-20 lg:size-24">
       {preview ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -56,6 +58,22 @@ export function PatientPhotoForm({
         initials
       )}
     </div>
+  );
+  // Com foto, o avatar vira alvo de clique e abre a imagem em tamanho cheio —
+  // no círculo de 64/96px não dá para conferir o rosto. Sem foto são só as
+  // iniciais, e aí não há nada para ampliar.
+  const avatar = preview ? (
+    <button
+      type="button"
+      onClick={() => setZoomOpen(true)}
+      aria-label="Ampliar foto do paciente"
+      title="Ampliar foto"
+      className="cursor-zoom-in rounded-full transition-opacity duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+    >
+      {avatarBox}
+    </button>
+  ) : (
+    avatarBox
   );
 
   useEffect(() => {
@@ -168,6 +186,22 @@ export function PatientPhotoForm({
           />
         </>
       ) : null}
+
+      <Modal
+        open={zoomOpen && Boolean(preview)}
+        onClose={() => setZoomOpen(false)}
+        title="Foto do paciente"
+        className="max-w-2xl"
+      >
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={preview}
+            alt="Foto ampliada do paciente"
+            className="max-h-[70vh] w-full rounded-lg object-contain"
+          />
+        ) : null}
+      </Modal>
     </form>
   );
 }

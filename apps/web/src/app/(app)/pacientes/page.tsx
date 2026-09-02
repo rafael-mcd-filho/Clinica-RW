@@ -6,6 +6,7 @@ import {
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { PageHeader } from "@/components/ui/page-header";
 import { getPatientCompleteness } from "@/lib/patients/completeness";
+import { createPatientPhotoSignedUrl } from "@/lib/storage/patient-photos";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { UsersThree as UsersRound } from "@phosphor-icons/react/dist/ssr";
 
@@ -91,8 +92,8 @@ export default async function PacientesPage({
     (item) => item.patient_id,
   );
   const patientSelect = canSeeSensitive
-    ? "id, full_name, social_name, birth_date, sex_at_birth, cpf, rg, email, phone, whatsapp, preferred_contact, allow_whatsapp, allow_email, status, source, deceased_at, deleted_at, created_at"
-    : "id, full_name, social_name, birth_date, sex_at_birth, email, phone, whatsapp, preferred_contact, allow_whatsapp, allow_email, status, source, deceased_at, deleted_at, created_at";
+    ? "id, full_name, social_name, birth_date, sex_at_birth, cpf, rg, email, phone, whatsapp, preferred_contact, allow_whatsapp, allow_email, status, source, photo_path, deceased_at, deleted_at, created_at"
+    : "id, full_name, social_name, birth_date, sex_at_birth, email, phone, whatsapp, preferred_contact, allow_whatsapp, allow_email, status, source, photo_path, deceased_at, deleted_at, created_at";
   let patientsQuery = supabase
     .from("patients")
     .select(patientSelect as string, { count: "exact" })
@@ -148,31 +149,48 @@ export default async function PacientesPage({
   const patients = patientsResult.data ?? [];
   const pagePatientIds = patients.map((patient) => patient.id);
 
-  const [patientTagsResult, latestEncountersResult, addressesResult] =
-    await Promise.all([
-      pagePatientIds.length
-        ? supabase
-            .from("patient_tags")
-            .select("patient_id, tag_id")
-            .eq("organization_id", organizationId)
-            .in("patient_id", pagePatientIds)
-            .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-            .returns<PatientTagRow[]>()
-        : Promise.resolve({ data: [] as PatientTagRow[] }),
-      canViewClinicalRecords && pagePatientIds.length
-        ? fetchLatestPatientEncounters(supabase, organizationId, pagePatientIds)
-        : Promise.resolve({ data: [] as LatestEncounterRow[] }),
-      canSeeSensitive && pagePatientIds.length
-        ? supabase
-            .from("patient_addresses")
-            .select(
-              "patient_id, postal_code, address_line, address_number, district, city, state",
-            )
-            .eq("organization_id", organizationId)
-            .in("patient_id", pagePatientIds)
-            .returns<PatientAddressRow[]>()
-        : Promise.resolve({ data: [] as PatientAddressRow[] }),
-    ]);
+  const [
+    patientTagsResult,
+    latestEncountersResult,
+    addressesResult,
+    photoEntries,
+  ] = await Promise.all([
+    pagePatientIds.length
+      ? supabase
+          .from("patient_tags")
+          .select("patient_id, tag_id")
+          .eq("organization_id", organizationId)
+          .in("patient_id", pagePatientIds)
+          .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+          .returns<PatientTagRow[]>()
+      : Promise.resolve({ data: [] as PatientTagRow[] }),
+    canViewClinicalRecords && pagePatientIds.length
+      ? fetchLatestPatientEncounters(supabase, organizationId, pagePatientIds)
+      : Promise.resolve({ data: [] as LatestEncounterRow[] }),
+    canSeeSensitive && pagePatientIds.length
+      ? supabase
+          .from("patient_addresses")
+          .select(
+            "patient_id, postal_code, address_line, address_number, district, city, state",
+          )
+          .eq("organization_id", organizationId)
+          .in("patient_id", pagePatientIds)
+          .returns<PatientAddressRow[]>()
+      : Promise.resolve({ data: [] as PatientAddressRow[] }),
+    // Foto da lista: o bucket é privado, então cada path vira uma URL
+    // assinada. createPatientPhotoSignedUrl tem cache por path (45min) e
+    // devolve null direto para quem não tem foto, então paginar não custa
+    // um round-trip por paciente.
+    Promise.all(
+      patients.map(
+        async (patient) =>
+          [
+            patient.id,
+            await createPatientPhotoSignedUrl(patient.photo_path),
+          ] as const,
+      ),
+    ),
+  ]);
 
   const tagIdsByPatient = new Map<string, string[]>();
   (patientTagsResult.data ?? []).forEach((item) => {
@@ -192,6 +210,7 @@ export default async function PacientesPage({
       address,
     ]),
   );
+  const photoUrlByPatient = new Map(photoEntries);
   const rows = patients.map((patient) => {
     const encounter = latestEncounterByPatient.get(patient.id);
     const address = addressByPatient.get(patient.id);
@@ -218,6 +237,7 @@ export default async function PacientesPage({
 
     return {
       ...patient,
+      photoUrl: photoUrlByPatient.get(patient.id) ?? null,
       completenessAvailable: canSeeSensitive,
       completenessMissing: canSeeSensitive ? completeness.missing : [],
       completenessPercentage: canSeeSensitive ? completeness.percentage : 0,

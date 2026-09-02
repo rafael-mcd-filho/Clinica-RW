@@ -40,8 +40,6 @@ import {
 import { toast } from "sonner";
 import {
   changeAppointmentStatus,
-  createAppointment,
-  createQuickPatientFromAgenda,
   createScheduleBlock,
   rescheduleAppointment,
   startAppointmentEncounter,
@@ -52,12 +50,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input, MultiSelect, Select, Textarea } from "@/components/ui/field";
+import { AppointmentFormModal } from "@/components/agenda/appointment-form-modal";
+import { Input, MultiSelect, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/ui/page-header";
-import { PatientSearchField } from "@/components/patient-search-field";
 import {
   addAgendaPeriod,
   buildAgendaEncounterHref,
@@ -2572,28 +2570,9 @@ function AppointmentForm({
   triggerTabIndex?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [selectedScheduleId, setSelectedScheduleId] = useState("");
-  const [selectedProcedureId, setSelectedProcedureId] = useState("");
-  const submitAppointment = useCallback(
-    async (previousState: AgendaActionState, formData: FormData) => {
-      const result = await createAppointment(previousState, formData);
-      if (result.success) {
-        toast.success(result.success);
-        setSelectedScheduleId("");
-        setSelectedProcedureId("");
-        setOpen(false);
-      }
-      return result;
-    },
-    [],
-  );
-  const [state, action, pending] = useActionState(
-    submitAppointment,
-    initialState,
-  );
-  const selectedProcedure = data.procedures.find(
-    (item) => item.id === selectedProcedureId,
-  );
+
+  // O formulário em si é o componente compartilhado: o mesmo que o painel de
+  // contato do atendimento abre. Aqui fica só o gatilho.
   return (
     <>
       <Button
@@ -2612,210 +2591,14 @@ function AppointmentForm({
         <Plus className="size-4" aria-hidden="true" />
         Novo agendamento
       </Button>
-      <Modal
+      <AppointmentFormModal
         open={open}
         onClose={() => setOpen(false)}
-        title="Novo agendamento"
-        description="A duração será definida pelo procedimento."
-        className="max-w-2xl"
-      >
-        <form
-          action={action}
-          aria-busy={pending}
-          className="grid gap-4 md:grid-cols-2"
-        >
-          <PatientSearchField
-            patients={data.patients}
-            remoteSearch
-            canCreatePatient={canCreatePatient}
-            createPatientAction={createQuickPatientFromAgenda}
-            className="md:col-span-2"
-          />
-          <label className="grid gap-2 text-sm font-medium">
-            Agenda
-            <Select
-              name="schedule_id"
-              required
-              value={selectedScheduleId}
-              onValueChange={setSelectedScheduleId}
-            >
-              <option value="">Selecione</option>
-              {data.schedules.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="grid gap-2 text-sm font-medium">
-            Procedimento
-            <Select
-              name="procedure_id"
-              required
-              value={selectedProcedureId}
-              onValueChange={setSelectedProcedureId}
-            >
-              <option value="">Selecione</option>
-              {data.procedures.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} ({item.duration_minutes} min)
-                </option>
-              ))}
-            </Select>
-          </label>
-          <AppointmentTimeField
-            name="start_at"
-            label="Data e hora"
-            required
-            durationMinutes={selectedProcedure?.duration_minutes ?? 30}
-            scheduleId={selectedScheduleId}
-            procedureId={selectedProcedureId}
-            data={data}
-            className="md:col-span-2"
-          />
-          <OptionSelect
-            name="room_id"
-            label="Sala (opcional)"
-            options={data.rooms}
-            optional
-          />
-          <OptionSelect
-            name="health_insurance_id"
-            label="Convênio (opcional)"
-            options={data.insurances}
-            optional
-          />
-          <OptionSelect
-            name="payment_method_id"
-            label="Forma de pagamento (opcional)"
-            options={data.paymentMethods}
-            optional
-          />
-          <label className="grid gap-2 text-sm font-medium md:col-span-2">
-            Observações
-            <Textarea name="notes" />
-          </label>
-          {canExtra ? (
-            <div className="md:col-span-2">
-              <Checkbox name="is_extra" label="Registrar como encaixe" />
-            </div>
-          ) : null}
-          {state.error ? (
-            <p className="text-sm text-destructive md:col-span-2">
-              {state.error}
-            </p>
-          ) : null}
-          <div className="flex justify-end gap-2 md:col-span-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setOpen(false)}
-            >
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={pending || !data.schedules.length}>
-              {pending ? "Salvando..." : "Agendar"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        data={data}
+        canExtra={canExtra}
+        canCreatePatient={canCreatePatient}
+      />
     </>
-  );
-}
-
-function AppointmentTimeField({
-  name,
-  label,
-  durationMinutes,
-  scheduleId,
-  procedureId,
-  data,
-  required,
-  className,
-}: {
-  name: string;
-  label: string;
-  durationMinutes: number;
-  scheduleId: string;
-  procedureId: string;
-  data: AgendaData;
-  required?: boolean;
-  className?: string;
-}) {
-  const initial = defaultAppointmentDateTime(data.timeZone, data.selectedDate);
-  const [date, setDate] = useState(initial.date);
-  const [startTime, setStartTime] = useState(initial.time);
-  const normalizedStart = normalizeTimeValue(startTime);
-  const endTime = addMinutesToTime(
-    date,
-    normalizedStart,
-    durationMinutes,
-    data.timeZone,
-  );
-  const value = date ? `${date}T${normalizedStart}` : "";
-
-  function fillNextFreeSlot() {
-    if (!scheduleId || !procedureId) {
-      toast.error("Selecione agenda e procedimento antes.");
-      return;
-    }
-
-    const next = findNextFreeSlot({
-      data,
-      scheduleId,
-      durationMinutes,
-      date,
-      time: normalizedStart,
-    });
-
-    if (!next) {
-      toast.error("Nenhum horário livre encontrado na janela carregada.");
-      return;
-    }
-
-    setDate(next.date);
-    setStartTime(next.time);
-  }
-
-  return (
-    <label className={`grid gap-2 text-sm font-medium ${className ?? ""}`}>
-      {label}
-      <input type="hidden" name={name} value={value} />
-      <div className="flex flex-wrap items-center gap-2">
-        <DatePickerInput
-          name={`${name}_date`}
-          value={date}
-          onValueChange={setDate}
-          required={required}
-          ariaLabel={`${label}: data`}
-          className="w-44"
-          todayValue={localDateKey(new Date().toISOString(), data.timeZone)}
-        />
-        <TimeTextInput
-          value={startTime}
-          onChange={setStartTime}
-          onBlur={() => setStartTime(normalizedStart)}
-          ariaLabel={`${label}: horário inicial`}
-        />
-        <span className="text-sm font-medium text-muted-foreground">às</span>
-        <Input
-          value={endTime}
-          readOnly
-          aria-label={`${label}: horário final`}
-          className="w-20 text-center tabular-nums"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="text-primary"
-          onClick={fillNextFreeSlot}
-        >
-          <RefreshCw className="size-4" />
-          Próximo horário livre
-        </Button>
-      </div>
-    </label>
   );
 }
 
@@ -2928,37 +2711,6 @@ function TimeTextInput({
       maxLength={5}
       className="w-20 text-center tabular-nums"
     />
-  );
-}
-
-function OptionSelect({
-  name,
-  label,
-  options,
-  optional,
-}: {
-  name: string;
-  label: string;
-  options: Option[];
-  optional?: boolean;
-}) {
-  return (
-    <label className="grid gap-2 text-sm font-medium">
-      {label}
-      <Select
-        name={name}
-        required={!optional}
-        defaultValue=""
-        allowEmptyOption={optional}
-      >
-        <option value="">{optional ? "Nenhum" : "Selecione"}</option>
-        {options.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.name}
-          </option>
-        ))}
-      </Select>
-    </label>
   );
 }
 
@@ -3648,151 +3400,11 @@ function normalizeTimeValue(value: string) {
   return `${hour}:${minute}`;
 }
 
-function addMinutesToTime(
-  date: string,
-  time: string,
-  minutes: number,
-  timeZone: string,
-) {
-  const start = parseLocalDateTimeForUi(date, time, timeZone);
-  if (!start) return "--:--";
-  return localDateTimeParts(
-    new Date(start.getTime() + minutes * 60_000),
-    timeZone,
-  ).time;
-}
-
-function findNextFreeSlot({
-  data,
-  scheduleId,
-  durationMinutes,
-  date,
-  time,
-}: {
-  data: AgendaData;
-  scheduleId: string;
-  durationMinutes: number;
-  date: string;
-  time: string;
-}) {
-  const schedule = data.schedules.find((item) => item.id === scheduleId);
-  const initial = parseLocalDateTimeForUi(date, time, data.timeZone);
-  if (!schedule || !initial) return null;
-
-  const sortedAvailability = data.availability
-    .filter((item) => item.schedule_id === scheduleId)
-    .sort(
-      (a, b) =>
-        a.weekday - b.weekday || a.start_time.localeCompare(b.start_time),
-    );
-
-  for (let offset = 0; offset <= 90; offset += 1) {
-    const initialLocalDate = localDateKey(initial.toISOString(), data.timeZone);
-    const day = addDays(localDateFromKey(initialLocalDate), offset);
-    const dayKey = dateKey(day);
-    if (dayKey > data.visibleTo) break;
-    const dayStartLimit =
-      offset === 0
-        ? initial
-        : parseLocalDateTimeForUi(dayKey, "00:00", data.timeZone);
-    const dayAvailability = sortedAvailability.filter(
-      (item) => item.weekday === day.getUTCDay(),
-    );
-
-    for (const availability of dayAvailability) {
-      const windowStart = parseLocalDateTimeForUi(
-        dayKey,
-        availability.start_time.slice(0, 5),
-        data.timeZone,
-      );
-      const windowEnd = parseLocalDateTimeForUi(
-        dayKey,
-        availability.end_time.slice(0, 5),
-        data.timeZone,
-      );
-
-      if (!windowStart || !windowEnd || !dayStartLimit) continue;
-
-      let candidate = roundDateToStep(
-        maxDate(dayStartLimit, windowStart),
-        availability.slot_minutes,
-      );
-
-      while (
-        candidate.getTime() + durationMinutes * 60_000 <=
-        windowEnd.getTime()
-      ) {
-        const candidateEnd = new Date(
-          candidate.getTime() + durationMinutes * 60_000,
-        );
-
-        if (
-          !hasScheduleConflict({
-            data,
-            schedule,
-            startAt: candidate,
-            endAt: candidateEnd,
-          })
-        ) {
-          return localDateTimeParts(candidate, data.timeZone);
-        }
-
-        candidate = new Date(
-          candidate.getTime() + availability.slot_minutes * 60_000,
-        );
-      }
-    }
-  }
-
-  return null;
-}
-
-function hasScheduleConflict({
-  data,
-  schedule,
-  startAt,
-  endAt,
-}: {
-  data: AgendaData;
-  schedule: AgendaData["schedules"][number];
-  startAt: Date;
-  endAt: Date;
-}) {
-  return (
-    data.appointments.some((appointment) => {
-      if (
-        appointment.schedule_id !== schedule.id &&
-        appointment.professional_id !== schedule.professional_id
-      ) {
-        return false;
-      }
-      return intervalsOverlap(
-        startAt,
-        endAt,
-        new Date(appointment.start_at),
-        new Date(appointment.end_at),
-      );
-    }) ||
-    data.blocks.some((block) => {
-      if (block.schedule_id !== schedule.id) return false;
-      return intervalsOverlap(
-        startAt,
-        endAt,
-        new Date(block.start_at),
-        new Date(block.end_at),
-      );
-    })
-  );
-}
-
-function intervalsOverlap(startA: Date, endA: Date, startB: Date, endB: Date) {
-  return startA < endB && endA > startB;
-}
-
-function maxDate(first: Date, second: Date) {
-  return first > second ? first : second;
-}
-
+// Todos os horários de início livres do dia para aquela agenda, no passo de
+// cada janela de atendimento e já descontando a duração do procedimento, os
+// agendamentos existentes e os bloqueios. Fora da faixa carregada pela agenda
+// devolve vazio: sem os agendamentos daquele dia em mãos, oferecer horário
+// "livre" seria chute.
 function roundDateToStep(value: Date, stepMinutes: number) {
   const stepMs = Math.max(stepMinutes, 1) * 60_000;
   return new Date(Math.ceil(value.getTime() / stepMs) * stepMs);
