@@ -11,6 +11,7 @@ import {
 } from "@/lib/agenda/range";
 import { buildWeeklyAvailabilityIntervals } from "@/lib/agenda/weekly-availability";
 import type { AppointmentFormData } from "@/lib/agenda/slots";
+import { databaseErrorMessage } from "@/lib/errors/database";
 import {
   createQuickPatient,
   type QuickPatientActionState,
@@ -110,7 +111,47 @@ function friendlyError(message: string, code?: string) {
   if (message.includes("Professional scope denied")) {
     return "Seu perfil so pode iniciar atendimentos do proprio profissional.";
   }
-  return message;
+  // O que não é específico da agenda cai no tradutor geral de erro de banco,
+  // em vez de vazar o texto cru do Postgres para dentro do formulário.
+  return databaseErrorMessage({ message, code });
+}
+
+/** Indexa o preço de convênio por `${convênio}:${procedimento}`, que é como o
+    formulário procura. Tabela inativa não entra. */
+function buildInsurancePriceMap(
+  rows:
+    | Array<{
+        procedure_id: string;
+        price: number | string;
+        price_tables:
+          | { health_insurance_id: string | null; active: boolean }
+          | Array<{ health_insurance_id: string | null; active: boolean }>
+          | null;
+      }>
+    | null,
+): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const row of rows ?? []) {
+    const table = Array.isArray(row.price_tables)
+      ? row.price_tables[0]
+      : row.price_tables;
+    if (!table?.active || !table.health_insurance_id) continue;
+    map[`${table.health_insurance_id}:${row.procedure_id}`] = Number(row.price);
+  }
+  return map;
+}
+
+/**
+ * Valor digitado em português ("1.250,00") vira número. Campo vazio devolve
+ * `null` — que é diferente de zero: nulo deixa o banco resolver pelo preço de
+ * tabela, zero é uma cortesia deliberada.
+ */
+function parseCurrencyInput(value: FormDataEntryValue | null): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Number.parseFloat(
+    value.trim().replace(/\./g, "").replace(",", "."),
+  );
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function normalizeSlug(value: string) {
@@ -1051,6 +1092,170 @@ export async function createWaitlistEntry(
   return { success: "Paciente adicionado à fila de espera." };
 }
 
+/**
+ * Tira alguém da fila sem agendar: marca que já houve contato ou desiste da
+ * vaga. O encaixe fecha a entrada por outro caminho — `createAppointment`
+ * recebe o `waitlist_entry_id` e marca como `scheduled` junto com o
+ * agendamento, para a fila não depender de uma segunda ação do atendente.
+ */
+export async function updateWaitlistEntryStatus(
+  entryId: string,
+  _state: AgendaActionState,
+  formData: FormData,
+): Promise<AgendaActionState> {
+  const context = await getRequestContext();
+  if (
+    !context.organization ||
+    !(
+      context.permissionCodes.has("agenda.criar_agendamento") ||
+      context.permissionCodes.has("agenda.editar_agendamento")
+    )
+  ) {
+    return { error: "Acesso negado." };
+  }
+  const parsed = z
+    .object({ status: z.enum(["waiting", "contacted", "cancelled"]) })
+    .safeParse({ status: formData.get("status") });
+  if (!parsed.success) return { error: "Situação inválida para a fila." };
+
+  const supabase = await createSupabaseServerClient();
+  // "Contatado" sem data envelhece sem ninguém perceber: o carimbo e o autor
+  // vão junto com a mudança de situação.
+  const { error } = await supabase
+    .from("waitlist_entries")
+    .update({
+      status: parsed.data.status,
+      ...(parsed.data.status === "contacted"
+        ? {
+            contacted_at: new Date().toISOString(),
+            contacted_by_user_id: context.effectiveUser?.id ?? null,
+          }
+        : {}),
+    })
+    .eq("id", entryId)
+    .eq("organization_id", context.organization.id);
+  if (error) return { error: friendlyError(error.message, error.code) };
+
+  revalidatePath("/agenda");
+  revalidatePath("/dashboard");
+  return {
+    success:
+      parsed.data.status === "cancelled"
+        ? "Paciente removido da fila de espera."
+        : parsed.data.status === "contacted"
+          ? "Paciente marcado como contatado."
+          : "Paciente voltou para a fila.",
+  };
+}
+
+export type WaitlistCandidate = {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  patient_phone: string | null;
+  procedure_name: string | null;
+  professional_name: string | null;
+  preferred_period: string | null;
+  status: string;
+  notes: string | null;
+  created_at: string;
+};
+
+/**
+ * Quem da fila de espera cabe no horário que este agendamento acabou de
+ * liberar.
+ *
+ * É o elo que faltava entre cancelar e a fila: sem ele a vaga abre em silêncio
+ * e a fila só é consultada se alguém lembrar. O casamento (procedimento,
+ * profissional, turno, ordem de chegada) é feito no banco, que é quem sabe o
+ * fuso da empresa.
+ */
+export async function loadWaitlistCandidatesForAppointment(
+  appointmentId: string,
+): Promise<{ ok: boolean; data?: WaitlistCandidate[]; error?: string }> {
+  const context = await getRequestContext();
+  if (
+    !context.organization ||
+    !(
+      context.permissionCodes.has("agenda.criar_agendamento") ||
+      context.permissionCodes.has("agenda.editar_agendamento")
+    )
+  ) {
+    return { ok: false, error: "Acesso negado." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data: appointment } = await supabase
+    .from("appointments")
+    .select("professional_id, procedure_id, start_at")
+    .eq("id", appointmentId)
+    .eq("organization_id", context.organization.id)
+    .maybeSingle<{
+      professional_id: string;
+      procedure_id: string;
+      start_at: string;
+    }>();
+  if (!appointment) return { ok: false, error: "Agendamento não encontrado." };
+
+  const { data, error } = await supabase.rpc("waitlist_candidates_for_slot", {
+    p_professional_id: appointment.professional_id,
+    p_procedure_id: appointment.procedure_id,
+    p_start_at: appointment.start_at,
+    p_limit: 10,
+  });
+  if (error) return { ok: false, error: friendlyError(error.message, error.code) };
+
+  return { ok: true, data: (data ?? []) as WaitlistCandidate[] };
+}
+
+/** Catálogos do formulário de entrada na fila de espera, sob demanda. */
+export async function loadWaitlistFormData(): Promise<{
+  ok: boolean;
+  data?: {
+    procedures: Array<{ id: string; name: string }>;
+    professionals: Array<{ id: string; name: string }>;
+  };
+  error?: string;
+}> {
+  const context = await getRequestContext();
+  if (
+    !context.organization ||
+    !(
+      context.permissionCodes.has("agenda.criar_agendamento") ||
+      context.permissionCodes.has("agenda.editar_agendamento")
+    )
+  ) {
+    return { ok: false, error: "Acesso negado." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const [procedures, professionals] = await Promise.all([
+    supabase
+      .from("procedures")
+      .select("id, name")
+      .eq("organization_id", context.organization.id)
+      .eq("active", true)
+      .order("name"),
+    supabase
+      .from("professionals")
+      .select("id, name")
+      .eq("organization_id", context.organization.id)
+      .eq("active", true)
+      .order("name"),
+  ]);
+
+  return {
+    ok: true,
+    data: {
+      procedures: (procedures.data ?? []) as Array<{ id: string; name: string }>,
+      professionals: (professionals.data ?? []) as Array<{
+        id: string;
+        name: string;
+      }>,
+    },
+  };
+}
+
 export async function createAppointment(
   _state: AgendaActionState,
   formData: FormData,
@@ -1068,6 +1273,10 @@ export async function createAppointment(
       start_at: z.string().min(16),
       notes: z.string().trim().optional(),
       is_extra: z.boolean(),
+      waitlist_entry_id: z.union([z.string().uuid(), z.literal("")]),
+      price: z.number().min(0).max(9_999_999).nullable(),
+      list_price: z.number().min(0).max(9_999_999).nullable(),
+      price_note: z.string().trim().max(200).optional(),
     })
     .safeParse({
       patient_id: formData.get("patient_id"),
@@ -1079,6 +1288,10 @@ export async function createAppointment(
       start_at: formData.get("start_at"),
       notes: formData.get("notes") || undefined,
       is_extra: formData.get("is_extra") === "on",
+      waitlist_entry_id: formData.get("waitlist_entry_id") ?? "",
+      price: parseCurrencyInput(formData.get("price")),
+      list_price: parseCurrencyInput(formData.get("list_price")),
+      price_note: formData.get("price_note") || undefined,
     });
   if (!parsed.success)
     return { error: "Preencha paciente, agenda, procedimento e horário." };
@@ -1136,13 +1349,68 @@ export async function createAppointment(
     end_at: endAt.toISOString(),
     notes: parsed.data.notes || null,
     is_extra: parsed.data.is_extra,
+    // Valor em branco deixa o gatilho resolver pelo preço de tabela; valor
+    // informado é o que vale, e o preço de tabela vai junto para o desconto
+    // ficar registrado em vez de sumir dentro do valor final.
+    price: parsed.data.price,
+    list_price: parsed.data.list_price,
+    price_note: parsed.data.price_note || null,
     created_by_user_id: context.effectiveUser?.id ?? null,
   });
   if (error) return { error: friendlyError(error.message, error.code) };
+
+  // Veio da fila de espera: a vaga saiu, então a entrada se fecha aqui mesmo.
+  // Uma falha nesse fechamento não desfaz o agendamento — só deixa o paciente
+  // na fila, situação que o atendente resolve removendo a entrada.
+  if (parsed.data.waitlist_entry_id) {
+    await supabase
+      .from("waitlist_entries")
+      .update({ status: "scheduled" })
+      .eq("id", parsed.data.waitlist_entry_id)
+      .eq("organization_id", context.organization.id);
+  }
+
   revalidatePath("/agenda");
   revalidatePath("/dashboard");
   revalidatePath("/relatorios/agendamentos");
   return { success: "Agendamento criado." };
+}
+
+/**
+ * Ajusta o valor de um agendamento já criado.
+ *
+ * O gatilho no banco acerta o recebível em aberto junto — sem isso o desconto
+ * ficaria só na agenda e o financeiro seguiria cobrando o valor antigo. Depois
+ * de pago o recebível não se mexe: aí o acerto é pelo financeiro, com o
+ * histórico do pagamento à vista.
+ */
+export async function updateAppointmentPrice(
+  appointmentId: string,
+  _state: AgendaActionState,
+  formData: FormData,
+): Promise<AgendaActionState> {
+  const context = await requireAgendaPermission("agenda.editar_agendamento");
+  if (!context?.organization) return { error: "Acesso negado." };
+
+  const price = parseCurrencyInput(formData.get("price"));
+  if (price === null) {
+    return { error: "Informe um valor válido para o agendamento." };
+  }
+  const note = String(formData.get("price_note") ?? "").trim();
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase
+    .from("appointments")
+    .update({ price, price_note: note || null })
+    .eq("id", appointmentId)
+    .eq("organization_id", context.organization.id);
+  if (error) return { error: friendlyError(error.message, error.code) };
+
+  revalidatePath("/agenda");
+  revalidatePath("/dashboard");
+  revalidatePath("/financeiro");
+  revalidatePath("/relatorios/agendamentos");
+  return { success: "Valor do agendamento atualizado." };
 }
 
 export async function updateAppointmentPaymentMethod(
@@ -1547,6 +1815,7 @@ export async function loadAppointmentFormData(): Promise<{
     availability,
     appointments,
     blocks,
+    insurancePrices,
   ] = await Promise.all([
     supabase
       .from("schedules")
@@ -1556,7 +1825,7 @@ export async function loadAppointmentFormData(): Promise<{
       .order("name"),
     supabase
       .from("procedures")
-      .select("id, name, duration_minutes")
+      .select("id, name, duration_minutes, base_price")
       .eq("organization_id", organizationId)
       .eq("active", true)
       .order("name"),
@@ -1597,6 +1866,13 @@ export async function loadAppointmentFormData(): Promise<{
       .eq("organization_id", organizationId)
       .lt("start_at", rangeEnd)
       .gt("end_at", rangeStart),
+    // Tabela de preço por convênio: é o que faz o valor mudar sozinho ao
+    // escolher o convênio, na mesma regra que `resolve_procedure_price` aplica
+    // no banco na hora de gravar.
+    supabase
+      .from("price_table_items")
+      .select("procedure_id, price, price_tables!inner(health_insurance_id, active)")
+      .eq("organization_id", organizationId),
   ]);
 
   return {
@@ -1604,6 +1880,7 @@ export async function loadAppointmentFormData(): Promise<{
     data: {
       timeZone,
       selectedDate: today,
+      insurancePrices: buildInsurancePriceMap(insurancePrices.data),
       visibleFrom: today,
       visibleTo,
       schedules: (schedules.data ?? []) as AppointmentFormData["schedules"],

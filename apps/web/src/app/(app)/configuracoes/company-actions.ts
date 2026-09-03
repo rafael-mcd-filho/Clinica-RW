@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { provisionCompanyUserAccess } from "@/lib/auth/company-user-admin";
 import { getRequestContext } from "@/lib/auth/context";
+import { databaseErrorMessage } from "@/lib/errors/database";
 import {
   removeOrganizationLogo,
   uploadOrganizationLogo,
@@ -584,15 +585,190 @@ export async function saveRegistration(
         .update(payload)
         .eq("id", recordId)
         .eq("organization_id", context.organization.id)
-    : supabase.from(table).insert(payload);
+        .select("id")
+        .maybeSingle<{ id: string }>()
+    : supabase.from(table).insert(payload).select("id").maybeSingle<{
+        id: string;
+      }>();
 
-  const { error } = await query;
+  const { data: saved, error } = await query;
   if (error) {
     return { error: friendlyDatabaseError(error.message) };
   }
 
+  // O procedimento carrega os valores de convênio no mesmo formulário: quem
+  // está definindo quanto o item custa define ali todos os preços dele, em vez
+  // de salvar e ir procurar um segundo formulário.
+  if (kind === "procedure") {
+    const procedureId = recordId ?? saved?.id;
+    if (procedureId) {
+      const priceError = await saveInsurancePricesFromForm(
+        supabase,
+        context.organization.id,
+        procedureId,
+        formData,
+      );
+      if (priceError) return { error: priceError };
+    }
+  }
+
   refreshCompanySettings();
   return { success: recordId ? "Cadastro atualizado." : "Cadastro criado." };
+}
+
+/** Cadastros que podem ser excluídos quando nada aponta para eles. */
+export type DeletableRegistrationKind =
+  | "unit"
+  | "room"
+  | "equipment"
+  | "specialty"
+  | "procedure"
+  | "health_insurance";
+
+/**
+ * Exclui um cadastro base que ninguém está usando.
+ *
+ * Desativar continua sendo a resposta certa para item com histórico — apagar
+ * reescreveria o passado. Mas convênio cadastrado por engano ou procedimento
+ * criado num teste não precisa ficar na lista para sempre. O banco confere os
+ * vínculos e devolve qual deles impede, para a tela poder dizer o motivo em
+ * vez de um "erro ao excluir" genérico.
+ */
+export async function deleteRegistration(
+  kind: DeletableRegistrationKind,
+  recordId: string,
+): Promise<CompanyActionState> {
+  const context = await requireCompanyConfig();
+  if (!context?.organization) {
+    return { error: "Você não pode alterar estes cadastros." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("delete_unused_registration", {
+    p_kind: kind,
+    p_record_id: recordId,
+  });
+
+  if (error) {
+    if (error.code === "23503") {
+      return {
+        error: `Não é possível excluir: existem ${error.message} usando este cadastro. Desative em vez de excluir.`,
+      };
+    }
+    return { error: databaseErrorMessage(error, "Não foi possível excluir.") };
+  }
+
+  refreshCompanySettings();
+  return { success: "Cadastro excluído." };
+}
+
+/**
+ * Grava os campos `price_<convênio>` do formulário de procedimento.
+ *
+ * O banco guarda isso como `price_tables` (uma por convênio) com itens dentro;
+ * quem cadastra só informa "quanto este convênio paga por isto". A tabela do
+ * convênio é criada na primeira vez que for necessária. Campo em branco remove
+ * o item — é o jeito de dizer que o convênio não cobre o procedimento, e aí
+ * vale o preço particular.
+ */
+async function saveInsurancePricesFromForm(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  organizationId: string,
+  procedureId: string,
+  formData: FormData,
+): Promise<string | null> {
+  const entries: Array<{ insuranceId: string; price: number | null }> = [];
+  for (const [key, raw] of formData.entries()) {
+    if (!key.startsWith("price_")) continue;
+    const insuranceId = key.slice("price_".length);
+    if (!isUuid(insuranceId)) continue;
+    const text = String(raw ?? "").trim();
+    if (!text) {
+      entries.push({ insuranceId, price: null });
+      continue;
+    }
+    const parsed = Number.parseFloat(
+      text.replace(/\./g, "").replace(",", "."),
+    );
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return "Informe apenas valores numéricos e não negativos nos convênios.";
+    }
+    entries.push({ insuranceId, price: parsed });
+  }
+
+  if (!entries.length) return null;
+
+  const { data: tables } = await supabase
+    .from("price_tables")
+    .select("id, health_insurance_id")
+    .eq("organization_id", organizationId)
+    .in(
+      "health_insurance_id",
+      entries.map((entry) => entry.insuranceId),
+    )
+    .returns<Array<{ id: string; health_insurance_id: string }>>();
+
+  const tableByInsurance = new Map(
+    (tables ?? []).map((table) => [table.health_insurance_id, table.id]),
+  );
+
+  for (const entry of entries) {
+    let tableId = tableByInsurance.get(entry.insuranceId);
+
+    if (!tableId) {
+      if (entry.price === null) continue;
+      const { data: insurance } = await supabase
+        .from("health_insurances")
+        .select("name")
+        .eq("organization_id", organizationId)
+        .eq("id", entry.insuranceId)
+        .maybeSingle<{ name: string }>();
+      if (!insurance) continue;
+
+      const { data: created, error: createError } = await supabase
+        .from("price_tables")
+        .insert({
+          organization_id: organizationId,
+          health_insurance_id: entry.insuranceId,
+          name: `Tabela ${insurance.name}`,
+        })
+        .select("id")
+        .single<{ id: string }>();
+      if (createError) return friendlyDatabaseError(createError.message);
+      tableId = created.id;
+      tableByInsurance.set(entry.insuranceId, tableId);
+    }
+
+    if (entry.price === null) {
+      const { error } = await supabase
+        .from("price_table_items")
+        .delete()
+        .eq("organization_id", organizationId)
+        .eq("price_table_id", tableId)
+        .eq("procedure_id", procedureId);
+      if (error) return friendlyDatabaseError(error.message);
+      continue;
+    }
+
+    const { error } = await supabase.from("price_table_items").upsert(
+      {
+        organization_id: organizationId,
+        price_table_id: tableId,
+        procedure_id: procedureId,
+        price: entry.price,
+      },
+      { onConflict: "organization_id,price_table_id,procedure_id" },
+    );
+    if (error) return friendlyDatabaseError(error.message);
+  }
+
+  return null;
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 async function saveProfessionalRegistration({

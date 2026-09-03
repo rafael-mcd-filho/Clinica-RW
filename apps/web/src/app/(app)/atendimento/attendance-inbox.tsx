@@ -638,6 +638,7 @@ export function AttendanceInbox({
       setSelectedId(id);
       setMessages([]);
       setAttendanceEvents([]);
+      syncConversationUrl(id);
       await reloadMessages(id);
     },
     [reloadMessages],
@@ -721,6 +722,7 @@ export function AttendanceInbox({
           onBack={() => {
             selectedIdRef.current = null;
             setSelectedId(null);
+            syncConversationUrl(null);
           }}
           onToggleDetails={() => setDetailsOpen((value) => !value)}
           onOptimisticMessage={addOptimisticMessage}
@@ -1287,9 +1289,9 @@ function ConversationThread({
   onAssigned: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const threadContentRef = useRef<HTMLDivElement | null>(null);
   const isNearBottomRef = useRef(true);
   const nearBottomFrameRef = useRef<number | null>(null);
-  const hasPositionedInitiallyRef = useRef(false);
   const [pending, startTransition] = useTransition();
   const [confirmingCompletion, setConfirmingCompletion] = useState(false);
   const timelineGroups = useMemo(
@@ -1342,23 +1344,28 @@ function ConversationThread({
     return received.slice(-count)[0]?.id ?? null;
   }, [initialUnread, messages]);
 
-  const lastTimelineItem = timelineGroups.at(-1)?.items.at(-1);
-  const lastTimelineKey = lastTimelineItem
-    ? `${lastTimelineItem.kind}:${lastTimelineItem.id}`
-    : null;
-
+  // Abrir a conversa e enviar mensagem têm de terminar no fim da thread, e um
+  // `scrollTo` único não dava conta: as bolhas usam `content-visibility`, então
+  // até o navegador renderizar cada uma o `scrollHeight` é uma estimativa
+  // (44px por bolha), e imagem, áudio e vídeo só ganham altura depois de
+  // carregar. As duas coisas fazem a altura crescer *depois* do scroll, e a
+  // conversa parava no meio. Enquanto estiver colada no fim, toda mudança de
+  // altura reposiciona; quem rolar para trás solta a trava e é deixado em paz.
   useEffect(() => {
     const scrollArea = scrollRef.current;
-    if (!scrollArea || !lastTimelineKey) return;
-    const initialPosition = !hasPositionedInitiallyRef.current;
-    if (!initialPosition && !isNearBottomRef.current) return;
-    hasPositionedInitiallyRef.current = true;
-    const frame = window.requestAnimationFrame(() => {
-      if (!initialPosition && !isNearBottomRef.current) return;
-      scrollArea.scrollTo({ top: scrollArea.scrollHeight });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [lastTimelineKey]);
+    const content = threadContentRef.current;
+    if (!scrollArea || !content) return;
+
+    const pinToBottom = () => {
+      if (!isNearBottomRef.current) return;
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    };
+
+    pinToBottom();
+    const observer = new ResizeObserver(pinToBottom);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   function changeStatus(status: ConversationStatus) {
     startTransition(async () => {
@@ -1553,13 +1560,16 @@ function ConversationThread({
               24;
           });
         }}
-        className="min-h-0 flex-1 space-y-1.5 overflow-x-hidden overflow-y-auto overscroll-contain bg-surface-sunken px-4 py-5 sm:px-8"
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain bg-surface-sunken px-4 py-5 sm:px-8"
         style={{
           backgroundImage:
             "radial-gradient(color-mix(in srgb, var(--foreground) 5%, transparent) 1px, transparent 1px)",
           backgroundSize: "18px 18px",
         }}
       >
+        {/* O conteúdo tem o seu próprio elemento porque é a altura dele que o
+            ResizeObserver acompanha para manter a conversa colada no fim. */}
+        <div ref={threadContentRef} className="space-y-1.5">
         {messages.length || attendanceEvents.length ? (
           timelineGroups.map((group) => (
             <div key={group.key} className="w-full min-w-0 space-y-1.5">
@@ -1613,6 +1623,7 @@ function ConversationThread({
             Carregando mensagens…
           </p>
         )}
+        </div>
       </div>
 
       {/* O campo de digitação só existe depois que o atendimento começa; até
@@ -1621,7 +1632,12 @@ function ConversationThread({
         <MessageComposer
           conversationId={conversation.id}
           currentUserName={currentUserName}
-          onOptimisticMessage={onOptimisticMessage}
+          // Quem envia quer ver o que enviou: mesmo lendo o histórico lá em
+          // cima, mandar mensagem volta a prender a thread no fim.
+          onOptimisticMessage={(message) => {
+            isNearBottomRef.current = true;
+            onOptimisticMessage(message);
+          }}
           onMessageConfirmed={onMessageConfirmed}
           onMessageFailed={onMessageFailed}
           replyingTo={replyingTo}
@@ -1939,17 +1955,16 @@ const MessageBubble = memo(function MessageBubble({
         >
           <MoreVertical className="size-3.5" />
         </Button>
-        <p
-          className={cn(
-            "mt-0.5 flex min-h-3 items-center justify-end gap-1 text-caption leading-3 tabular-nums",
-            "text-muted-foreground",
-          )}
-        >
+        {/* O horário é uma marca de rodapé da bolha, não parte da leitura: em
+            algarismos, a altura cheia dos dígitos já compete com o texto da
+            mensagem, então fica abaixo da menor medida da escala e com o tom
+            rebaixado. */}
+        <p className="mt-0.5 flex min-h-3 items-center justify-end gap-1 text-[10px] leading-3 tabular-nums text-muted-foreground/75">
           {formatTime(message.createdAt)}
           {outbound && !isNote && message.status === "queued" ? (
             <span className="italic">enviando…</span>
           ) : outbound && !isNote && message.status === "read" ? (
-            <CheckCheck className="size-3.5" aria-hidden="true" />
+            <CheckCheck className="size-3" aria-hidden="true" />
           ) : null}
         </p>
         <Modal
@@ -3113,6 +3128,28 @@ function compareConversationActivity(
 
 function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
+}
+
+/**
+ * Espelha a conversa aberta em `?conversation=`, para recarregar a página (ou
+ * mandar o link para alguém) cair na mesma conversa — a página já lê esse
+ * parâmetro e traz a conversa mesmo que ela esteja fora da primeira página.
+ *
+ * Escreve direto no histórico do navegador em vez de navegar pelo router: a
+ * página monta a caixa de entrada com `key` no id da conversa, então uma
+ * navegação de verdade remontaria tudo e jogaria fora mensagens carregadas,
+ * rascunho e posição de rolagem. `replaceState` mantém o Voltar saindo da
+ * tela, e não empilhando uma entrada por conversa aberta.
+ */
+function syncConversationUrl(conversationId: string | null) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (conversationId) {
+    url.searchParams.set("conversation", conversationId);
+  } else {
+    url.searchParams.delete("conversation");
+  }
+  window.history.replaceState(window.history.state, "", url);
 }
 
 const timeFormatter = new Intl.DateTimeFormat("pt-BR", {

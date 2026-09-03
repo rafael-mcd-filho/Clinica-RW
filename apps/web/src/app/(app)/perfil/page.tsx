@@ -4,6 +4,7 @@ import {
   ShieldCheck,
   UserCircle as UserRound,
 } from "@phosphor-icons/react/dist/ssr";
+import { CacheCard } from "./cache-card";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   getCurrentAppUser,
@@ -83,6 +84,8 @@ export default async function PerfilPage() {
           ))}
         </div>
       </section>
+
+      {appUser?.organization_id ? <CacheCard /> : null}
     </div>
   );
 }

@@ -131,7 +131,7 @@ export function PlatformSettingsForm({
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-2 text-sm font-medium">
+          <label className="grid content-start gap-2 text-sm font-medium">
             URL da Evolution API
             <Input
               name="evolution_api_url"
@@ -140,7 +140,7 @@ export function PlatformSettingsForm({
               placeholder="https://evolution.exemplo.com"
             />
           </label>
-          <label className="grid gap-2 text-sm font-medium">
+          <label className="grid content-start gap-2 text-sm font-medium">
             API key global
             <Input
               name="evolution_api_key"

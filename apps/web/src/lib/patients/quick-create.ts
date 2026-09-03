@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getRequestContext } from "@/lib/auth/context";
+import { databaseErrorMessage } from "@/lib/errors/database";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { onlyDigits } from "@/lib/validation/br";
 
@@ -67,7 +68,9 @@ export async function createQuickPatient(
     .single<NonNullable<QuickPatientActionState["patient"]>>();
 
   if (error || !patient) {
-    return { error: error?.message ?? "Falha ao cadastrar paciente." };
+    return {
+      error: databaseErrorMessage(error, "Falha ao cadastrar paciente."),
+    };
   }
 
   revalidatePath("/pacientes");

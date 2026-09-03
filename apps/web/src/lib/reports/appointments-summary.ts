@@ -64,6 +64,7 @@ type AppointmentRow = {
   status: string;
   start_at: string;
   end_at: string;
+  price: number | string | null;
   patients: { full_name: string; social_name: string | null } | null;
   procedures: { name: string; base_price: number | string | null } | null;
   health_insurances: { name: string } | null;
@@ -159,7 +160,7 @@ export async function buildAppointmentSummaryData({
   let appointmentsQuery = supabase
     .from("appointments")
     .select(
-      "id, patient_id, procedure_id, health_insurance_id, unit_id, payment_method_id, status, start_at, end_at, patients(full_name, social_name), procedures(name, base_price), health_insurances(name), units(name), payment_methods(name)",
+      "id, patient_id, procedure_id, health_insurance_id, unit_id, payment_method_id, status, start_at, end_at, price, patients(full_name, social_name), procedures(name, base_price), health_insurances(name), units(name), payment_methods(name)",
     )
     .eq("organization_id", organizationId)
     .gte("start_at", startOfDayIso(filters.from))
@@ -374,11 +375,17 @@ function resolvePaymentStatus(receivable: ReceivableRow | null) {
   return "pending";
 }
 
+// Ordem importa: o recebível é o que a clínica realmente vai cobrar; o valor
+// do agendamento é o que foi combinado na marcação; o preço do procedimento é
+// só o último recurso, e é o que fazia reajuste de tabela reescrever o
+// faturamento de meses fechados.
 function resolvePrice(
   appointment: AppointmentRow,
   receivable: ReceivableRow | null,
 ) {
   if (receivable) return Number(receivable.amount) || 0;
+  const appointmentPrice = Number(appointment.price ?? 0);
+  if (appointmentPrice > 0) return appointmentPrice;
   const basePrice = Number(appointment.procedures?.base_price ?? 0);
   return basePrice > 0 ? basePrice : null;
 }

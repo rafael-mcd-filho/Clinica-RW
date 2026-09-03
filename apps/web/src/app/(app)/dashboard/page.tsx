@@ -101,9 +101,14 @@ type SupabaseServerClient = Awaited<
 type DashboardRowsResult<T> = {
   data: T[] | null;
   error: unknown | null;
+  count?: number | null;
 };
 
 const dashboardQueryPageSize = 500;
+// Fila de espera e solicitações online chegam recortadas: o painel mostra as
+// primeiras e o total vem por `count`, para não montar a página inteira em
+// cima de uma lista que pode ter centenas de linhas.
+const operationsListLimit = 50;
 const dashboardAppointmentColumns =
   "id, patient_id, procedure_id, health_insurance_id, status, start_at, end_at, created_at";
 
@@ -226,6 +231,12 @@ export default async function DashboardPage({
           context.permissionCodes.has("agenda.criar_agendamento") ||
           context.permissionCodes.has("agenda.editar_agendamento")
         }
+        canManageWaitlist={
+          context.permissionCodes.has("agenda.criar_agendamento") ||
+          context.permissionCodes.has("agenda.editar_agendamento")
+        }
+        canCreatePatient={context.permissionCodes.has("paciente.criar")}
+        canExtra={context.permissionCodes.has("agenda.encaixar")}
         searchParams={params}
         now={now}
       />
@@ -840,7 +851,7 @@ async function fetchAllDashboardAppointments(
 }
 
 function emptyDashboardRows<T>(): DashboardRowsResult<T> {
-  return { data: [], error: null };
+  return { data: [], error: null, count: 0 };
 }
 
 async function CompanyDashboard({
@@ -849,6 +860,9 @@ async function CompanyDashboard({
   canViewAgenda,
   canManageOnlineRequests,
   canRejectOnlineRequests,
+  canManageWaitlist,
+  canCreatePatient,
+  canExtra,
   searchParams,
   now,
 }: {
@@ -857,6 +871,9 @@ async function CompanyDashboard({
   canViewAgenda: boolean;
   canManageOnlineRequests: boolean;
   canRejectOnlineRequests: boolean;
+  canManageWaitlist: boolean;
+  canCreatePatient: boolean;
+  canExtra: boolean;
   searchParams: Record<string, string | string[] | undefined>;
   now: Date;
 }) {
@@ -900,22 +917,26 @@ async function CompanyDashboard({
             ? supabase
                 .from("online_booking_requests")
                 .select(
-                  "id, requested_start_at, requested_end_at, patient_name, patient_email, patient_phone, patient_notes, procedures(name), professionals(name), units(name), health_insurances(name)",
+                  "id, created_at, requested_start_at, requested_end_at, patient_name, patient_email, patient_phone, patient_notes, procedures(name), professionals(name), units(name), health_insurances(name)",
+                  { count: "exact" },
                 )
                 .eq("organization_id", organization.id)
                 .eq("status", "requested")
                 .order("requested_start_at")
+                .limit(operationsListLimit)
                 .returns<DashboardOnlineRequest[]>()
             : Promise.resolve(emptyDashboardRows<DashboardOnlineRequest>()),
           canViewAgenda && selection.view === "operational"
             ? supabase
                 .from("waitlist_entries")
                 .select(
-                  "id, preferred_period, notes, created_at, patients(full_name, social_name), procedures(name), professionals(name)",
+                  "id, patient_id, procedure_id, professional_id, preferred_period, status, notes, created_at, patients(full_name, social_name), procedures(name), professionals(name)",
+                  { count: "exact" },
                 )
                 .eq("organization_id", organization.id)
                 .in("status", ["waiting", "contacted"])
                 .order("created_at")
+                .limit(operationsListLimit)
                 .returns<DashboardWaitlistEntry[]>()
             : Promise.resolve(emptyDashboardRows<DashboardWaitlistEntry>()),
         ])
@@ -1207,9 +1228,21 @@ async function CompanyDashboard({
               ) : (
                 <CompanyOperationsPanel
                   onlineRequests={onlineRequestsResult.data ?? []}
+                  onlineRequestsTotal={
+                    onlineRequestsResult.count ??
+                    (onlineRequestsResult.data?.length ?? 0)
+                  }
                   waitlist={waitlistResult.data ?? []}
+                  waitlistTotal={
+                    waitlistResult.count ?? (waitlistResult.data?.length ?? 0)
+                  }
+                  timeZone={timeZone}
+                  renderedAt={now.toISOString()}
                   canConfirmOnlineRequests={canManageOnlineRequests}
                   canRejectOnlineRequests={canRejectOnlineRequests}
+                  canManageWaitlist={canManageWaitlist}
+                  canCreatePatient={canCreatePatient}
+                  canExtra={canExtra}
                 />
               )
             ) : null}

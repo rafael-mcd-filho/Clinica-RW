@@ -34,6 +34,7 @@ export default async function AgendaPage({
     insurances,
     paymentMethods,
     availability,
+    insurancePrices,
   ] = await Promise.all([
     supabase
       .from("organization_settings")
@@ -73,7 +74,7 @@ export default async function AgendaPage({
       .order("name"),
     supabase
       .from("procedures")
-      .select("id, name, duration_minutes")
+      .select("id, name, duration_minutes, base_price")
       .eq("organization_id", organizationId)
       .eq("active", true)
       .order("name"),
@@ -95,6 +96,12 @@ export default async function AgendaPage({
       .eq("organization_id", organizationId)
       .order("weekday")
       .order("start_time"),
+    supabase
+      .from("price_table_items")
+      .select(
+        "procedure_id, price, price_tables!inner(health_insurance_id, active)",
+      )
+      .eq("organization_id", organizationId),
   ]);
 
   const timeZone = normalizeAgendaTimeZone(organizationSettings?.timezone);
@@ -120,7 +127,7 @@ export default async function AgendaPage({
     supabase
       .from("appointments")
       .select(
-        "id, patient_id, professional_id, procedure_id, schedule_id, unit_id, room_id, health_insurance_id, payment_method_id, status, start_at, end_at, notes, is_extra",
+        "id, patient_id, professional_id, procedure_id, schedule_id, unit_id, room_id, health_insurance_id, payment_method_id, status, start_at, end_at, notes, is_extra, price, list_price, price_note",
       )
       .eq("organization_id", organizationId)
       .gte("start_at", rangeStart)
@@ -187,6 +194,7 @@ export default async function AgendaPage({
     patients: patients.data ?? [],
     procedures: procedures.data ?? [],
     insurances: insurances.data ?? [],
+    insurancePrices: buildInsurancePriceMap(insurancePrices.data),
     paymentMethods: paymentMethods.data ?? [],
     appointments: appointmentRows,
     // Ocupação do mini calendário. Enquanto a migration do RPC não estiver
@@ -222,6 +230,31 @@ export default async function AgendaPage({
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+/** Indexa o preço de convênio por `${convênio}:${procedimento}`, que é como o
+    formulário de agendamento procura. Tabela inativa não entra. */
+function buildInsurancePriceMap(
+  rows:
+    | Array<{
+        procedure_id: string;
+        price: number | string;
+        price_tables:
+          | { health_insurance_id: string | null; active: boolean }
+          | Array<{ health_insurance_id: string | null; active: boolean }>
+          | null;
+      }>
+    | null,
+): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const row of rows ?? []) {
+    const table = Array.isArray(row.price_tables)
+      ? row.price_tables[0]
+      : row.price_tables;
+    if (!table?.active || !table.health_insurance_id) continue;
+    map[`${table.health_insurance_id}:${row.procedure_id}`] = Number(row.price);
+  }
+  return map;
 }
 
 function isDayCountMap(value: unknown): value is Record<string, number> {

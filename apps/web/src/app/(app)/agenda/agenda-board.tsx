@@ -26,6 +26,7 @@ import {
   Check,
   Clock as Clock3,
   FileText,
+  ListPlus,
   EnvelopeSimple as Mail,
   Phone,
   Plus,
@@ -41,16 +42,21 @@ import { toast } from "sonner";
 import {
   changeAppointmentStatus,
   createScheduleBlock,
+  loadWaitlistCandidatesForAppointment,
   rescheduleAppointment,
   startAppointmentEncounter,
   type AgendaActionState,
+  type WaitlistCandidate,
   updateAppointmentPaymentMethod,
+  updateAppointmentPrice,
 } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AddToWaitlistModal } from "@/components/agenda/add-to-waitlist-modal";
 import { AppointmentFormModal } from "@/components/agenda/appointment-form-modal";
+import { WaitlistSuggestionModal } from "@/components/agenda/waitlist-suggestion-modal";
 import { Input, MultiSelect, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
@@ -101,8 +107,15 @@ export type AgendaData = {
     phone?: string | null;
     whatsapp?: string | null;
   }>;
-  procedures: Array<{ id: string; name: string; duration_minutes: number }>;
+  procedures: Array<{
+    id: string;
+    name: string;
+    duration_minutes: number;
+    base_price?: number | null;
+  }>;
   insurances: Option[];
+  /** Preço por convênio: `${convênio}:${procedimento}`. */
+  insurancePrices?: Record<string, number>;
   paymentMethods: Option[];
   appointments: Array<{
     id: string;
@@ -119,6 +132,9 @@ export type AgendaData = {
     end_at: string;
     notes: string | null;
     is_extra: boolean;
+    price?: number | string | null;
+    list_price?: number | string | null;
+    price_note?: string | null;
   }>;
   // Total de agendamentos por dia local na grade do mini calendário, sem os
   // cancelados e independente dos filtros aplicados na tela.
@@ -354,6 +370,16 @@ function AgendaFloatingActions({
           <ScheduleBlockForm
             data={data}
             floatingTrigger
+            triggerTabIndex={expanded ? 0 : -1}
+            onTrigger={() => setExpanded(false)}
+          />
+        ) : null}
+        {/* Anotar na fila é o que sobra quando não há vaga — e é aqui, com a
+            grade na frente, que se descobre isso. Antes só dava para fazer
+            saindo da agenda e indo ao painel. */}
+        {canCreate ? (
+          <WaitlistEntryTrigger
+            canCreatePatient={canCreatePatient}
             triggerTabIndex={expanded ? 0 : -1}
             onTrigger={() => setExpanded(false)}
           />
@@ -2094,7 +2120,25 @@ function AppointmentDetailsModal({
               label="Convenio"
               value={insurance?.name ?? "Particular"}
             />
+            <SummaryItem
+              label="Valor"
+              value={
+                appointment.price === null || appointment.price === undefined
+                  ? "Nao informado"
+                  : formatMoney(appointment.price)
+              }
+              hint={appointmentPriceHint(appointment)}
+            />
           </div>
+
+          {canEdit ? (
+            <AppointmentPriceForm
+              appointmentId={appointment.id}
+              price={appointment.price ?? null}
+              listPrice={appointment.list_price ?? null}
+              priceNote={appointment.price_note ?? null}
+            />
+          ) : null}
 
           {canEdit ? (
             <PaymentMethodForm
@@ -2229,10 +2273,13 @@ function StartEncounterForm({
 function SummaryItem({
   label,
   value,
+  hint,
   icon: Icon,
 }: {
   label: string;
   value: React.ReactNode;
+  /** Linha de apoio abaixo do valor (ex.: o desconto aplicado). */
+  hint?: string | null;
   icon?: React.ComponentType<{ className?: string }>;
 }) {
   return (
@@ -2242,7 +2289,102 @@ function SummaryItem({
         {label}
       </p>
       <p className="mt-1 break-words text-sm font-medium">{value}</p>
+      {hint ? (
+        <p className="mt-0.5 break-words text-xs text-muted-foreground">
+          {hint}
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+function formatMoney(value: number | string) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number(value));
+}
+
+/** Conta a diferença entre o preço de tabela e o cobrado, com o motivo quando
+    houver — é o que transforma "R$ 360" em "R$ 360, com R$ 40 de desconto". */
+function appointmentPriceHint(appointment: {
+  price?: number | string | null;
+  list_price?: number | string | null;
+  price_note?: string | null;
+}) {
+  const price = Number(appointment.price ?? 0);
+  const listPrice = Number(appointment.list_price ?? 0);
+  const difference = listPrice - price;
+  if (!listPrice || Math.abs(difference) < 0.01) {
+    return appointment.price_note ?? null;
+  }
+  const label =
+    difference > 0
+      ? `${formatMoney(difference)} de desconto sobre ${formatMoney(listPrice)}`
+      : `${formatMoney(-difference)} acima da tabela de ${formatMoney(listPrice)}`;
+  return appointment.price_note ? `${label} · ${appointment.price_note}` : label;
+}
+
+/**
+ * Ajuste de valor do agendamento já criado, no mesmo formato do campo de forma
+ * de pagamento ao lado: mostra, deixa corrigir e salva ali mesmo.
+ */
+function AppointmentPriceForm({
+  appointmentId,
+  price,
+  listPrice,
+  priceNote,
+}: {
+  appointmentId: string;
+  price: number | string | null;
+  listPrice: number | string | null;
+  priceNote: string | null;
+}) {
+  const boundAction = updateAppointmentPrice.bind(null, appointmentId);
+  const [state, action, pending] = useActionState(boundAction, initialState);
+
+  useEffect(() => {
+    if (state.success) toast.success(state.success);
+    if (state.error) toast.error(state.error);
+  }, [state]);
+
+  const currentPrice = price === null ? "" : Number(price).toFixed(2).replace(".", ",");
+  const tableLabel =
+    listPrice === null || Number(listPrice) <= 0
+      ? null
+      : `Preço de tabela: ${formatMoney(listPrice)}`;
+
+  return (
+    <form
+      action={action}
+      className="grid gap-3 rounded-md border border-border bg-muted/20 p-3 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-end"
+    >
+      <label className="grid gap-2 text-sm font-medium">
+        Valor do agendamento
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">R$</span>
+          <Input
+            name="price"
+            inputMode="decimal"
+            defaultValue={currentPrice}
+            aria-label="Valor do agendamento"
+            className="text-right tabular-nums"
+          />
+        </div>
+      </label>
+      <label className="grid gap-2 text-sm font-medium">
+        Motivo do ajuste
+        <Input
+          name="price_note"
+          defaultValue={priceNote ?? ""}
+          maxLength={200}
+          placeholder={tableLabel ?? "Ex.: valor combinado."}
+        />
+      </label>
+      <Button type="submit" variant="secondary" disabled={pending}>
+        {pending ? "Salvando..." : "Salvar"}
+      </Button>
+    </form>
   );
 }
 
@@ -2753,6 +2895,7 @@ function StatusActions({
         <StatusActionForm
           key={String(next)}
           appointmentId={appointmentId}
+          startAt={startAt}
           nextStatus={String(next)}
           label={String(label)}
           icon={typeof Icon === "string" ? undefined : Icon}
@@ -2768,6 +2911,7 @@ function StatusActions({
 
 function StatusActionForm({
   appointmentId,
+  startAt,
   destructive,
   icon: Icon,
   label,
@@ -2775,15 +2919,20 @@ function StatusActionForm({
   requiresConfirmation,
 }: {
   appointmentId: string;
+  startAt: string;
   destructive: boolean;
   icon?: React.ComponentType<{ className?: string }>;
   label: string;
   nextStatus: string;
   requiresConfirmation: boolean;
 }) {
+  const timeZone = useAgendaTimeZone();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
+  const [waitlistCandidates, setWaitlistCandidates] = useState<
+    WaitlistCandidate[] | null
+  >(null);
 
   async function updateStatus() {
     setError(undefined);
@@ -2798,6 +2947,17 @@ function StatusActionForm({
       return false;
     }
     if (result.success) toast.success(result.success);
+
+    // Cancelamento e falta abrem um horário. É aqui que a fila de espera deixa
+    // de ser um caderno que ninguém abre: quem cabe naquele horário aparece
+    // sozinho, sem depender de alguém lembrar de conferir.
+    if (nextStatus === "cancelled" || nextStatus === "no_show") {
+      const candidates =
+        await loadWaitlistCandidatesForAppointment(appointmentId);
+      if (candidates.ok && candidates.data?.length) {
+        setWaitlistCandidates(candidates.data);
+      }
+    }
     return true;
   }
 
@@ -2805,6 +2965,14 @@ function StatusActionForm({
     setConfirming(false);
     setError(undefined);
   }
+
+  const waitlistSuggestion = waitlistCandidates ? (
+    <WaitlistSuggestionModal
+      candidates={waitlistCandidates}
+      slotLabel={formatSlotLabel(startAt, timeZone)}
+      onClose={() => setWaitlistCandidates(null)}
+    />
+  ) : null;
 
   if (requiresConfirmation) {
     const isFinalizing = nextStatus === "attended";
@@ -2849,26 +3017,74 @@ function StatusActionForm({
           error={error}
           onConfirm={updateStatus}
         />
+        {waitlistSuggestion}
       </>
     );
   }
 
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="primary"
-      disabled={pending}
-      onClick={() => {
-        startTransition(async () => {
-          await updateStatus();
-        });
-      }}
-    >
-      {Icon ? <Icon className="size-3.5" /> : null}
-      {pending ? "Atualizando..." : label}
-    </Button>
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="primary"
+        disabled={pending}
+        onClick={() => {
+          startTransition(async () => {
+            await updateStatus();
+          });
+        }}
+      >
+        {Icon ? <Icon className="size-3.5" /> : null}
+        {pending ? "Atualizando..." : label}
+      </Button>
+      {waitlistSuggestion}
+    </>
   );
+}
+
+function WaitlistEntryTrigger({
+  canCreatePatient,
+  triggerTabIndex,
+  onTrigger,
+}: {
+  canCreatePatient: boolean;
+  triggerTabIndex: number;
+  onTrigger: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        tabIndex={triggerTabIndex}
+        onClick={() => {
+          setOpen(true);
+          onTrigger();
+        }}
+        className="h-11 rounded-full px-4 shadow-[var(--shadow-hover)]"
+      >
+        <ListPlus className="size-4" aria-hidden="true" />
+        Fila de espera
+      </Button>
+      {open ? (
+        <AddToWaitlistModal
+          canCreatePatient={canCreatePatient}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function formatSlotLabel(startAt: string, timeZone: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone,
+  }).format(new Date(startAt));
 }
 
 function RescheduleForm({

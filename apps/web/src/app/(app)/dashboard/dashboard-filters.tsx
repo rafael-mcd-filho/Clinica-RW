@@ -4,7 +4,7 @@ import {
   ArrowsLeftRight as ArrowLeftRight,
   CalendarDots as CalendarRange,
 } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DateRangePickerInput } from "@/components/ui/date-picker-input";
 import { Select } from "@/components/ui/select";
@@ -39,6 +39,7 @@ export function DashboardFilters({
   comparisonRangeLabel: string;
   today: string;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
   const [view, setView] = useState(selection.view);
   const [period, setPeriod] = useState(selection.period);
   const [customRange, setCustomRange] = useState({
@@ -60,6 +61,7 @@ export function DashboardFilters({
   return (
     <section className="overflow-visible rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
       <form
+        ref={formRef}
         action="/dashboard"
         className="grid items-end gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[minmax(9rem,11rem)_minmax(10rem,13rem)_minmax(14rem,1fr)_auto]"
       >
@@ -106,6 +108,10 @@ export function DashboardFilters({
               panelAlign="end"
               className="[&>button]:h-9 [&>button]:bg-background [&>button]:shadow-none"
               onValueChange={setCustomRange}
+              // Concluir no calendário já recarrega o painel: exigir um segundo
+              // clique em "Aplicar", com o calendário cobrindo metade da tela,
+              // fazia parecer que a seleção não tinha pegado.
+              onApply={() => formRef.current?.requestSubmit()}
             />
           </label>
         ) : null}

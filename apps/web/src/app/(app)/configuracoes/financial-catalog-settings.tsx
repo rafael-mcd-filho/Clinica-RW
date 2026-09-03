@@ -8,6 +8,7 @@ import {
   useTransition,
 } from "react";
 import {
+  CaretRight,
   CreditCard,
   PencilSimple as Pencil,
   Plus,
@@ -46,6 +47,7 @@ const initialState: CatalogActionState = {};
 
 type ProcedureCostEditor = {
   procedureId?: string;
+  procedureName?: string;
   row?: ProcedureCostRow;
 };
 
@@ -54,6 +56,18 @@ type PaymentFeeEditor = {
   row?: PaymentMethodFeeRow;
 };
 
+/**
+ * Custos de cada procedimento, agrupados por procedimento.
+ *
+ * Antes este card repetia a lista inteira de procedimentos e cada nível ganhava
+ * o seu próprio botão "Custo" — três no total, sendo que o modal ainda
+ * perguntava de novo qual era o procedimento. Agora é uma linha por
+ * procedimento, que abre nos custos dele, e o modal já sabe de onde veio.
+ *
+ * Preço, particular e por convênio, mora no cadastro do procedimento: é lá que
+ * se decide quanto o item vale, e separar isso em duas telas obrigava a salvar
+ * uma para ir preencher a outra.
+ */
 export function ProcedureCostsSection({
   procedures,
   costs,
@@ -62,6 +76,9 @@ export function ProcedureCostsSection({
   costs: ProcedureCostRow[];
 }) {
   const [editor, setEditor] = useState<ProcedureCostEditor | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
   const costsByProcedure = useMemo(() => {
     const grouped = new Map<string, ProcedureCostRow[]>();
     for (const cost of costs) {
@@ -73,40 +90,44 @@ export function ProcedureCostsSection({
     return grouped;
   }, [costs]);
 
+  const visible = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return procedures;
+    return procedures.filter((procedure) =>
+      procedure.name.toLowerCase().includes(term),
+    );
+  }, [procedures, query]);
+
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
           <div>
             <div className="flex items-center gap-1.5">
-              <h2 className="font-semibold">Custos opcionais</h2>
+              <h2 className="font-semibold">Custos por procedimento</h2>
               <HelpTooltip>
-                Estes custos não alteram o preço cobrado. Eles ficam disponíveis
-                para análises de margem, comissão e custo operacional.
+                Custos não alteram o que é cobrado do paciente — eles entram no
+                relatório de margem e no de comissão. Os preços, particular e
+                por convênio, ficam no cadastro do procedimento acima.
               </HelpTooltip>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Configure comissão, taxa do local ou outros custos por
-              procedimento e serviço.
+              Comissão, aluguel de sala, materiais e impostos que incidem sobre
+              cada procedimento.
             </p>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setEditor({})}
-            disabled={!procedures.length}
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            Adicionar custo
-          </Button>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-4">
+      <CardContent className="grid gap-3">
         <Modal
           open={Boolean(editor)}
           onClose={() => setEditor(null)}
           title={editor?.row ? "Editar custo" : "Novo custo"}
-          description="Configure o custo operacional vinculado ao procedimento."
+          description={
+            editor?.procedureName
+              ? `Custo de ${editor.procedureName}. Não altera o valor cobrado do paciente.`
+              : "Configure o custo operacional vinculado ao procedimento."
+          }
           className="max-w-2xl"
         >
           {editor ? (
@@ -120,80 +141,175 @@ export function ProcedureCostsSection({
           ) : null}
         </Modal>
 
-        {procedures.map((procedure) => {
-          const procedureCosts = costsByProcedure.get(procedure.id) ?? [];
-          return (
-            <section
-              key={procedure.id}
-              className="rounded-md border border-border bg-background"
-              aria-labelledby={`procedure-costs-${procedure.id}`}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3
-                      id={`procedure-costs-${procedure.id}`}
-                      className="truncate text-sm font-semibold"
-                    >
-                      {procedure.name}
-                    </h3>
-                    <Badge variant={procedure.active ? "success" : "neutral"}>
-                      {procedure.active ? "Ativo" : "Inativo"}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {procedureCosts.length
-                      ? `${procedureCosts.length} custo${procedureCosts.length === 1 ? "" : "s"} configurado${procedureCosts.length === 1 ? "" : "s"}`
-                      : "Nenhum custo configurado"}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setEditor({ procedureId: procedure.id })}
-                >
-                  <Plus className="size-3.5" aria-hidden="true" />
-                  Custo
-                </Button>
-              </div>
-              <div className="grid gap-2 p-3">
-                {procedureCosts.map((cost) => (
-                  <CatalogRuleRow
-                    key={cost.id}
-                    name={cost.name}
-                    description={`${procedureCostTypeLabel(cost.cost_type)} · ${calculationLabel(cost.calculation_type, cost.value)}`}
-                    active={cost.active}
-                    onEdit={() =>
-                      setEditor({ procedureId: procedure.id, row: cost })
-                    }
-                    onToggle={(active) =>
-                      setProcedureCostActive(cost.id, active)
-                    }
-                    deleteTitle="Excluir custo?"
-                    deleteDescription="O custo será removido deste procedimento. Esta ação não altera atendimentos ou valores já cobrados."
-                    deleteAction={deleteProcedureCost.bind(null, cost.id)}
-                  />
-                ))}
-                {!procedureCosts.length ? (
-                  <p className="px-1 py-2 text-sm text-muted-foreground">
-                    O cadastro de custos é opcional.
-                  </p>
-                ) : null}
-              </div>
-            </section>
-          );
-        })}
+        {procedures.length > 6 ? (
+          <label className="relative">
+            <span className="sr-only">Pesquisar procedimento</span>
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Pesquisar procedimento ou serviço"
+              className="w-full"
+            />
+          </label>
+        ) : null}
+
+        {visible.map((procedure) => (
+          <ProcedureValueRow
+            key={procedure.id}
+            procedure={procedure}
+            costs={costsByProcedure.get(procedure.id) ?? []}
+            expanded={expandedId === procedure.id}
+            onToggleExpanded={() =>
+              setExpandedId((current) =>
+                current === procedure.id ? null : procedure.id,
+              )
+            }
+            onAddCost={() =>
+              setEditor({
+                procedureId: procedure.id,
+                procedureName: procedure.name,
+              })
+            }
+            onEditCost={(row) =>
+              setEditor({
+                procedureId: procedure.id,
+                procedureName: procedure.name,
+                row,
+              })
+            }
+          />
+        ))}
+
+        {procedures.length && !visible.length ? (
+          <p className="px-1 py-6 text-center text-sm text-muted-foreground">
+            Nenhum procedimento encontrado para “{query}”.
+          </p>
+        ) : null}
 
         {!procedures.length ? (
           <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-            Cadastre um procedimento ou serviço antes de adicionar custos.
+            Cadastre um procedimento ou serviço acima para definir valores e
+            custos.
           </p>
         ) : null}
       </CardContent>
     </Card>
   );
 }
+
+/** Uma linha por procedimento: fechada mostra o resumo do dinheiro; aberta,
+    tudo que o compõe. */
+function ProcedureValueRow({
+  procedure,
+  costs,
+  expanded,
+  onToggleExpanded,
+  onAddCost,
+  onEditCost,
+}: {
+  procedure: ProcedureRow;
+  costs: ProcedureCostRow[];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  onAddCost: () => void;
+  onEditCost: (row: ProcedureCostRow) => void;
+}) {
+  const basePrice = Number(procedure.base_price ?? 0);
+  const activeCosts = costs.filter((cost) => cost.active);
+  // O custo percentual só vira dinheiro sobre um preço: o resumo usa o
+  // particular, que é o valor de referência do procedimento.
+  const costTotal = activeCosts.reduce(
+    (total, cost) =>
+      total +
+      (cost.calculation_type === "percentage"
+        ? (basePrice * Number(cost.value)) / 100
+        : Number(cost.value)),
+    0,
+  );
+  return (
+    <section className="overflow-hidden rounded-md border border-border bg-background">
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        aria-expanded={expanded}
+        className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-[var(--motion-fast)] hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <CaretRight
+            className={`size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--motion-fast)] ${
+              expanded ? "rotate-90" : ""
+            }`}
+            aria-hidden="true"
+          />
+          <span className="truncate text-sm font-semibold">
+            {procedure.name}
+          </span>
+          {procedure.active ? null : <Badge variant="neutral">Inativo</Badge>}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span className="tabular-nums">
+            Particular{" "}
+            <strong className="font-semibold text-foreground">
+              {formatMoney(basePrice)}
+            </strong>
+          </span>
+          <span className="tabular-nums">
+            {activeCosts.length
+              ? `${activeCosts.length} custo${activeCosts.length === 1 ? "" : "s"} · ${formatMoney(costTotal)}`
+              : "Sem custos"}
+          </span>
+        </div>
+      </button>
+
+      {expanded ? (
+        <div className="grid gap-4 border-t border-border p-4">
+          <div className="grid gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-sm font-semibold">Custos deste item</h4>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={onAddCost}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                Adicionar custo
+              </Button>
+            </div>
+            {costs.map((cost) => (
+              <CatalogRuleRow
+                key={cost.id}
+                name={cost.name}
+                description={`${procedureCostTypeLabel(cost.cost_type)} · ${calculationLabel(cost.calculation_type, cost.value)}`}
+                active={cost.active}
+                compact
+                onEdit={() => onEditCost(cost)}
+                onToggle={(active) => setProcedureCostActive(cost.id, active)}
+                deleteTitle="Excluir custo?"
+                deleteDescription="O custo será removido deste procedimento. Esta ação não altera atendimentos ou valores já cobrados."
+                deleteAction={deleteProcedureCost.bind(null, cost.id)}
+              />
+            ))}
+            {!costs.length ? (
+              <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
+                Nenhum custo neste procedimento. Comissão, aluguel de sala e
+                materiais entram aqui e aparecem no relatório de margem.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
+}
+
 
 function ProcedureCostForm({
   procedures,
@@ -210,6 +326,7 @@ function ProcedureCostForm({
     saveProcedureCost.bind(null, editing?.id ?? null),
     initialState,
   );
+  const selectedProcedureId = editing?.procedure_id ?? procedureId ?? "";
 
   useEffect(() => {
     if (state.success) {
@@ -220,20 +337,23 @@ function ProcedureCostForm({
 
   return (
     <form action={action} className="grid min-w-0 gap-4 sm:grid-cols-2">
-      <CatalogField label="Procedimento ou serviço" required>
-        <Select
-          name="procedure_id"
-          required
-          defaultValue={editing?.procedure_id ?? procedureId ?? ""}
-        >
-          <option value="">Selecione</option>
-          {procedures.map((procedure) => (
-            <option key={procedure.id} value={procedure.id}>
-              {procedure.name}
-            </option>
-          ))}
-        </Select>
-      </CatalogField>
+      {/* Aberto de dentro de um procedimento, ele já está decidido: perguntar
+          de novo era só mais um passo para errar. O seletor volta a aparecer
+          quando o custo é criado sem contexto. */}
+      {selectedProcedureId ? (
+        <input type="hidden" name="procedure_id" value={selectedProcedureId} />
+      ) : (
+        <CatalogField label="Procedimento ou serviço" required>
+          <Select name="procedure_id" required defaultValue="">
+            <option value="">Selecione</option>
+            {procedures.map((procedure) => (
+              <option key={procedure.id} value={procedure.id}>
+                {procedure.name}
+              </option>
+            ))}
+          </Select>
+        </CatalogField>
+      )}
       <CatalogField label="Nome do custo" required>
         <Input
           name="name"

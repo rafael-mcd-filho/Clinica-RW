@@ -10,6 +10,7 @@ import {
   Wallet as WalletCards,
 } from "@phosphor-icons/react/dist/ssr";
 import type { Icon as LucideIcon } from "@phosphor-icons/react";
+import { MarginSection } from "./margin-section";
 import { ReportsFilters } from "./reports-filters";
 import { ReportsPanel, type ReportsPanelView } from "./reports-panel";
 import { Button } from "@/components/ui/button";
@@ -134,6 +135,16 @@ export async function ReportPage({
       </Card>
 
       <ReportsPanel data={data} view={view} />
+
+      {/* Margem só faz sentido onde o dinheiro está, e só para quem pode ver
+          custo — o RPC recusa quem não tem `financeiro.ver_geral`. */}
+      {view === "financial" &&
+      context.permissionCodes.has("financeiro.ver_geral") ? (
+        <MarginSection
+          from={`${filters.from}T00:00:00`}
+          to={`${filters.to}T23:59:59.999`}
+        />
+      ) : null}
     </div>
   );
 }

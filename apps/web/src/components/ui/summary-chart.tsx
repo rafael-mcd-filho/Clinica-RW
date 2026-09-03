@@ -43,6 +43,7 @@ export function SummaryBarChart({
               />
               <Bar
                 dataKey="value"
+                name="Quantidade"
                 fill="var(--primary)"
                 radius={[4, 4, 0, 0]}
               />

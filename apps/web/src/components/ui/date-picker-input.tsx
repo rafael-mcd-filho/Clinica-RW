@@ -221,16 +221,23 @@ export function DateRangePickerInput({
     getDesktopCalendarSnapshot,
     () => false,
   );
-  const [internalRange, setInternalRange] = useState<DateRange | undefined>({
-    from: parseDateKey(defaultFrom ?? ""),
-    to: parseDateKey(defaultTo ?? ""),
-  });
-  const range = value
-    ? {
-        from: parseDateKey(value.from),
-        to: parseDateKey(value.to),
-      }
-    : internalRange;
+  const [internalRange, setInternalRange] = useState<DateRange | undefined>(
+    () => {
+      const from = parseDateKey(defaultFrom ?? "");
+      const to = parseDateKey(defaultTo ?? "");
+      return from || to ? { from, to } : undefined;
+    },
+  );
+  // Sem nenhuma data escolhida o valor tem de ser `undefined`, e não um objeto
+  // com as duas pontas vazias: em modo range o DayPicker trata `{from:
+  // undefined}` como "já existe um intervalo", e o primeiro clique caía na
+  // regra de reiniciar seleção em vez de abrir um intervalo novo.
+  const controlledRange = value
+    ? parseDateKey(value.from) || parseDateKey(value.to)
+      ? { from: parseDateKey(value.from), to: parseDateKey(value.to) }
+      : undefined
+    : undefined;
+  const range = value ? controlledRange : internalRange;
   const fromValue = range?.from ? dateKey(range.from) : "";
   const toValue = range?.to ? dateKey(range.to) : "";
   const maximumDate = useMemo(() => parseDateKey(maxDate ?? ""), [maxDate]);
@@ -315,13 +322,19 @@ export function DateRangePickerInput({
               chevron: "size-4 fill-current",
               day: "h-9 w-9 p-0 text-center text-sm",
               day_button: "size-9 rounded-md",
+              // A folha de estilo do react-day-picker não é carregada neste
+              // projeto (o visual vem todo daqui), então sem esta linha dia
+              // desabilitado ficava idêntico a dia normal: clicar não fazia
+              // nada e parecia calendário quebrado.
+              disabled: "cursor-not-allowed opacity-40",
               month_caption:
                 "mb-2 flex min-h-9 items-center justify-center text-center",
               month_grid: "w-[252px] table-fixed border-collapse",
               months: "grid gap-3 md:grid-cols-2",
               nav: "absolute inset-x-3 top-3 flex justify-between",
+              outside: "opacity-40",
               range_end: "rounded-r-md bg-primary text-primary-foreground",
-              range_middle: "bg-primary/10 text-primary",
+              range_middle: "bg-primary-muted text-primary-hover",
               range_start: "rounded-l-md bg-primary text-primary-foreground",
               selected: "bg-primary text-primary-foreground",
               today: "font-semibold text-primary",
@@ -330,23 +343,31 @@ export function DateRangePickerInput({
             }}
             numberOfMonths={isDesktop ? 2 : 1}
           />
-          <div className="mt-2 flex justify-between border-t border-border pt-2">
+          <div className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-2">
             <Button
               type="button"
               size="sm"
               variant="ghost"
               onClick={() => {
                 updateRange(undefined);
-                setOpen(false);
                 triggerRef.current?.focus();
               }}
             >
               Limpar
             </Button>
+            {/* Só a data inicial escolhida: dizer o que falta evita o "cliquei
+                e não aconteceu nada" de quem acha que já selecionou tudo. */}
+            <span className="text-body-sm text-muted-foreground">
+              {fromValue && !toValue
+                ? "Escolha a data final"
+                : fromValue && toValue
+                  ? formatRange(range)
+                  : "Escolha a data inicial"}
+            </span>
             <Button
               type="button"
               size="sm"
-              variant="ghost"
+              variant="secondary"
               disabled={!fromValue || !toValue}
               onClick={() => {
                 if (!fromValue || !toValue) return;
@@ -355,7 +376,7 @@ export function DateRangePickerInput({
                 triggerRef.current?.focus();
               }}
             >
-              Fechar
+              Concluir
             </Button>
           </div>
         </CalendarPopover>

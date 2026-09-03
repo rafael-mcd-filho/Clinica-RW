@@ -30,8 +30,15 @@ export type AppointmentFormData = {
     phone?: string | null;
     whatsapp?: string | null;
   }>;
-  procedures: Array<{ id: string; name: string; duration_minutes: number }>;
+  procedures: Array<{
+    id: string;
+    name: string;
+    duration_minutes: number;
+    base_price?: number | null;
+  }>;
   insurances: Array<{ id: string; name: string }>;
+  /** Preço por convênio, quando a empresa mantém tabela: `${convênio}:${procedimento}`. */
+  insurancePrices?: Record<string, number>;
   paymentMethods: Array<{ id: string; name: string }>;
   appointments: Array<{
     id: string;
@@ -211,6 +218,30 @@ export function hasScheduleConflict({
       );
     })
   );
+}
+
+/**
+ * Preço de tabela de um procedimento, na mesma regra que o banco aplica em
+ * `resolve_procedure_price`: convênio com tabela própria manda, senão o preço
+ * base do procedimento. Aqui serve só para preencher o campo antes de salvar —
+ * quem decide de verdade continua sendo o gatilho no banco.
+ */
+export function resolveListPrice({
+  data,
+  procedureId,
+  healthInsuranceId,
+}: {
+  data: AppointmentFormData;
+  procedureId: string;
+  healthInsuranceId: string;
+}): number {
+  if (!procedureId) return 0;
+  if (healthInsuranceId) {
+    const tabled = data.insurancePrices?.[`${healthInsuranceId}:${procedureId}`];
+    if (typeof tabled === "number") return tabled;
+  }
+  const procedure = data.procedures.find((item) => item.id === procedureId);
+  return Number(procedure?.base_price ?? 0);
 }
 
 /** O dia tem grade conhecida: janelas cadastradas para aquele dia da semana e

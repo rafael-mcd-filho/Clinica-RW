@@ -23,6 +23,7 @@ import {
   listFreeSlotsForDay,
   localDateKey,
   normalizeTimeValue,
+  resolveListPrice,
   type AppointmentFormData,
 } from "@/lib/agenda/slots";
 
@@ -31,11 +32,14 @@ const initialState: AgendaActionState = {};
 /**
  * O formulário de novo agendamento, um só para o sistema inteiro.
  *
- * A agenda e o painel de contato do atendimento montam o mesmo modal: mudar um
- * campo aqui muda nos dois lugares, que é justamente o que se perdia quando
- * cada tela mantinha a sua cópia. Quem chama entrega os catálogos e a grade
- * (`data`); com um paciente fixo (`patient`) a busca some e o vínculo já vai
- * resolvido.
+ * A agenda, o painel de contato do atendimento e a fila de espera montam o
+ * mesmo modal: mudar um campo aqui muda nos três lugares, que é justamente o
+ * que se perdia quando cada tela mantinha a sua cópia. Quem chama entrega os
+ * catálogos e a grade (`data`); com um paciente fixo (`patient`) a busca some e
+ * o vínculo já vai resolvido.
+ *
+ * Os `default*` só valem na montagem: quem reaproveita o modal para outro
+ * paciente deve trocar a `key` para o formulário nascer de novo.
  */
 export function AppointmentFormModal({
   open,
@@ -44,6 +48,11 @@ export function AppointmentFormModal({
   canExtra = false,
   canCreatePatient = false,
   patient = null,
+  title = "Novo agendamento",
+  defaultScheduleId = "",
+  defaultProcedureId = "",
+  defaultExtra = false,
+  waitlistEntryId = null,
   onCreated,
 }: {
   open: boolean;
@@ -53,24 +62,32 @@ export function AppointmentFormModal({
   canCreatePatient?: boolean;
   /** Paciente já definido (criação a partir de um contato/conversa). */
   patient?: { id: string; name: string } | null;
+  title?: string;
+  defaultScheduleId?: string;
+  defaultProcedureId?: string;
+  defaultExtra?: boolean;
+  /** Entrada da fila de espera que este agendamento fecha. */
+  waitlistEntryId?: string | null;
   onCreated?: () => void;
 }) {
-  const [scheduleId, setScheduleId] = useState("");
-  const [procedureId, setProcedureId] = useState("");
+  const [scheduleId, setScheduleId] = useState(defaultScheduleId);
+  const [procedureId, setProcedureId] = useState(defaultProcedureId);
+  const [healthInsuranceId, setHealthInsuranceId] = useState("");
 
   const submitAppointment = useCallback(
     async (previousState: AgendaActionState, formData: FormData) => {
       const result = await createAppointment(previousState, formData);
       if (result.success) {
         toast.success(result.success);
-        setScheduleId("");
-        setProcedureId("");
+        setScheduleId(defaultScheduleId);
+        setProcedureId(defaultProcedureId);
+        setHealthInsuranceId("");
         onCreated?.();
         onClose();
       }
       return result;
     },
-    [onClose, onCreated],
+    [defaultProcedureId, defaultScheduleId, onClose, onCreated],
   );
   const [state, action, pending] = useActionState(
     submitAppointment,
@@ -86,12 +103,19 @@ export function AppointmentFormModal({
   const rooms = selectedSchedule
     ? data.rooms.filter((room) => room.unit_id === selectedSchedule.unit_id)
     : data.rooms;
+  // Preço de tabela pela mesma regra do banco: convênio manda, senão o preço
+  // base. Muda sozinho quando o procedimento ou o convênio muda.
+  const listPrice = resolveListPrice({
+    data,
+    procedureId,
+    healthInsuranceId,
+  });
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Novo agendamento"
+      title={title}
       description={
         patient
           ? `A duração será definida pelo procedimento. Paciente: ${patient.name}.`
@@ -104,6 +128,13 @@ export function AppointmentFormModal({
         aria-busy={pending}
         className="grid gap-4 md:grid-cols-2"
       >
+        {waitlistEntryId ? (
+          <input
+            type="hidden"
+            name="waitlist_entry_id"
+            value={waitlistEntryId}
+          />
+        ) : null}
         {patient ? (
           <input type="hidden" name="patient_id" value={patient.id} />
         ) : (
@@ -163,25 +194,48 @@ export function AppointmentFormModal({
           options={rooms}
           optional
         />
-        <OptionSelect
-          name="health_insurance_id"
-          label="Convênio (opcional)"
-          options={data.insurances}
-          optional
-        />
+        <label className="grid gap-2 text-body-sm font-medium">
+          Convênio (opcional)
+          <Select
+            name="health_insurance_id"
+            value={healthInsuranceId}
+            onValueChange={setHealthInsuranceId}
+            allowEmptyOption
+          >
+            <option value="">Nenhum</option>
+            {data.insurances.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </Select>
+        </label>
         <OptionSelect
           name="payment_method_id"
           label="Forma de pagamento (opcional)"
           options={data.paymentMethods}
           optional
         />
+        <AppointmentPriceField
+          listPrice={listPrice}
+          className="md:col-span-2"
+        />
         <label className="grid gap-2 text-body-sm font-medium md:col-span-2">
           Observações
           <Textarea name="notes" maxLength={1000} />
         </label>
         {canExtra ? (
-          <div className="md:col-span-2">
-            <Checkbox name="is_extra" label="Registrar como encaixe" />
+          <div className="md:col-span-2 grid gap-1">
+            <Checkbox
+              name="is_extra"
+              label="Registrar como encaixe"
+              defaultChecked={defaultExtra}
+            />
+            <p className="text-body-sm font-normal text-muted-foreground">
+              Permite marcar fora do horário de atendimento do profissional.
+              Bloqueios da agenda e conflito com outro agendamento continuam
+              valendo.
+            </p>
           </div>
         ) : null}
         {state.error ? (
@@ -203,6 +257,107 @@ export function AppointmentFormModal({
       </form>
     </Modal>
   );
+}
+
+/**
+ * Valor do agendamento: chega preenchido pelo preço de tabela e aceita ajuste.
+ *
+ * O preço de tabela fica visível ao lado do campo justamente para o ajuste ser
+ * consciente — quem dá desconto vê de quanto foi. Sem esse campo, o valor só
+ * aparecia depois, no recebível que o banco criava a partir do preço do
+ * procedimento, sem convênio e sem chance de negociar nada.
+ */
+function AppointmentPriceField({
+  listPrice,
+  className,
+}: {
+  listPrice: number;
+  className?: string;
+}) {
+  const [touched, setTouched] = useState(false);
+  const [value, setValue] = useState("");
+  // Enquanto ninguém digitou, o campo acompanha procedimento e convênio.
+  const shownValue = touched ? value : formatPriceInput(listPrice);
+  const numericValue = parsePriceInput(shownValue);
+  const discount = listPrice - numericValue;
+
+  return (
+    <div className={`grid gap-2 text-body-sm font-medium ${className ?? ""}`}>
+      <span>Valor do agendamento</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-body-sm text-muted-foreground">R$</span>
+        <Input
+          name="price"
+          inputMode="decimal"
+          value={shownValue}
+          onChange={(event) => {
+            setTouched(true);
+            setValue(event.target.value);
+          }}
+          aria-label="Valor do agendamento"
+          className="w-32 text-right tabular-nums"
+        />
+        <span className="text-body-sm font-normal text-muted-foreground">
+          {listPrice > 0
+            ? `tabela: ${formatCurrency(listPrice)}`
+            : "sem preço cadastrado para este procedimento"}
+        </span>
+        {touched && listPrice > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-primary"
+            onClick={() => {
+              setTouched(false);
+              setValue("");
+            }}
+          >
+            <RefreshCw className="size-4" aria-hidden="true" />
+            Voltar ao preço de tabela
+          </Button>
+        ) : null}
+      </div>
+      {Math.abs(discount) >= 0.01 ? (
+        <>
+          <input
+            type="hidden"
+            name="list_price"
+            value={formatPriceInput(listPrice)}
+          />
+          <label className="grid gap-2">
+            <span className="font-normal text-muted-foreground">
+              {discount > 0
+                ? `Desconto de ${formatCurrency(discount)} — registre o motivo`
+                : `Acréscimo de ${formatCurrency(-discount)} — registre o motivo`}
+            </span>
+            <Input
+              name="price_note"
+              maxLength={200}
+              placeholder="Ex.: retorno de cortesia, valor combinado."
+            />
+          </label>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function formatPriceInput(value: number) {
+  return value > 0 ? value.toFixed(2).replace(".", ",") : "";
+}
+
+function parsePriceInput(value: string) {
+  const normalized = value.replace(/\./g, "").replace(",", ".");
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
 }
 
 export function AppointmentTimeField({

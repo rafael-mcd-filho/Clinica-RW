@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import {
   Package as Boxes,
@@ -18,22 +19,26 @@ import {
   Plus,
   FloppyDisk as Save,
   Stethoscope,
+  Trash,
   UsersThree as UsersRound,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   completeOnboarding,
+  deleteRegistration,
   saveBusinessHours,
   saveClinicSettings,
   saveRegistration,
   setRegistrationActive,
   type CompanyActionState,
+  type DeletableRegistrationKind,
   type RegistrationKind,
 } from "./company-actions";
 import {
   PaymentMethodsSettings,
   ProcedureCostsSection,
 } from "./financial-catalog-settings";
+import { InsurancePriceFields } from "./insurance-price-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -121,6 +126,22 @@ export function CompanySettings({
   organizationLogoUrl: string | null;
   canManageUsers: boolean;
 }) {
+  // As tabelas de preço são por convênio; o cadastro do procedimento pergunta
+  // "quanto este convênio paga por isto". Este índice faz a ponte entre os dois
+  // formatos.
+  const insurancePriceMap = useMemo(() => {
+    const tableInsurance = new Map(
+      data.priceTables.map((table) => [table.id, table.health_insurance_id]),
+    );
+    const map: Record<string, number> = {};
+    for (const item of data.priceTableItems) {
+      const insuranceId = tableInsurance.get(item.price_table_id);
+      if (!insuranceId) continue;
+      map[`${insuranceId}:${item.procedure_id}`] = Number(item.price);
+    }
+    return map;
+  }, [data.priceTables, data.priceTableItems]);
+
   const checklist = [
     { label: "Dados da clínica", done: Boolean(data.clinic.trade_name) },
     { label: "Unidade ativa", done: data.units.some((item) => item.active) },
@@ -346,6 +367,18 @@ export function CompanySettings({
                       help: "Valor padrão do procedimento para atendimentos particulares.",
                     },
                   ]}
+                  // Quem está definindo quanto o item custa define ali todos os
+                  // preços dele — particular e convênios — em vez de salvar e
+                  // procurar um segundo formulário.
+                  extraFields={(editing) => (
+                    <InsurancePriceFields
+                      procedureId={
+                        editing ? String(editing.id) : null
+                      }
+                      insurances={data.healthInsurances}
+                      insurancePrices={insurancePriceMap}
+                    />
+                  )}
                   summary={(row) =>
                     `${row.duration_minutes} min · ${formatCurrency(Number(row.base_price))}`
                   }
@@ -934,6 +967,81 @@ function OperationModeOption({
   );
 }
 
+const deletableRegistrationKinds = new Set<string>([
+  "unit",
+  "room",
+  "equipment",
+  "specialty",
+  "procedure",
+  "health_insurance",
+]);
+
+/**
+ * Excluir de vez, quando nada aponta para o cadastro.
+ *
+ * A checagem de vínculos mora no banco: só ele sabe se aquele convênio está
+ * num agendamento antigo. Quando está, a recusa volta dizendo qual vínculo
+ * impede, e a mensagem sugere desativar — que é o que resolve nesse caso.
+ */
+function DeleteRegistrationButton({
+  kind,
+  row,
+  itemLabel,
+}: {
+  kind: DeletableRegistrationKind;
+  row: EditableRow;
+  itemLabel: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string>();
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        aria-label={`Excluir ${String(row.name)}`}
+        title="Excluir"
+        disabled={pending}
+        onClick={() => {
+          setError(undefined);
+          setConfirming(true);
+        }}
+      >
+        <Trash className="size-3.5 text-destructive" aria-hidden="true" />
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title={`Excluir ${itemLabel}?`}
+        description={`${String(row.name)} será removido definitivamente. Se já houver histórico vinculado, a exclusão é recusada e você poderá apenas desativar.`}
+        confirmLabel="Excluir"
+        pendingLabel="Excluindo..."
+        destructive
+        pending={pending}
+        error={error}
+        onConfirm={() =>
+          new Promise<boolean>((resolve) => {
+            startTransition(async () => {
+              const result = await deleteRegistration(kind, String(row.id));
+              if (result.error) {
+                setError(result.error);
+                toast.error(result.error);
+                resolve(false);
+                return;
+              }
+              if (result.success) toast.success(result.success);
+              resolve(true);
+            });
+          })
+        }
+      />
+    </>
+  );
+}
+
 function RegistrationSection({
   kind,
   title,
@@ -945,6 +1053,7 @@ function RegistrationSection({
   itemLabel = "Cadastro",
   itemGender = "feminine",
   canManageUsers = false,
+  extraFields,
 }: {
   kind: Exclude<RegistrationKind, "price_item">;
   title: string;
@@ -956,6 +1065,7 @@ function RegistrationSection({
   itemLabel?: string;
   itemGender?: "feminine" | "masculine";
   canManageUsers?: boolean;
+  extraFields?: (editing: EditableRow | null) => React.ReactNode;
 }) {
   const [editing, setEditing] = useState<EditableRow | null>(null);
   const [confirmingDeactivate, setConfirmingDeactivate] =
@@ -963,6 +1073,11 @@ function RegistrationSection({
   const [formOpen, setFormOpen] = useState(false);
   const itemLabelLower = itemLabel.toLowerCase();
   const feminineItem = itemGender === "feminine";
+  // Profissional fica de fora: ele carrega acesso ao sistema e prontuário, e
+  // some por outro caminho.
+  const deletableKind = deletableRegistrationKinds.has(kind)
+    ? (kind as DeletableRegistrationKind)
+    : null;
   const finishEditing = useCallback(() => {
     setEditing(null);
     setFormOpen(false);
@@ -1074,6 +1189,16 @@ function RegistrationSection({
                       </Button>
                     </form>
                   )}
+                  {/* Desativar é para item com histórico; excluir é para o que
+                      entrou por engano. O banco decide qual dos dois cabe — se
+                      houver vínculo, a exclusão é recusada dizendo qual. */}
+                  {deletableKind ? (
+                    <DeleteRegistrationButton
+                      kind={deletableKind}
+                      row={row}
+                      itemLabel={itemLabelLower}
+                    />
+                  ) : null}
                 </div>
               </div>
             ))
@@ -1133,6 +1258,7 @@ function RegistrationSection({
             onFinished={finishEditing}
             modal
             canManageUsers={canManageUsers}
+            extraFields={extraFields}
           />
         </Modal>
       ) : null}
@@ -1147,6 +1273,7 @@ function RegistrationForm({
   onFinished,
   modal = false,
   canManageUsers = false,
+  extraFields,
 }: {
   kind: Exclude<RegistrationKind, "price_item">;
   fields: FieldDefinition[];
@@ -1154,6 +1281,8 @@ function RegistrationForm({
   onFinished: () => void;
   modal?: boolean;
   canManageUsers?: boolean;
+  /** Campos que só um cadastro específico tem, no mesmo submit. */
+  extraFields?: (editing: EditableRow | null) => React.ReactNode;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const confirmedUnlinkRef = useRef(false);
@@ -1256,6 +1385,11 @@ function RegistrationForm({
             />
           ) : null}
         </div>
+        {extraFields ? (
+          <div className="border-t border-border pt-4">
+            {extraFields(editing)}
+          </div>
+        ) : null}
         <FormError message={state.error} className="mt-3" />
         <div className="mt-2 flex justify-end gap-2 border-t border-border pt-4">
           {modal ? (

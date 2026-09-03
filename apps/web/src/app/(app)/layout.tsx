@@ -230,6 +230,10 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
         href: "/relatorios/financeiro",
         label: "Financeiro",
       });
+      reportChildren.push({
+        href: "/relatorios/comissoes",
+        label: "Comissões",
+      });
     }
 
     if (canViewClinicalReports) {
