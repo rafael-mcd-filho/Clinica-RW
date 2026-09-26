@@ -65,10 +65,8 @@ export default async function Home() {
             <ShieldCheck className="size-4" aria-hidden="true" />
             Operação clínica integrada
           </div>
-          <h1 className="text-4xl font-semibold leading-tight md:text-5xl">
-            {settings.app_name}
-          </h1>
-          <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
+          <h1 className="text-heading font-semibold">{settings.app_name}</h1>
+          <p className="mt-5 max-w-2xl text-reading leading-7 text-muted-foreground">
             Um ambiente único para organizar a rotina da clínica com acesso
             seguro, informações centralizadas e fluxos de atendimento
             consistentes.
@@ -95,7 +93,9 @@ export default async function Home() {
                 className="size-5 text-primary"
                 aria-hidden="true"
               />
-              <h2 className="mt-4 text-sm font-semibold">{highlight.label}</h2>
+              <h2 className="mt-4 text-heading-sm font-semibold">
+                {highlight.label}
+              </h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 {highlight.description}
               </p>

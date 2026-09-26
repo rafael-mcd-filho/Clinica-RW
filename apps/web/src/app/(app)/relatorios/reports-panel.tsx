@@ -43,11 +43,7 @@ import { cn } from "@/lib/utils";
 type MetricTone = "primary" | "success" | "warning" | "destructive" | "neutral";
 
 export type ReportsPanelView =
-  | "overview"
-  | "operational"
-  | "financial"
-  | "clinical"
-  | "professionals";
+  "overview" | "operational" | "financial" | "clinical" | "professionals";
 
 const metricToneClass: Record<MetricTone, string> = {
   primary: "bg-primary-muted text-primary",
@@ -152,7 +148,7 @@ function OverviewSection({ data }: { data: ReportData }) {
           </Link>
         </CardHeader>
         <CardContent>
-          <p className="text-3xl font-semibold tabular-nums">
+          <p className="text-display font-semibold tabular-nums">
             {data.professionals.length}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -455,7 +451,9 @@ function ProfessionalsSection({ data }: { data: ReportData }) {
   return (
     <section className="grid gap-3">
       <div>
-        <h2 className="text-base font-semibold">Desempenho por profissional</h2>
+        <h2 className="text-heading-sm font-semibold">
+          Desempenho por profissional
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Consulta, faturamento e producao clinica conforme as permissoes do
           usuario.
@@ -520,7 +518,7 @@ function OperationalProfessionalsTable({
 
   return (
     <section className="grid gap-3">
-      <h2 className="text-base font-semibold">Agenda por profissional</h2>
+      <h2 className="text-heading-sm font-semibold">Agenda por profissional</h2>
       <DataTable
         columns={columns}
         data={rows}
@@ -577,7 +575,7 @@ function FinancialDreTable({
 
   return (
     <section className="grid gap-3">
-      <h2 className="text-base font-semibold">DRE simplificada</h2>
+      <h2 className="text-heading-sm font-semibold">DRE simplificada</h2>
       <DataTable columns={columns} data={rows} pageSize={8} />
     </section>
   );
@@ -606,7 +604,7 @@ function MetricCard({
           <Icon className="size-5" aria-hidden="true" />
         </div>
         <p className="mt-4 text-sm text-muted-foreground">{label}</p>
-        <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+        <p className="mt-1 text-display font-semibold tabular-nums">{value}</p>
       </CardContent>
     </Card>
   );
@@ -626,7 +624,7 @@ function InlineMetric({
       <Icon className="size-5 shrink-0 text-primary" aria-hidden="true" />
       <div className="min-w-0">
         <p className="truncate text-sm text-muted-foreground">{label}</p>
-        <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
+        <p className="mt-1 text-heading font-semibold tabular-nums">{value}</p>
       </div>
     </div>
   );
@@ -657,7 +655,7 @@ function BarChartCard({
                 <XAxis
                   dataKey="label"
                   interval={0}
-                  tick={{ fontSize: 11 }}
+                  tick={{ fontSize: "var(--text-caption)" }}
                   tickFormatter={(value: string) =>
                     value.length > 12 ? `${value.slice(0, 12)}...` : value
                   }

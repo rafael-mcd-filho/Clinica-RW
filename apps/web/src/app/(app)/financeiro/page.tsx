@@ -41,12 +41,8 @@ type FinanceSummaryRpcRow = {
 };
 
 type FinancePeriodMetricsRow = {
-  accrual_revenue: number | string;
-  accrual_expense: number | string;
   cash_in: number | string;
   cash_out: number | string;
-  open_receivable: number | string;
-  open_payable: number | string;
   average_collection_days: number | string;
 };
 
@@ -230,13 +226,15 @@ export async function renderFinanceiroPage(
           .order("name")
           .returns<FinancialCategoryRow[]>()
       : Promise.resolve({ data: [] as FinancialCategoryRow[] }),
-    supabase
-      .rpc("get_finance_period_metrics", {
-        p_organization_id: organizationId,
-        p_from: period.from,
-        p_to: period.to,
-      })
-      .returns<FinancePeriodMetricsRow[]>(),
+    canViewCash || canViewPayables
+      ? supabase
+          .rpc("get_finance_cash_metrics", {
+            p_organization_id: organizationId,
+            p_from: period.from,
+            p_to: period.to,
+          })
+          .returns<FinancePeriodMetricsRow[]>()
+      : Promise.resolve({ data: [] as FinancePeriodMetricsRow[] }),
     canViewGeneral
       ? supabase
           .rpc("get_finance_dre", {
@@ -246,16 +244,16 @@ export async function renderFinanceiroPage(
           })
           .returns<DreRow[]>()
       : Promise.resolve({ data: [] as DreRow[] }),
-    isOverview
+    isOverview && (canViewCash || canViewPayables)
       ? supabase
           .from("organization_settings")
           .select("timezone")
           .eq("organization_id", organizationId)
           .maybeSingle<{ timezone: string | null }>()
       : Promise.resolve({ data: null }),
-    isOverview
+    isOverview && (canViewCash || canViewPayables)
       ? supabase
-          .rpc("get_finance_period_metrics", {
+          .rpc("get_finance_cash_metrics", {
             p_organization_id: organizationId,
             p_from: previousPeriod.from,
             p_to: previousPeriod.to,
@@ -270,14 +268,15 @@ export async function renderFinanceiroPage(
   // A visão geral depende do fuso da clínica para fechar os dias, por isso
   // roda numa segunda onda. Sem a migration do RPC aplicada volta null e a
   // aba cai no resumo simples.
-  const overviewResult = isOverview
-    ? await supabase.rpc("get_finance_overview", {
-        p_organization_id: organizationId,
-        p_from: period.from,
-        p_to: period.to,
-        p_timezone: timeZone,
-      })
-    : null;
+  const overviewResult =
+    isOverview && (canViewCash || canViewPayables)
+      ? await supabase.rpc("get_finance_overview", {
+          p_organization_id: organizationId,
+          p_from: period.from,
+          p_to: period.to,
+          p_timezone: timeZone,
+        })
+      : null;
 
   if (financeSummary.error) {
     throw new Error("Não foi possível carregar os indicadores financeiros.");
@@ -304,13 +303,9 @@ export async function renderFinanceiroPage(
     receivedMonth: Number(summaryRow?.received_month ?? 0),
     openPayable: Number(summaryRow?.open_payable ?? 0),
     pendingPayout: Number(summaryRow?.pending_payout ?? 0),
-    accrualRevenue: Number(periodRows[0]?.accrual_revenue ?? 0),
-    accrualExpense: Number(periodRows[0]?.accrual_expense ?? 0),
     cashIn: Number(periodRows[0]?.cash_in ?? 0),
     cashOut: Number(periodRows[0]?.cash_out ?? 0),
     averageCollectionDays: Number(periodRows[0]?.average_collection_days ?? 0),
-    previousAccrualRevenue: Number(previousRows[0]?.accrual_revenue ?? 0),
-    previousAccrualExpense: Number(previousRows[0]?.accrual_expense ?? 0),
     previousCashIn: Number(previousRows[0]?.cash_in ?? 0),
     previousCashOut: Number(previousRows[0]?.cash_out ?? 0),
   };
@@ -379,11 +374,9 @@ function financePeriod(params: Record<string, string | string[] | undefined>) {
     .slice(0, 10);
   const validDate = (value: string | undefined) =>
     value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
-  const mode = firstSearchParam(params.mode) === "cash" ? "cash" : "accrual";
   return {
     from: validDate(firstSearchParam(params.from)) ?? fallbackFrom,
     to: validDate(firstSearchParam(params.to)) ?? fallbackTo,
-    mode: mode as "cash" | "accrual",
   };
 }
 
@@ -517,14 +510,14 @@ async function SuperAdminFinanceView() {
         <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)]">
           <Building2 className="size-5 text-primary" aria-hidden="true" />
           <p className="mt-5 text-sm text-muted-foreground">Empresas ativas</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">
+          <p className="mt-1 text-display font-semibold tabular-nums">
             {activeOrganizations}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)]">
           <WalletCards className="size-5 text-primary" aria-hidden="true" />
           <p className="mt-5 text-sm text-muted-foreground">Trials</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">
+          <p className="mt-1 text-display font-semibold tabular-nums">
             {trialOrganizations}
           </p>
         </div>
@@ -533,7 +526,7 @@ async function SuperAdminFinanceView() {
           <p className="mt-5 text-sm text-muted-foreground">
             Empresas suspensas
           </p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">
+          <p className="mt-1 text-display font-semibold tabular-nums">
             {suspendedOrganizations}
           </p>
         </div>
@@ -546,7 +539,7 @@ async function SuperAdminFinanceView() {
             aria-hidden="true"
           />
           <div>
-            <h2 className="text-base font-semibold">Cobrança SaaS</h2>
+            <h2 className="text-heading-sm font-semibold">Cobrança SaaS</h2>
             <p className="text-sm text-muted-foreground">
               Assinaturas e receita recorrente entram na Fase 19.
             </p>

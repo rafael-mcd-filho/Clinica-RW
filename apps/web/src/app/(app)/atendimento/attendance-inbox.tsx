@@ -869,7 +869,7 @@ function ConversationListColumn({
                 aria-label={iconOnly ? tabLabels[id] : undefined}
                 title={tabLabels[id]}
                 className={cn(
-                  "relative inline-flex h-9 cursor-pointer items-center justify-center gap-1 rounded-lg border text-label leading-none transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
+                  "relative inline-flex h-9 cursor-pointer items-center justify-center gap-1 rounded-lg border text-control leading-none transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
                   iconOnly ? "w-9 shrink-0" : "min-w-0 flex-1 px-2",
                   active
                     ? "border-border-strong bg-card font-semibold text-foreground shadow-[var(--shadow-soft)]"
@@ -922,7 +922,7 @@ function ConversationListColumn({
                   aria-pressed={readFilter === option.id}
                   onClick={() => onReadFilterChange(option.id)}
                   className={cn(
-                    "cursor-pointer rounded px-2.5 py-1 text-body-sm leading-5 transition-colors duration-[var(--motion-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                    "cursor-pointer rounded px-2.5 py-1 text-control leading-5 transition-colors duration-[var(--motion-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
                     readFilter === option.id
                       ? "bg-card font-medium text-foreground shadow-[var(--shadow-soft)]"
                       : "text-muted-foreground hover:text-foreground",
@@ -1484,7 +1484,7 @@ function ConversationThread({
               <p className="truncate text-body-sm font-semibold">
                 {conversation.contactName}
               </p>
-              <p className="truncate text-label tabular-nums text-muted-foreground">
+              <p className="truncate text-caption tabular-nums text-muted-foreground">
                 {formatPhone(conversation.contactPhone)}
               </p>
               {conversation.tags.length ? (
@@ -1570,59 +1570,61 @@ function ConversationThread({
         {/* O conteúdo tem o seu próprio elemento porque é a altura dele que o
             ResizeObserver acompanha para manter a conversa colada no fim. */}
         <div ref={threadContentRef} className="space-y-1.5">
-        {messages.length || attendanceEvents.length ? (
-          timelineGroups.map((group) => (
-            <div key={group.key} className="w-full min-w-0 space-y-1.5">
-              <div className="sticky top-0 z-10 flex justify-center py-1">
-                <span className="rounded-full border border-border bg-card/95 px-3 py-1 text-caption font-medium text-muted-foreground shadow-[var(--shadow-soft)] backdrop-blur">
-                  {group.label}
-                </span>
-              </div>
-              {group.items.map((item) =>
-                item.kind === "message" ? (
-                  <Fragment key={`message-${item.message.id}`}>
-                    {unreadMark !== "gone" &&
-                    item.message.id === firstUnreadId ? (
-                      <div
-                        className={cn(
-                          "flex justify-center py-1 transition-opacity duration-[var(--motion-normal)] ease-[var(--ease-out)]",
-                          unreadMark === "leaving"
-                            ? "opacity-0"
-                            : "opacity-100",
-                        )}
-                      >
-                        <span className="rounded-full border border-border bg-card px-3 py-1 text-caption font-semibold text-muted-foreground shadow-[var(--shadow-soft)]">
-                          {initialUnread === 1
-                            ? "1 mensagem não lida"
-                            : `${initialUnread} mensagens não lidas`}
-                        </span>
-                      </div>
-                    ) : null}
-                    <MessageBubble
-                      message={item.message}
-                      quoted={
-                        item.message.replyToMessageId
-                          ? (messageById.get(item.message.replyToMessageId) ??
-                            null)
-                          : null
-                      }
-                      onReply={capabilities.compose ? setReplyingTo : undefined}
+          {messages.length || attendanceEvents.length ? (
+            timelineGroups.map((group) => (
+              <div key={group.key} className="w-full min-w-0 space-y-1.5">
+                <div className="sticky top-0 z-10 flex justify-center py-1">
+                  <span className="rounded-full border border-border bg-card/95 px-3 py-1 text-caption font-medium text-muted-foreground shadow-[var(--shadow-soft)] backdrop-blur">
+                    {group.label}
+                  </span>
+                </div>
+                {group.items.map((item) =>
+                  item.kind === "message" ? (
+                    <Fragment key={`message-${item.message.id}`}>
+                      {unreadMark !== "gone" &&
+                      item.message.id === firstUnreadId ? (
+                        <div
+                          className={cn(
+                            "flex justify-center py-1 transition-opacity duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+                            unreadMark === "leaving"
+                              ? "opacity-0"
+                              : "opacity-100",
+                          )}
+                        >
+                          <span className="rounded-full border border-border bg-card px-3 py-1 text-caption font-semibold text-muted-foreground shadow-[var(--shadow-soft)]">
+                            {initialUnread === 1
+                              ? "1 mensagem não lida"
+                              : `${initialUnread} mensagens não lidas`}
+                          </span>
+                        </div>
+                      ) : null}
+                      <MessageBubble
+                        message={item.message}
+                        quoted={
+                          item.message.replyToMessageId
+                            ? (messageById.get(item.message.replyToMessageId) ??
+                              null)
+                            : null
+                        }
+                        onReply={
+                          capabilities.compose ? setReplyingTo : undefined
+                        }
+                      />
+                    </Fragment>
+                  ) : (
+                    <AttendanceEventNotice
+                      key={`event-${item.event.id}`}
+                      event={item.event}
                     />
-                  </Fragment>
-                ) : (
-                  <AttendanceEventNotice
-                    key={`event-${item.event.id}`}
-                    event={item.event}
-                  />
-                ),
-              )}
-            </div>
-          ))
-        ) : (
-          <p className="py-8 text-center text-label text-muted-foreground">
-            Carregando mensagens…
-          </p>
-        )}
+                  ),
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="py-8 text-center text-label text-muted-foreground">
+              Carregando mensagens…
+            </p>
+          )}
         </div>
       </div>
 
@@ -1691,22 +1693,18 @@ function groupTimelineByDay(
   events: AttendanceTimelineEvent[],
 ): TimelineDayGroup[] {
   const items: TimelineItem[] = [
-    ...messages.map(
-      (message): TimelineItem => ({
-        kind: "message",
-        id: message.id,
-        occurredAt: message.createdAt,
-        message,
-      }),
-    ),
-    ...events.map(
-      (event): TimelineItem => ({
-        kind: "attendance-event",
-        id: event.id,
-        occurredAt: event.occurredAt,
-        event,
-      }),
-    ),
+    ...messages.map((message): TimelineItem => ({
+      kind: "message",
+      id: message.id,
+      occurredAt: message.createdAt,
+      message,
+    })),
+    ...events.map((event): TimelineItem => ({
+      kind: "attendance-event",
+      id: event.id,
+      occurredAt: event.occurredAt,
+      event,
+    })),
   ].sort(
     (first, second) =>
       new Date(first.occurredAt).getTime() -
@@ -1959,7 +1957,7 @@ const MessageBubble = memo(function MessageBubble({
             algarismos, a altura cheia dos dígitos já compete com o texto da
             mensagem, então fica abaixo da menor medida da escala e com o tom
             rebaixado. */}
-        <p className="mt-0.5 flex min-h-3 items-center justify-end gap-1 text-[10px] leading-3 tabular-nums text-muted-foreground/75">
+        <p className="mt-0.5 flex min-h-4 items-center justify-end gap-1 text-caption tabular-nums text-muted-foreground">
           {formatTime(message.createdAt)}
           {outbound && !isNote && message.status === "queued" ? (
             <span className="italic">enviando…</span>

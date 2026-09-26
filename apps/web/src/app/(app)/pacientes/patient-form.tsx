@@ -8,6 +8,7 @@ import {
   updatePatient,
   type PatientActionState,
 } from "./actions";
+import { AddressFields, type AddressValues } from "@/components/address-fields";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -33,16 +34,17 @@ export type PatientFormValues = {
   allow_email: boolean;
   allow_sms: boolean;
   source: string | null;
-  address: {
-    postal_code: string | null;
-    address_line: string | null;
-    address_number: string | null;
-    address_complement: string | null;
-    district: string | null;
-    city: string | null;
-    state: string | null;
-  } | null;
+  address: AddressValues | null;
 };
+
+const patientSourceOptions: readonly string[] = [
+  "Anúncio",
+  "Indicação",
+  "Influencer",
+  "Orgânico",
+  "Instagram",
+  "Google",
+];
 
 const initialState: PatientActionState = {};
 
@@ -129,11 +131,23 @@ export function PatientForm({
             </>
           ) : null}
           <Field label="Origem do paciente">
-            <Input
+            <Select
               name="source"
               defaultValue={patient?.source ?? ""}
-              placeholder="Indicação, Instagram, site..."
-            />
+              allowEmptyOption
+            >
+              <option value="">Não informado</option>
+              {patientSourceOptions.map((source) => (
+                <option key={source} value={source}>
+                  {source}
+                </option>
+              ))}
+              {/* Origem antiga digitada livremente: mantém para não perder o dado ao salvar. */}
+              {patient?.source &&
+              !patientSourceOptions.includes(patient.source) ? (
+                <option value={patient.source}>{patient.source}</option>
+              ) : null}
+            </Select>
           </Field>
         </CardContent>
       </Card>
@@ -213,47 +227,7 @@ export function PatientForm({
             </p>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Field label="CEP">
-              <MaskedInput
-                name="postal_code"
-                maskKind="cep"
-                defaultValue={patient?.address?.postal_code ?? ""}
-              />
-            </Field>
-            <Field label="Endereço" wide>
-              <Input
-                name="address_line"
-                defaultValue={patient?.address?.address_line ?? ""}
-              />
-            </Field>
-            <Field label="Número">
-              <Input
-                name="address_number"
-                defaultValue={patient?.address?.address_number ?? ""}
-              />
-            </Field>
-            <Field label="Complemento">
-              <Input
-                name="address_complement"
-                defaultValue={patient?.address?.address_complement ?? ""}
-              />
-            </Field>
-            <Field label="Bairro">
-              <Input
-                name="district"
-                defaultValue={patient?.address?.district ?? ""}
-              />
-            </Field>
-            <Field label="Cidade">
-              <Input name="city" defaultValue={patient?.address?.city ?? ""} />
-            </Field>
-            <Field label="UF">
-              <Input
-                name="state"
-                maxLength={2}
-                defaultValue={patient?.address?.state ?? ""}
-              />
-            </Field>
+            <AddressFields defaultValues={patient?.address} />
           </CardContent>
         </Card>
       ) : null}

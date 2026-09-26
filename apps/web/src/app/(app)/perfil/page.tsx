@@ -55,7 +55,7 @@ export default async function PerfilPage() {
             <UserRound className="size-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold">
+            <h2 className="truncate text-heading-sm font-semibold">
               {appUser?.name ?? authUser.email ?? "Usuário"}
             </h2>
             <p className="truncate text-sm text-muted-foreground">

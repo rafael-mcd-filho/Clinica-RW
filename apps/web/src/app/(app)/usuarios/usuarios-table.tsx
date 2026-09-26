@@ -151,14 +151,14 @@ export function UsuariosTable({
         </Select>
       </section>
 
-      <section className="animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+      <section className="app-list-table-lg animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
         <div className="max-h-[calc(100vh-20rem)] overflow-y-auto">
-          <div className="sticky top-0 z-10 hidden grid-cols-[1.6fr_1fr_0.9fr_0.6fr_2.25rem] items-center gap-4 border-b border-border bg-muted px-5 py-3 text-xs font-medium uppercase text-muted-foreground md:grid">
-            <span>Usuário</span>
-            <span>Empresa</span>
-            <span>Perfil</span>
-            <span className="text-center">Status</span>
-            <span className="sr-only">Ações</span>
+          <div className="app-list-row sticky top-0 z-10 hidden grid-cols-[1.6fr_1fr_0.9fr_0.6fr_5rem] items-center gap-4 border-b border-border bg-muted px-5 py-3 text-xs font-semibold text-foreground lg:grid">
+            <span className="app-list-cell">Usuário</span>
+            <span className="app-list-cell">Empresa</span>
+            <span className="app-list-cell">Perfil</span>
+            <span className="app-list-cell">Status</span>
+            <span className="app-list-cell">Ações</span>
           </div>
 
           {filtered.length ? (
@@ -169,9 +169,9 @@ export function UsuariosTable({
                 return (
                   <div
                     key={user.id}
-                    className="grid gap-3 px-5 py-4 transition-[background-color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-background md:grid-cols-[1.6fr_1fr_0.9fr_0.6fr_2.25rem] md:items-center md:gap-4"
+                    className="app-list-row grid gap-3 px-5 py-4 transition-[background-color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-background lg:grid-cols-[1.6fr_1fr_0.9fr_0.6fr_5rem] lg:items-center lg:gap-4"
                   >
-                    <div className="flex min-w-0 items-center gap-3">
+                    <div className="app-list-cell flex min-w-0 items-center gap-3">
                       <div className="flex size-9 shrink-0 items-center justify-center rounded bg-muted text-primary">
                         <UserRound className="size-4" aria-hidden="true" />
                       </div>
@@ -185,21 +185,20 @@ export function UsuariosTable({
                         </p>
                       </div>
                     </div>
-                    <span className="truncate text-sm">
+                    <span className="app-list-cell truncate text-sm">
                       {user.organizationName}
                     </span>
-                    <span className="truncate text-sm text-muted-foreground">
+                    <span className="app-list-cell truncate text-sm text-muted-foreground">
                       {user.profileNames.length
                         ? user.profileNames.join(", ")
                         : "—"}
                     </span>
-                    <Badge
-                      variant={statusVariant[user.status] ?? "neutral"}
-                      className="md:justify-self-center"
-                    >
-                      {statusLabel[user.status] ?? user.status}
-                    </Badge>
-                    <div className="flex justify-end">
+                    <div className="app-list-cell">
+                      <Badge variant={statusVariant[user.status] ?? "neutral"}>
+                        {statusLabel[user.status] ?? user.status}
+                      </Badge>
+                    </div>
+                    <div className="app-list-cell flex justify-end">
                       <DropdownMenu
                         triggerLabel={`Ações de ${user.name}`}
                         trigger={
@@ -400,7 +399,7 @@ function PasswordDialog({
               readOnly
               value={state.link}
               onFocus={(event) => event.currentTarget.select()}
-              className="flex-1 font-mono text-xs"
+              className="flex-1 font-mono text-control"
             />
             <Button type="button" variant="secondary" onClick={handleCopy}>
               {copied ? (

@@ -221,7 +221,7 @@ export function WhatsAppSettings({ initial }: Props) {
           <span className="text-sm text-muted-foreground">
             Código de pareamento
           </span>
-          <div className="mt-1 text-2xl font-semibold tracking-widest">
+          <div className="mt-1 text-display font-semibold tracking-widest">
             {connection.pairingCode}
           </div>
         </div>

@@ -9,9 +9,11 @@ Componentes base vivem em `apps/web/src/components/ui/`.
 ## Regras de ouro (verificáveis por grep)
 
 1. **Zero hex fora de `globals.css`** — nada de `#slate`, `bg-[#...]`, `text-[#...]` em `.tsx`.
-   Paletas categóricas (cores de tag/etapa de funil/gráfico) vivem em `src/lib/colors.ts`.
+   Paletas categóricas (cores de tag e gráfico) vivem em `src/lib/colors.ts`.
    Ícones: só `@phosphor-icons/react` (nunca reintroduzir lucide ou outra lib).
-2. **Zero `text-[Npx]`** — todo tamanho de fonte sai da escala tipográfica abaixo.
+2. **Zero `text-[Npx]` na interface operacional** — todo tamanho de fonte sai da
+   escala tipográfica abaixo. Prévia reduzida de documentos impressos é a
+   exceção documentada.
 3. **Zero `<button>` cru em `app/`** — 100% via `<Button>`. Primitives internas de
    `components/ui/` podem usar `<button>` nativo.
 4. **Zero duração `ms` hardcoded** — só `--motion-fast`/`--motion-normal`/`--motion-drawer`,
@@ -24,32 +26,62 @@ Componentes base vivem em `apps/web/src/components/ui/`.
 
 Duas famílias, carregadas em `app/layout.tsx` via `next/font/google`:
 
-- **Inter** (400/500/600/700, variável `--font-body`) — corpo, UI, controles,
-  tabelas. É o `font-sans` padrão do produto; hierarquia dentro dela se faz
-  com tamanho e peso.
-- **Quicksand** (600/700, variável `--font-display`) — só nos dois maiores
-  degraus da escala tipográfica (`text-heading-lg`, `text-display`: título de
-  página, números de dashboard/hero — os "H1/H2"). Aplicada automaticamente
-  nesses utilitários via regra em `globals.css`, não precisa de classe extra
-  no componente. Disponível também como utilitário solto `font-heading` para
-  uso pontual fora da escala. Todo o resto da UI (cards, dialogs, labels)
-  continua em Inter.
+- **Inter** (400/500/600/700, variável `--font-body`) — corpo, parágrafos,
+  controles, tabelas e números. É a fonte padrão, com fallback para
+  `system-ui`, Segoe UI, Roboto e Arial.
+- **Montserrat** (500/600/700, variável `--font-display`) — títulos semânticos
+  `h1` e `h2`, com fallback para Inter. O utilitário `font-heading` também
+  está disponível para títulos fora dessas tags.
 
 Escala fechada (utilitários Tailwind gerados pelos tokens `--text-*`):
 
+Os nomes dos tokens também são registrados em `src/lib/utils.ts`, no tema
+`text` do `tailwind-merge`. Ao adicionar um tamanho, atualizar os dois locais;
+caso contrário, `cn` pode confundir o tamanho com uma cor e removê-lo.
+
 | Utilitário        | Tamanho/linha | Uso                                                |
 | ----------------- | ------------- | -------------------------------------------------- |
-| `text-caption`    | 11/16         | metadados, selos, labels uppercase                 |
-| `text-label`      | 12/16         | labels de campo, headers de tabela, células densas |
-| `text-body-sm`    | 13/20         | texto secundário, botões                           |
-| `text-body`       | 14/20         | **default do app** (corpo, tabelas)                |
-| `text-heading-sm` | 16/24         | título de card/seção                               |
-| `text-heading`    | 18/28         | título de painel/dialog                            |
-| `text-heading-lg` | 24/32         | título de página                                   |
-| `text-display`    | 30/36         | números de dashboard, hero da página pública       |
+| `text-caption`    | 12/16         | metadados e selos                                  |
+| `text-label`      | 14/20         | rótulos de campo, peso 500                         |
+| `text-control`    | 14/20         | botões, campos, placeholders, seletores e busca    |
+| `text-table`      | 14/20         | cabeçalhos e conteúdo principal das tabelas        |
+| `text-body-sm`    | 14/20         | alias de compatibilidade para conteúdo             |
+| `text-body`       | 14/20         | **default do app**, descrições, menus e listas     |
+| `text-reading`    | 16/24         | leitura longa, editor clínico e entrada em celular |
+| `text-heading-sm` | 16/24         | títulos `h2`, cards e seções                       |
+| `text-heading`    | 18/24         | títulos `h1`                                       |
+| `text-heading-lg` | 18/24         | alias para títulos maiores existentes              |
+| `text-display`    | 24/32         | números e elementos de destaque                    |
 
-Aliases Tailwind aceitos em código legado: `text-xs` (=label), `text-sm` (=body),
-`text-base` (=heading-sm). Código novo usa os nomes semânticos.
+Aliases Tailwind aceitos em código legado: `text-xs` (=caption), `text-sm`
+(=body). Código novo usa os nomes semânticos. `text-base` não é o corpo do
+app: usar `text-heading-sm` em títulos ou `text-reading` para leitura longa.
+
+Referências de escala: [Carbon, tipografia produtiva](https://carbondesignsystem.com/elements/typography/type-sets/)
+e [Fluent 2, escala web](https://fluent2.microsoft.design/typography).
+Ambos usam 14px como corpo de interfaces operacionais, 12px para informação
+auxiliar e 16px como próximo nível de hierarquia. A escala acima adapta esses
+papéis às fontes Inter/Montserrat e à densidade deste produto.
+
+Regras por função:
+
+- Cabeçalho e valor principal da tabela usam **o mesmo tamanho, 14px**.
+  O cabeçalho se diferencia por peso 600 e fundo; metadados usam 12px.
+- Botões, pesquisa global, filtros, seletores e suas opções usam **14px**.
+  Aumentar a altura do controle não aumenta automaticamente a fonte.
+- Campos e placeholders usam peso 400; botões e rótulos usam 500; títulos
+  e cabeçalhos de tabela usam 600. O campo não herda o peso do rótulo.
+- Descrições de seção e mensagens de erro usam 14px. Horários auxiliares,
+  badges, ajuda curta e identificação secundária usam 12px; nenhuma
+  informação operacional usa 9–11px.
+- Títulos de seção usam 16px, de modal/página 18px, indicadores de destaque
+  24px. O peso cria a hierarquia dentro da mesma escala.
+- A unidade é `rem`, com a raiz do navegador preservada. Em telas de até
+  767px, campos editáveis usam 16px para a digitação; esse tratamento também
+  alcança campos com máscara e a pesquisa global.
+- Prévia de documento impresso e PDF usam escala própria de papel. Glifos
+  de emoji também não são texto operacional. Essas exceções não definem
+  tamanhos de botões, rótulos ou tabelas.
 
 Valores numéricos alinhados (dinheiro, contagens, horários em tabela): adicionar
 `tabular-nums` (já aplicado por padrão em `Table`/`DataTable`).
@@ -69,8 +101,8 @@ Valores numéricos alinhados (dinheiro, contagens, horários em tabela): adicion
 - Neutros seguem a escala fria: canvas `#F4F6FA` (cards brancos criam o plano),
   texto padrão `#101828`, texto secundário `#667085` (AA sobre branco), muted
   `#EEF1F6`, borda `#E4E9F0`, borda forte `#CBD5E4`.
-- Sidebar: o fundo é **tingido pelo primary** via `color-mix()` sobre uma base
-  escura — a shell acompanha o white-label; nunca fixar um slate estático.
+- Sidebar: fundo claro e itens ativos derivados do `primary`. Os ícones de
+  navegação usam a paleta `--nav-*` em `globals.css` para identificar as áreas.
 - Bordas: `border` (padrão) e `border-strong` (hover/ênfase). Nunca hex direto.
 - Não existe "secundária" saturada (verde ou outra) como cor de marca neste produto —
   `--secondary`/`--secondary-foreground` são neutros (texto/botão de baixa ênfase), não
@@ -115,12 +147,12 @@ item de navegação ativo. Server components importam de
 
 Escala fechada — via wrapper `<Icon>` (`components/ui/icon.tsx`) ou classes:
 
-| Tamanho | Classe     | Contexto                                 |
-| ------- | ---------- | ---------------------------------------- |
-| 14px    | `size-3.5` | metadados, badges, células densas        |
-| 16px    | `size-4`   | botões, inputs, itens de menu (default)  |
-| 20px    | `size-5`   | cabeçalho de página/painel, empty states |
-| 24px    | `size-6`   | ícone principal do cabeçalho de página   |
+| Tamanho | Classe     | Contexto                                |
+| ------- | ---------- | --------------------------------------- |
+| 14px    | `size-3.5` | metadados, badges, células densas       |
+| 16px    | `size-4`   | botões, inputs, itens de menu (default) |
+| 20px    | `size-5`   | cabeçalho de painel, empty states       |
+| 24px    | `size-6`   | ícone destacado                         |
 
 Avatares e containers ilustrativos (ex.: círculo de empty state) não são ícones
 e podem usar outros tamanhos. Exceção documentada: glifos internos de controle
@@ -139,12 +171,16 @@ Regra de uso:
    menus), `animate-panel-enter` (seções de página), `animate-fade-in` (overlay),
    `animate-dialog-in` (modal).
 3. **`@formkit/auto-animate`** — só reordenação/inserção em listas.
-4. **`framer-motion`** — só drag do funil e coreografias que CSS não resolve.
 
 Sem stagger de cards (delays escalonados) — conteúdo de página entra de uma vez.
 Única animação em loop permitida: shimmer do `Loader`.
 
 ## Componentes
+
+### PageHeader (`components/ui/page-header.tsx`)
+
+Nas páginas internas, mantém apenas breadcrumbs, voltar e ações. O título fica
+disponível para leitores de tela; não há bloco visual de título, descrição e ícone.
 
 ### Button (`components/ui/button.tsx`)
 
@@ -157,6 +193,7 @@ Sem stagger de cards (delays escalonados) — conteúdo de página entra de uma 
 | `destructive-ghost` | gatilho de exclusão em listas/menus                   |
 | `link`              | navegação inline com cara de link                     |
 
+Fonte: `text-control font-medium` (14px, peso 500) em todos os tamanhos.
 Tamanhos: `sm` (h-8) · `md` (h-9, default) · `lg` (h-10, página pública/CTAs) ·
 `icon` (36px) · `icon-sm` (32px, ações de linha de tabela).
 
@@ -168,17 +205,28 @@ adicione no componente.
 
 ### Table / DataTable
 
-- Header: `text-label font-medium tracking-wide uppercase text-muted-foreground`.
-- Alinhamento por coluna no `DataTable`: `meta: { align: "right" }` na ColumnDef
-  (números/dinheiro à direita).
+- Tabelas de dados usam `app-table`: cabeçalho em superfície muted com títulos
+  centralizados, divisórias horizontais e verticais de `--border`, sem zebra.
+- Cabeçalho e conteúdo principal usam `text-table` (14/20); peso 600 no
+  cabeçalho, 400 nos dados e 500 na identificação principal. Só o conteúdo
+  auxiliar dentro de uma célula usa `text-caption` (12/16).
+- O conteúdo mantém o alinhamento necessário; no `DataTable`,
+  `meta: { align: "right" }` alinha números e dinheiro à direita.
 - Largura de coluna: só quando a ColumnDef define `size` explícito.
-- Sem zebra; hover discreto `hover:bg-background`.
+- Listas responsivas que representam colunas usam `app-list-table-lg`,
+  `app-list-row` e `app-list-cell` a partir de `lg`. Em telas menores,
+  continuam como cartões legíveis.
+- Ações de linha ficam em coluna própria, com gatilhos compactos, rótulos
+  acessíveis e cores semânticas para abrir, editar e excluir.
+- O controle de ativação nas listas usa `StatusToggle`; estados ativos são
+  verdes e a confirmação de desativação continua no fluxo de cada cadastro.
 
 ### Sidebar (subsistema deliberado)
 
-Shell escura (`--sidebar-*`) sobre canvas claro — padrão Vercel/Linear, **não** é
-dark mode nem sinal para criar um. Estados ativos derivam do primary via
-`color-mix` para acompanhar o white-label. Nenhum outro componente usa esses tokens.
+Shell clara (`--sidebar-*`) sobre canvas claro. Estados ativos derivam do primary
+via `color-mix` para acompanhar o white-label. Os ícones usam cores fixas da
+paleta `--nav-*` para diferenciar as áreas e os subitens. Nenhum outro componente
+usa esses tokens.
 
 ### Avatar (`components/ui/avatar.tsx`)
 
@@ -212,5 +260,5 @@ tipo + espaçamentos). Nunca hex direto em `StyleSheet.create`.
 
 Público: paciente final, sem login. Direção: **base neutra e calma + CTA sólido**
 (primary só em ação/seleção). Tipografia um passo maior que o app interno
-(`text-body` mínimo para corpo, `lg` para CTAs). Contraste AA obrigatório em
+(`text-reading` para leitura longa, `lg` para CTAs). Contraste AA obrigatório em
 todo texto e estado. Mesmo rigor de acessibilidade e performance de landing page.

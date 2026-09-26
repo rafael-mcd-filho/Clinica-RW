@@ -177,8 +177,8 @@ export default async function AppointmentSummaryPage({
 
       <section className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
         <div className="overflow-x-auto">
-          <table className="min-w-[980px] w-full border-collapse text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+          <table className="app-table min-w-[980px] w-full text-body-sm">
+            <thead>
               <tr>
                 <Th>Data</Th>
                 <Th>Paciente</Th>
@@ -254,7 +254,7 @@ function SummaryMetric({
   return (
     <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)]">
       <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="mt-1 text-display font-semibold tabular-nums">{value}</p>
     </div>
   );
 }

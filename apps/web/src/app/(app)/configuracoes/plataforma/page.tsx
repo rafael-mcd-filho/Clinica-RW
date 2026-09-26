@@ -24,7 +24,9 @@ export default async function PlataformaConfiguracoesPage() {
         <div className="flex items-center gap-3 border-b border-border px-5 py-4">
           <Settings className="size-5 text-primary" aria-hidden="true" />
           <div>
-            <h2 className="text-base font-semibold">Aparência e suporte</h2>
+            <h2 className="text-heading-sm font-semibold">
+              Aparência e suporte
+            </h2>
             <p className="text-sm text-muted-foreground">
               Estes dados serão usados nas páginas das empresas.
             </p>

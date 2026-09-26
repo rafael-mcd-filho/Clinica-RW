@@ -12,7 +12,6 @@ export async function GET(request: Request) {
       "clinico.ver_prontuario_proprios",
       "agenda.criar_agendamento",
       "agenda.editar_agendamento",
-      "funil.gerenciar",
     ])
   ) {
     return NextResponse.json({ error: "Acesso negado." }, { status: 403 });

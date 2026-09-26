@@ -23,7 +23,7 @@ export default function ErrorPage({
   return (
     <section className="rounded border border-red-200 bg-red-50 p-5 text-red-950">
       <AlertTriangle className="size-5" aria-hidden="true" />
-      <h1 className="mt-4 text-base font-semibold">
+      <h1 className="mt-4 text-heading font-semibold">
         Não foi possível carregar esta página
       </h1>
       <p className="mt-1 text-sm text-red-800">

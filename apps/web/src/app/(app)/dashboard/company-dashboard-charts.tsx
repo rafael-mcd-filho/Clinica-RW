@@ -94,7 +94,7 @@ const chartTooltipStyle = {
   borderRadius: "0.5rem",
   boxShadow: "var(--shadow-soft)",
   color: "var(--foreground)",
-  fontSize: "0.75rem",
+  fontSize: "var(--text-body)",
 };
 
 export function CompanyDashboardCharts({
@@ -300,7 +300,7 @@ function DonutMetricCard({
           {total > 0 ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="text-center">
-                <p className="text-2xl font-bold tabular-nums text-foreground">
+                <p className="text-display font-bold tabular-nums text-foreground">
                   {total}
                 </p>
                 <p className="text-xs font-medium text-muted-foreground">
@@ -401,7 +401,7 @@ function CancellationRatesCard({
               <Ban className="size-4" aria-hidden="true" />
             </span>
             <div>
-              <p className="text-2xl font-semibold tabular-nums">
+              <p className="text-display font-semibold tabular-nums">
                 {item.value == null ? "—" : `${item.value}%`}
               </p>
               <p className="truncate text-sm font-medium text-secondary-foreground">
@@ -442,7 +442,7 @@ function TimingCard({
           </span>
           <div>
             <p className="text-xs text-muted-foreground">Média do período</p>
-            <p className="text-2xl font-semibold tabular-nums text-foreground">
+            <p className="text-display font-semibold tabular-nums text-foreground">
               {formatTiming(data.averageValue, view)}
             </p>
           </div>
@@ -549,7 +549,7 @@ function CommercialSummaryCard({
                 <Icon className="size-4" aria-hidden="true" />
               </span>
               <div>
-                <p className="text-2xl font-semibold tabular-nums">
+                <p className="text-display font-semibold tabular-nums">
                   {item.value}
                 </p>
                 <p className="text-xs leading-4 text-secondary-foreground">
@@ -628,7 +628,7 @@ function AreaLineCard({
                   minTickGap={18}
                   tick={{
                     fill: "var(--muted-foreground)",
-                    fontSize: 11,
+                    fontSize: "var(--text-caption)",
                   }}
                   tickLine={false}
                   tickMargin={10}
@@ -638,7 +638,7 @@ function AreaLineCard({
                   axisLine={false}
                   tick={{
                     fill: "var(--muted-foreground)",
-                    fontSize: 11,
+                    fontSize: "var(--text-caption)",
                   }}
                   tickLine={false}
                   tickMargin={8}
@@ -741,7 +741,7 @@ function CompactAreaLineCard({
                   minTickGap={16}
                   tick={{
                     fill: "var(--muted-foreground)",
-                    fontSize: 10,
+                    fontSize: "var(--text-caption)",
                   }}
                   tickLine={false}
                   tickMargin={8}
@@ -751,7 +751,7 @@ function CompactAreaLineCard({
                   axisLine={false}
                   tick={{
                     fill: "var(--muted-foreground)",
-                    fontSize: 10,
+                    fontSize: "var(--text-caption)",
                   }}
                   tickLine={false}
                   width={30}
@@ -945,7 +945,7 @@ function GenderMetric({
         <Icon className="size-4" aria-hidden="true" />
       </span>
       <div className="flex items-baseline gap-1">
-        <p className="text-lg font-semibold tabular-nums text-foreground">
+        <p className="text-heading font-semibold tabular-nums text-foreground">
           {count}
         </p>
         <span className="text-xs tabular-nums text-muted-foreground">

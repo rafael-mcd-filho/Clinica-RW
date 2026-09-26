@@ -17,7 +17,7 @@ import { cn, initialsFromName } from "@/lib/utils";
  * `aria-hidden` porque o nome sempre aparece ao lado nos usos reais.
  */
 const sizes = {
-  sm: { box: "size-9", text: "text-label", pixels: 36 },
+  sm: { box: "size-9", text: "text-caption", pixels: 36 },
   md: { box: "size-10", text: "text-body-sm", pixels: 40 },
   lg: { box: "size-16", text: "text-heading", pixels: 64 },
 } as const;

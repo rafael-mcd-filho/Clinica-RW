@@ -160,16 +160,33 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       "financeiro.gerenciar_contas_pagar",
     ])
   ) {
-    const financeChildren: NonNullable<AppShellNavItem["children"]> = [
-      { href: "/financeiro", label: "Visão geral" },
-    ];
+    const financeChildren: NonNullable<AppShellNavItem["children"]> = [];
+    if (
+      permissionCodes.has("financeiro.ver_geral") ||
+      permissionCodes.has("financeiro.receber_pagamento") ||
+      permissionCodes.has("financeiro.gerenciar_contas_pagar")
+    ) {
+      financeChildren.push({
+        href: "/financeiro",
+        label: "Visão geral",
+        icon: "dashboard",
+      });
+    }
     if (
       permissionCodes.has("financeiro.ver_geral") ||
       permissionCodes.has("financeiro.receber_pagamento")
     ) {
       financeChildren.push(
-        { href: "/financeiro/contas-a-receber", label: "Contas a receber" },
-        { href: "/financeiro/movimentacoes", label: "Movimentações" },
+        {
+          href: "/financeiro/contas-a-receber",
+          label: "Contas a receber",
+          icon: "receber",
+        },
+        {
+          href: "/financeiro/movimentacoes",
+          label: "Movimentações",
+          icon: "movimentacoes",
+        },
       );
     }
     if (
@@ -179,6 +196,7 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       financeChildren.push({
         href: "/financeiro/contas-a-pagar",
         label: "Contas a pagar",
+        icon: "pagar",
       });
     }
     if (
@@ -186,10 +204,18 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       permissionCodes.has("financeiro.ver_proprio_repasse") ||
       permissionCodes.has("financeiro.gerenciar_contas_pagar")
     ) {
-      financeChildren.push({ href: "/financeiro/repasses", label: "Repasses" });
+      financeChildren.push({
+        href: "/financeiro/repasses",
+        label: "Repasses",
+        icon: "repasses",
+      });
     }
     if (permissionCodes.has("financeiro.ver_geral")) {
-      financeChildren.push({ href: "/financeiro/dre", label: "DRE" });
+      financeChildren.push({
+        href: "/financeiro/dre",
+        label: "Resultado",
+        icon: "dre",
+      });
     }
     navItems.push({
       href: "/financeiro",
@@ -197,10 +223,6 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       icon: "financeiro",
       children: financeChildren,
     });
-  }
-
-  if (hasAnyPermission(permissionCodes, ["funil.ver"])) {
-    navItems.push({ href: "/funis", label: "Painéis", icon: "funis" });
   }
 
   const canViewOperationalReports = permissionCodes.has(
@@ -215,13 +237,18 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
 
   if (canViewAnyReport) {
     const reportChildren: NonNullable<AppShellNavItem["children"]> = [
-      { href: "/relatorios/visao-geral", label: "Visão geral" },
+      {
+        href: "/relatorios/visao-geral",
+        label: "Visão geral",
+        icon: "dashboard",
+      },
     ];
 
     if (canViewOperationalReports) {
       reportChildren.push({
         href: "/relatorios/atendimentos",
         label: "Atendimentos",
+        icon: "atendimento",
       });
     }
 
@@ -229,10 +256,12 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       reportChildren.push({
         href: "/relatorios/financeiro",
         label: "Financeiro",
+        icon: "financeiro",
       });
       reportChildren.push({
         href: "/relatorios/comissoes",
         label: "Comissões",
+        icon: "repasses",
       });
     }
 
@@ -240,12 +269,14 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       reportChildren.push({
         href: "/relatorios/clinico",
         label: "Clínico",
+        icon: "prontuario",
       });
     }
 
     reportChildren.push({
       href: "/relatorios/profissionais",
       label: "Por profissional",
+      icon: "usuarios",
     });
 
     navItems.push({
@@ -269,6 +300,7 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     configurationChildren.push({
       href: "/configuracoes/cadastros",
       label: "Cadastros e operação",
+      icon: "cadastros",
     });
   }
 
@@ -276,6 +308,7 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     configurationChildren.push({
       href: "/configuracoes/usuarios-acessos",
       label: "Usuários e acessos",
+      icon: "usuarios",
     });
   }
 
@@ -283,6 +316,7 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     configurationChildren.push({
       href: "/configuracoes/agenda",
       label: "Agenda",
+      icon: "agenda",
     });
   }
 
@@ -290,13 +324,15 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     configurationChildren.push({
       href: "/configuracoes/agendamento-online",
       label: "Agendamento online",
+      icon: "agendamento-online",
     });
   }
 
   if (canManageCompany) {
     configurationChildren.push({
       href: "/configuracoes/tags-automacoes",
-      label: "Tags e automações",
+      label: "Automações",
+      icon: "tags",
     });
   }
 
@@ -304,6 +340,7 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     configurationChildren.push({
       href: "/configuracoes/modelos-clinicos",
       label: "Modelos clínicos",
+      icon: "modelos-clinicos",
     });
   }
 
@@ -311,6 +348,7 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     configurationChildren.push({
       href: "/configuracoes/whatsapp",
       label: "WhatsApp",
+      icon: "atendimento",
     });
   }
 

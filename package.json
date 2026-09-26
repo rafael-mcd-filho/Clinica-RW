@@ -19,8 +19,7 @@
     "seed:demo-agenda": "node scripts/seed-demo-agenda.mjs",
     "seed:demo-clinical": "node scripts/seed-demo-clinical.mjs",
     "seed:demo-documents": "node scripts/seed-demo-documents.mjs",
-    "seed:demo-finance": "node scripts/seed-demo-finance.mjs",
-    "seed:demo-funnels": "node scripts/seed-demo-funnels.mjs"
+    "seed:demo-finance": "node scripts/seed-demo-finance.mjs"
   },
   "engines": {
     "node": ">=22.0.0",

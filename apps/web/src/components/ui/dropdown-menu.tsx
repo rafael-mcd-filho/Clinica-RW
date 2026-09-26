@@ -140,7 +140,7 @@ export function DropdownMenu({
         aria-label={triggerLabel}
         onClick={() => (open ? close() : openMenu())}
         className={cn(
-          "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-[background-color,color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 aria-expanded:bg-muted aria-expanded:text-foreground",
+          "inline-flex size-8 items-center justify-center rounded-md border border-border bg-card text-secondary-foreground shadow-[var(--shadow-soft)] transition-[background-color,border-color,color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-primary hover:bg-primary-muted hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 aria-expanded:border-primary aria-expanded:bg-primary-muted aria-expanded:text-primary",
           triggerClassName,
         )}
       >
@@ -157,7 +157,7 @@ export function DropdownMenu({
                 left: coords.left,
                 maxHeight: coords.maxHeight,
               }}
-              className="pointer-events-auto fixed z-[60] w-56 animate-content-enter overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]"
+              className="pointer-events-auto fixed z-[60] w-56 animate-content-enter overflow-y-auto rounded-lg border border-border bg-popover p-1.5 shadow-[var(--shadow-md)]"
             >
               {children(close)}
             </div>,
@@ -185,13 +185,24 @@ export function DropdownMenuItem({
       role="menuitem"
       onClick={onSelect}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-sm font-medium transition-colors duration-[var(--motion-fast)]",
+        "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-control font-medium transition-colors duration-[var(--motion-fast)]",
         variant === "destructive"
           ? "text-destructive hover:bg-destructive-muted"
           : "text-foreground hover:bg-muted",
       )}
     >
-      {Icon ? <Icon className="size-4 shrink-0" /> : null}
+      {Icon ? (
+        <span
+          className={cn(
+            "flex size-7 shrink-0 items-center justify-center rounded-md",
+            variant === "destructive"
+              ? "bg-destructive-muted text-destructive"
+              : "bg-primary-muted text-primary",
+          )}
+        >
+          <Icon className="size-4" />
+        </span>
+      ) : null}
       {children}
     </button>
   );

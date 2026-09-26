@@ -57,14 +57,13 @@ export async function createAccountReceivable(
     .object({
       description: z.string().trim().min(2),
       amount: z.coerce.number().positive(),
-      competence_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       category_id: z.union([z.string().uuid(), z.literal("")]),
       notes: z.string().trim().max(500).optional(),
     })
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success)
-    return { error: "Preencha descrição, valor, competência e vencimento." };
+    return { error: "Preencha descrição, valor e vencimento." };
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("accounts_receivable").insert({
     organization_id: context.organization.id,
@@ -72,7 +71,6 @@ export async function createAccountReceivable(
     category_id: parsed.data.category_id || null,
     description: parsed.data.description,
     amount: parsed.data.amount,
-    competence_date: parsed.data.competence_date,
     due_date: parsed.data.due_date,
     notes: parsed.data.notes || null,
     created_by_user_id: context.effectiveUser?.id ?? null,
@@ -137,7 +135,6 @@ export async function createAccountPayable(
       description: z.string().trim().min(2),
       amount: z.coerce.number().positive(),
       due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      competence_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       category_id: z.union([z.string().uuid(), z.literal("")]),
     })
     .safeParse(Object.fromEntries(formData));
@@ -154,7 +151,6 @@ export async function createAccountPayable(
     description: parsed.data.description,
     amount: parsed.data.amount,
     due_date: parsed.data.due_date,
-    competence_date: parsed.data.competence_date,
     created_by_user_id: context.effectiveUser?.id ?? null,
   });
   if (error) return { error: friendlyError(error.message) };
@@ -261,5 +257,5 @@ export async function updateFinancialCategoryDreGroup(
     .eq("id", parsed.data.id);
   if (error) return { error: friendlyError(error.message) };
   revalidateFinance();
-  return { success: "Classificação da DRE atualizada." };
+  return { success: "Classificação do resultado atualizada." };
 }

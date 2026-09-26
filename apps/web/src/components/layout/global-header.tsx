@@ -98,7 +98,7 @@ export function GlobalHeader({
           >
             <CalendarCheck className="size-5" aria-hidden="true" />
             {todayAppointmentCount && todayAppointmentCount > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full border-2 border-card bg-primary px-1 text-[9px] font-bold leading-3 text-primary-foreground">
+              <span className="absolute -right-0.5 -top-0.5 flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-card bg-primary px-1 text-caption font-semibold text-primary-foreground">
                 {todayAppointmentCount > 99 ? "99+" : todayAppointmentCount}
               </span>
             ) : null}
@@ -315,7 +315,7 @@ function GlobalSearch({
           aria-label="Pesquisa global"
           aria-expanded={showResults}
           aria-controls={showResults ? resultsId : undefined}
-          className="h-10 w-full rounded-full border border-transparent bg-muted/70 pl-10 pr-4 text-sm text-foreground outline-none transition-[background-color,border-color,box-shadow] placeholder:text-muted-foreground focus:border-primary/20 focus:bg-card focus:shadow-[0_0_0_3px_var(--primary-muted)]"
+          className="h-10 w-full rounded-full border border-transparent bg-muted/70 pl-10 pr-4 font-sans text-control font-normal text-foreground outline-none transition-[background-color,border-color,box-shadow] placeholder:text-muted-foreground focus:border-primary/20 focus:bg-card focus:shadow-[0_0_0_3px_var(--primary-muted)]"
           role="combobox"
           aria-autocomplete="list"
         />
@@ -403,7 +403,7 @@ function SearchSection({
 }) {
   return (
     <section className="py-1 first:pt-0 last:pb-0">
-      <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+      <p className="px-3 py-1.5 text-caption font-semibold uppercase tracking-[0.08em] text-muted-foreground">
         {title}
       </p>
       <div className="grid gap-0.5">{children}</div>

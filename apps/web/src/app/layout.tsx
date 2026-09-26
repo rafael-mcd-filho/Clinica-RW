@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { Inter, Quicksand } from "next/font/google";
+import { Inter, Montserrat } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { PerformanceMonitor } from "@/components/observability/performance-monitor";
@@ -13,9 +13,9 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-const quicksand = Quicksand({
+const montserrat = Montserrat({
   variable: "--font-display",
-  weight: ["600", "700"],
+  weight: ["500", "600", "700"],
   subsets: ["latin"],
 });
 
@@ -44,7 +44,7 @@ export default async function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${inter.variable} ${quicksand.variable} h-full antialiased`}
+      className={`${inter.variable} ${montserrat.variable} h-full antialiased`}
     >
       <body
         className="min-h-full"

@@ -507,32 +507,8 @@ export async function revokePatientConsent(
   revalidatePath(`/pacientes/${patientId}`);
 }
 
-export async function createPatientTag(
-  _previousState: PatientActionState,
-  formData: FormData,
-): Promise<PatientActionState> {
-  const context = await requirePatientContext("paciente.editar");
-  if (!context?.organization) return { error: "Acesso negado." };
-
-  const parsed = z
-    .object({
-      name: z.string().trim().min(2, "Informe o nome da tag."),
-      color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Cor inválida."),
-    })
-    .safeParse({ name: formData.get("name"), color: formData.get("color") });
-
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message };
-
-  const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.from("tags").insert({
-    organization_id: context.organization.id,
-    ...parsed.data,
-  });
-  if (error) return { error: friendlyError(error.message) };
-  revalidatePath("/pacientes", "layout");
-  return { success: "Tag criada." };
-}
-
+// Tags são criadas só em Configurações > Cadastros e operação > Tags
+// (createSettingsTag); aqui apenas se aplicam ao paciente.
 export async function setPatientTag(
   patientId: string,
   tagId: string,

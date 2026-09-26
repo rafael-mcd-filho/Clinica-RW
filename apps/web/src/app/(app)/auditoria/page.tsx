@@ -254,13 +254,13 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
         </Button>
       </form>
 
-      <section className="animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
-        <div className="hidden grid-cols-[1.35fr_0.95fr_0.9fr_0.65fr_2.25rem] gap-4 border-b border-border bg-muted px-5 py-3 text-xs font-medium uppercase text-muted-foreground md:grid">
-          <span className="text-center">Evento</span>
-          <span className="text-center">Empresa</span>
-          <span className="text-center">Responsavel</span>
-          <span className="text-center">Data</span>
-          <span className="sr-only">Detalhes</span>
+      <section className="app-list-table-lg animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+        <div className="app-list-row hidden grid-cols-[1.35fr_0.95fr_0.9fr_0.65fr_5rem] gap-4 border-b border-border bg-muted px-5 py-3 text-xs font-semibold text-foreground lg:grid">
+          <span className="app-list-cell">Evento</span>
+          <span className="app-list-cell">Empresa</span>
+          <span className="app-list-cell">Responsavel</span>
+          <span className="app-list-cell">Data</span>
+          <span className="app-list-cell">Detalhes</span>
         </div>
 
         {error ? (

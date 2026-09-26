@@ -391,6 +391,10 @@ export default async function EncounterPage({
   return (
     <div className="grid gap-6">
       <div className="grid min-w-0 gap-2">
+        <h1 className="sr-only">
+          Prontuário de{" "}
+          {patientResult.data.social_name || patientResult.data.full_name}
+        </h1>
         <Breadcrumb
           items={[
             { label: "Pacientes", href: "/pacientes" },
@@ -403,25 +407,22 @@ export default async function EncounterPage({
           ]}
         />
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-          <div>
-            <Button asChild variant="secondary" size="sm">
-              <Link href={backDestination.href}>
-                <ArrowLeft className="size-4" /> {backDestination.label}
-              </Link>
-            </Button>
-            <h1 className="mt-4 text-heading-lg">
-              {patientResult.data.social_name || patientResult.data.full_name}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <Button asChild variant="secondary" size="sm">
+            <Link href={backDestination.href}>
+              <ArrowLeft className="size-4" /> {backDestination.label}
+            </Link>
+          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="neutral">
               {entryResult.data.template_snapshot.name ?? "Template"} v
               {entryResult.data.template_snapshot.version_number ?? 1}
-            </p>
+            </Badge>
+            <Badge
+              variant={encounter.status === "finalized" ? "success" : "warning"}
+            >
+              {encounter.status === "finalized" ? "Finalizado" : "Rascunho"}
+            </Badge>
           </div>
-          <Badge
-            variant={encounter.status === "finalized" ? "success" : "warning"}
-          >
-            {encounter.status === "finalized" ? "Finalizado" : "Rascunho"}
-          </Badge>
         </div>
       </div>
 

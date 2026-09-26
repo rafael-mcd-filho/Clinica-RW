@@ -97,20 +97,16 @@ export type FinanceSummary = {
   receivedMonth: number;
   openPayable: number;
   pendingPayout: number;
-  accrualRevenue: number;
-  accrualExpense: number;
   cashIn: number;
   cashOut: number;
   averageCollectionDays: number;
-  previousAccrualRevenue: number;
-  previousAccrualExpense: number;
   previousCashIn: number;
   previousCashOut: number;
 };
 
 export type { FinanceOverview } from "./finance-overview";
 
-type FinancePeriod = { from: string; to: string; mode: "cash" | "accrual" };
+type FinancePeriod = { from: string; to: string };
 type DreRow = { group: string; amount: number };
 
 export type FinanceListPagination = {
@@ -186,10 +182,8 @@ export function FinancePanel({
   const [entryDialog, setEntryDialog] = useState<"revenue" | "expense" | null>(
     null,
   );
-  const periodRevenue =
-    period.mode === "cash" ? summary.cashIn : summary.accrualRevenue;
-  const periodExpense =
-    period.mode === "cash" ? summary.cashOut : summary.accrualExpense;
+  const periodRevenue = summary.cashIn;
+  const periodExpense = summary.cashOut;
 
   function changePage(queryKey: string, section: string, nextPage: number) {
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -202,8 +196,9 @@ export function FinancePanel({
     });
   }
 
-  const tabs: TabItem[] = [
-    {
+  const tabs: TabItem[] = [];
+  if (permissions.canViewCash || permissions.canViewPayables) {
+    tabs.push({
       id: "visao-geral",
       label: "Visão geral",
       icon: <WalletCards />,
@@ -212,20 +207,12 @@ export function FinancePanel({
           overview={overview}
           periodRevenue={periodRevenue}
           periodExpense={periodExpense}
-          previousRevenue={
-            period.mode === "cash"
-              ? summary.previousCashIn
-              : summary.previousAccrualRevenue
-          }
-          previousExpense={
-            period.mode === "cash"
-              ? summary.previousCashOut
-              : summary.previousAccrualExpense
-          }
+          previousRevenue={summary.previousCashIn}
+          previousExpense={summary.previousCashOut}
           openReceivable={summary.openReceivable}
           openPayable={summary.openPayable}
-          revenueLabel={period.mode === "cash" ? "Entradas" : "Receitas"}
-          expenseLabel={period.mode === "cash" ? "Saídas" : "Despesas"}
+          revenueLabel="Entradas"
+          expenseLabel="Saídas"
           canViewCash={permissions.canViewCash}
           canViewPayables={permissions.canViewPayables}
         />
@@ -244,29 +231,35 @@ export function FinancePanel({
               <>
                 <MetricCard
                   icon={CircleDollarSign}
-                  label={period.mode === "cash" ? "Entradas" : "Receitas"}
+                  label="Entradas"
                   value={formatCurrency(periodRevenue)}
-                  tone="success"
-                />
-                <MetricCard
-                  icon={WalletCards}
-                  label={period.mode === "cash" ? "Saídas" : "Despesas"}
-                  value={formatCurrency(periodExpense)}
                   tone="success"
                 />
               </>
             ) : null}
             {permissions.canViewPayables ? (
-              <MetricCard
-                icon={ReceiptText}
-                label="Resultado do período"
-                value={formatCurrency(periodRevenue - periodExpense)}
-                tone={
-                  periodRevenue - periodExpense >= 0 ? "success" : "destructive"
-                }
-              />
+              <>
+                <MetricCard
+                  icon={WalletCards}
+                  label="Saídas"
+                  value={formatCurrency(periodExpense)}
+                  tone="destructive"
+                />
+                {permissions.canViewCash ? (
+                  <MetricCard
+                    icon={ReceiptText}
+                    label="Resultado do período"
+                    value={formatCurrency(periodRevenue - periodExpense)}
+                    tone={
+                      periodRevenue - periodExpense >= 0
+                        ? "success"
+                        : "destructive"
+                    }
+                  />
+                ) : null}
+              </>
             ) : null}
-            {permissions.canViewPayouts ? (
+            {permissions.canViewCash ? (
               <MetricCard
                 icon={Banknote}
                 label="Prazo médio para receber"
@@ -293,8 +286,8 @@ export function FinancePanel({
           </section>
         </div>
       ),
-    },
-  ];
+    });
+  }
 
   if (permissions.canViewCash) {
     tabs.push(
@@ -375,7 +368,7 @@ export function FinancePanel({
   if (permissions.canViewCash && permissions.canViewPayables) {
     tabs.push({
       id: "dre",
-      label: "DRE",
+      label: "Resultado",
       icon: <FileText />,
       content: (
         <DreSection
@@ -400,27 +393,29 @@ export function FinancePanel({
         title="Financeiro"
         description="Recebimentos, contas a pagar, recibos e repasses profissionais."
         actions={
-          <>
-            {permissions.canReceive ? (
-              <Button
-                type="button"
-                size="lg"
-                onClick={() => setEntryDialog("revenue")}
-              >
-                <Plus className="size-4" aria-hidden="true" /> Nova receita
-              </Button>
-            ) : null}
-            {permissions.canManagePayables ? (
-              <Button
-                type="button"
-                size="lg"
-                variant="secondary"
-                onClick={() => setEntryDialog("expense")}
-              >
-                <Plus className="size-4" aria-hidden="true" /> Nova despesa
-              </Button>
-            ) : null}
-          </>
+          permissions.canReceive || permissions.canManagePayables ? (
+            <>
+              {permissions.canReceive ? (
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={() => setEntryDialog("revenue")}
+                >
+                  <Plus className="size-4" aria-hidden="true" /> Nova receita
+                </Button>
+              ) : null}
+              {permissions.canManagePayables ? (
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="secondary"
+                  onClick={() => setEntryDialog("expense")}
+                >
+                  <Plus className="size-4" aria-hidden="true" /> Nova despesa
+                </Button>
+              ) : null}
+            </>
+          ) : null
         }
       />
 
@@ -470,9 +465,9 @@ function DreSection({
     <div className="grid gap-5">
       <Card>
         <CardHeader>
-          <h2 className="font-semibold">DRE gerencial</h2>
+          <h2 className="font-semibold">Resultado do período</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Resultado estruturado por competência e classificação financeira.
+            Resultado dos pagamentos e recebimentos do período, por categoria.
           </p>
         </CardHeader>
         <CardContent className="grid gap-3">
@@ -507,7 +502,7 @@ function DreSection({
         <CardHeader>
           <h2 className="font-semibold">Classificação das categorias</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Define em qual linha cada lançamento aparece na DRE.
+            Define em qual linha cada pagamento ou recebimento aparece.
           </p>
         </CardHeader>
         <CardContent className="divide-y divide-border">
@@ -567,9 +562,6 @@ function DreCategoryRow({
 }
 
 function FinancePeriodFilter({ period }: { period: FinancePeriod }) {
-  const pathname = usePathname();
-  const modeHref = (mode: FinancePeriod["mode"]) =>
-    `${pathname}?from=${period.from}&to=${period.to}&mode=${mode}`;
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 p-3 lg:flex-row lg:items-end lg:justify-between">
@@ -577,7 +569,6 @@ function FinancePeriodFilter({ period }: { period: FinancePeriod }) {
           method="get"
           className="flex flex-col gap-3 sm:flex-row sm:items-end"
         >
-          <input type="hidden" name="mode" value={period.mode} />
           <label className="grid gap-1.5 text-sm font-medium">
             De
             <DatePickerInput name="from" defaultValue={period.from} required />
@@ -590,25 +581,6 @@ function FinancePeriodFilter({ period }: { period: FinancePeriod }) {
             Aplicar período
           </Button>
         </form>
-        <div
-          className="flex rounded-md border border-border bg-muted p-1"
-          aria-label="Regime financeiro"
-        >
-          <Button
-            asChild
-            size="sm"
-            variant={period.mode === "accrual" ? "primary" : "ghost"}
-          >
-            <Link href={modeHref("accrual")}>Competência</Link>
-          </Button>
-          <Button
-            asChild
-            size="sm"
-            variant={period.mode === "cash" ? "primary" : "ghost"}
-          >
-            <Link href={modeHref("cash")}>Caixa</Link>
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );
@@ -779,7 +751,7 @@ function ReceivablesSection({
   return (
     <section className="grid gap-3">
       <div>
-        <h2 className="text-base font-semibold">Contas a receber</h2>
+        <h2 className="text-heading-sm font-semibold">Contas a receber</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Consultas geram cobranças automaticamente a partir do valor do
           procedimento.
@@ -865,7 +837,7 @@ function PaymentsSection({
 
   return (
     <section className="grid gap-3">
-      <h2 className="text-base font-semibold">Pagamentos recebidos</h2>
+      <h2 className="text-heading-sm font-semibold">Pagamentos recebidos</h2>
       <DataTable
         columns={columns}
         data={payments}
@@ -951,7 +923,7 @@ function PayablesSection({
 
   return (
     <section className="grid gap-3">
-      <h2 className="text-base font-semibold">Contas a pagar</h2>
+      <h2 className="text-heading-sm font-semibold">Contas a pagar</h2>
       <DataTable
         columns={columns}
         data={payables}
@@ -1036,7 +1008,7 @@ function PayoutsSection({
 
   return (
     <section className="grid gap-3">
-      <h2 className="text-base font-semibold">Repasses profissionais</h2>
+      <h2 className="text-heading-sm font-semibold">Repasses profissionais</h2>
       <DataTable
         columns={columns}
         data={payouts}
@@ -1250,7 +1222,7 @@ function CreateRevenueDialog({
       open
       onClose={onClose}
       title="Nova receita"
-      description="Registre uma receita avulsa por competência."
+      description="Registre uma receita e seu vencimento."
       formAction={action}
       pending={pending}
       error={state.error}
@@ -1278,20 +1250,10 @@ function CreateRevenueDialog({
         Valor
         <Input name="amount" type="number" min="0.01" step="0.01" required />
       </label>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-2 text-sm font-medium">
-          Competência
-          <DatePickerInput
-            name="competence_date"
-            defaultValue={today}
-            required
-          />
-        </label>
-        <label className="grid gap-2 text-sm font-medium">
-          Vencimento
-          <DatePickerInput name="due_date" defaultValue={today} required />
-        </label>
-      </div>
+      <label className="grid gap-2 text-sm font-medium">
+        Vencimento
+        <DatePickerInput name="due_date" defaultValue={today} required />
+      </label>
       <label className="grid gap-2 text-sm font-medium">
         Observação
         <Textarea name="notes" />
@@ -1318,7 +1280,7 @@ function CreateExpenseDialog({
       open
       onClose={onClose}
       title="Nova despesa"
-      description="Registre uma despesa e sua competência."
+      description="Registre uma despesa e seu vencimento."
       formAction={action}
       pending={pending}
       error={state.error}
@@ -1350,20 +1312,10 @@ function CreateExpenseDialog({
         Valor
         <Input name="amount" type="number" min="0.01" step="0.01" required />
       </label>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-2 text-sm font-medium">
-          Competência
-          <DatePickerInput
-            name="competence_date"
-            defaultValue={today}
-            required
-          />
-        </label>
-        <label className="grid gap-2 text-sm font-medium">
-          Vencimento
-          <DatePickerInput name="due_date" defaultValue={today} required />
-        </label>
-      </div>
+      <label className="grid gap-2 text-sm font-medium">
+        Vencimento
+        <DatePickerInput name="due_date" defaultValue={today} required />
+      </label>
     </FormDialog>
   );
 }

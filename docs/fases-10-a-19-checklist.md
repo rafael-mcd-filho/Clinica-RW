@@ -35,25 +35,11 @@
 - [x] Historico de execucoes
 - [x] Tratamento de falhas e retentativas
 
-## Fase 12 - Kanban de Pacientes e Funis
+## Fase 12 - Adiada
 
-- [x] Funis configuraveis (etapas com cor, tipo e limite de WIP)
-- [x] Templates de funil (5 presets do documento de especificacao, aplicados
-      na criacao e editaveis antes de salvar)
-- [x] Cards vinculados a pacientes (1 card ativo por paciente por funil)
-- [x] Drag-and-drop entre etapas (@dnd-kit, com atualizacao otimista e
-      realtime via Supabase)
-- [x] Historico de movimentacoes (tabela append-only + timeline no painel do
-      card)
-- [x] Painel lateral do card (ficha do paciente, timeline, notas internas,
-      atalho para agenda)
-- [x] Metricas por etapa: contagem, limite de WIP, card estagnado, conversao
-      por etapa e tempo medio calculados a partir de `funnel_card_movements`
-- [x] Integracao inicial com agenda, prontuario, financeiro e automacoes —
-      card linka para a ficha do paciente e agenda; movimentacao de etapa
-      emite evento `kanban.card_moved` que a Fase 11 ja consegue consumir;
-      integracao com financeiro fica para quando o modulo de funis tiver
-      cards com natureza comercial mais definida
+A area de paineis e funis foi retirada do produto em setembro de 2026.
+As migrations originais permanecem no historico; uma migration posterior
+remove suas tabelas, permissoes e funcoes.
 
 ## Fase 13 - Relatorios e BI Inicial
 
@@ -87,10 +73,8 @@
 
 - Aplicacao: `npm run check`.
 - Banco: aplicar migrations e executar `npx supabase test db`, incluindo
-  `phase10_online_booking_rls.sql`, `phase11_events_jobs_notifications.sql`,
-  `phase12_kanban_funnel.sql` e `phase13_reports_rls.sql`.
-- Demo: `npm run seed:demo-funnels -- --organization-id UUID` cria o "Funil
-  Comercial" com cards para os pacientes demo existentes.
+  `phase10_online_booking_rls.sql`, `phase11_events_jobs_notifications.sql`
+  e `phase13_reports_rls.sql`.
 - Fluxo manual: habilitar agendamento online em `/agenda`, abrir
   `/agendar/[slug]`, enviar solicitacao, abrir o link de acompanhamento,
   remarcar/cancelar quando aplicavel e confirmar pela agenda interna.

@@ -286,7 +286,7 @@ function CreatedPanel({
               readOnly
               value={setupLink}
               onFocus={(event) => event.currentTarget.select()}
-              className="flex-1 font-mono text-xs"
+              className="flex-1 font-mono text-control"
             />
             <Button type="button" variant="secondary" onClick={handleCopy}>
               {copied ? (

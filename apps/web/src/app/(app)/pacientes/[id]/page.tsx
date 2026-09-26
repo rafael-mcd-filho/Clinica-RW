@@ -156,11 +156,7 @@ type PatientCommunicationRow = {
 };
 
 type PatientSection =
-  | "overview"
-  | "history"
-  | "documents"
-  | "finance"
-  | "messages";
+  "overview" | "history" | "documents" | "finance" | "messages";
 
 const documentTypeLabels: Record<string, string> = {
   prescription: "Prescrição",
@@ -480,6 +476,7 @@ export default async function PatientDetailsPage({
   return (
     <div className="grid gap-6">
       <section className="grid min-w-0 gap-2">
+        <h1 className="sr-only">{displayName}</h1>
         <Breadcrumb
           items={[
             { label: "Pacientes", href: "/pacientes" },
@@ -493,35 +490,25 @@ export default async function PatientDetailsPage({
                 <ArrowLeft className="size-4" aria-hidden="true" />
               </Link>
             </Button>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-heading-lg">{displayName}</h1>
-                <Badge
-                  variant={
-                    patient.deceased_at
-                      ? "destructive"
-                      : patient.deleted_at
-                        ? "neutral"
-                        : patient.status === "active"
-                          ? "success"
-                          : "neutral"
-                  }
-                >
-                  {patient.deceased_at
-                    ? "Óbito"
-                    : patient.deleted_at
-                      ? "Arquivado"
-                      : patient.status === "active"
-                        ? "Ativo"
-                        : "Inativo"}
-                </Badge>
-              </div>
-              {patient.social_name ? (
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Nome civil: {patient.full_name}
-                </p>
-              ) : null}
-            </div>
+            <Badge
+              variant={
+                patient.deceased_at
+                  ? "destructive"
+                  : patient.deleted_at
+                    ? "neutral"
+                    : patient.status === "active"
+                      ? "success"
+                      : "neutral"
+              }
+            >
+              {patient.deceased_at
+                ? "Óbito"
+                : patient.deleted_at
+                  ? "Arquivado"
+                  : patient.status === "active"
+                    ? "Ativo"
+                    : "Inativo"}
+            </Badge>
           </div>
           {canEdit ? (
             <Button asChild className="w-full sm:w-auto">
@@ -620,7 +607,7 @@ export default async function PatientDetailsPage({
                   {selectedTags.map((tag) => (
                     <span
                       key={tag.id}
-                      className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+                      className="rounded-full border px-1.5 py-0.5 text-caption font-medium leading-none"
                       style={{
                         borderColor: `${tag.color}55`,
                         color: tag.color,
@@ -828,7 +815,7 @@ function ModuleHeading({
   return (
     <section className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
       <div>
-        <h2 className="text-xl font-semibold">{title}</h2>
+        <h2 className="text-heading-sm font-semibold">{title}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       </div>
       {action}

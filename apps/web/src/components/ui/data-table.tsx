@@ -38,9 +38,16 @@ function columnAlignment<TData>(column: ColumnDef<TData>) {
   return alignClasses[meta?.align ?? "left"];
 }
 
+const densityClasses = {
+  default: { head: "px-4 py-3", cell: "px-4 py-3" },
+  compact: { head: "px-4 py-2.5", cell: "px-4 py-2" },
+} as const;
+
 type DataTableProps<TData> = {
   columns: ColumnDef<TData>[];
   data: TData[];
+  /** `compact` reduz o espaço vertical das linhas, para listas longas. */
+  density?: keyof typeof densityClasses;
   emptyDescription?: string;
   emptyTitle?: string;
   enableSorting?: boolean;
@@ -64,6 +71,7 @@ type DataTableProps<TData> = {
 export function DataTable<TData>({
   columns,
   data,
+  density = "default",
   emptyDescription = "Ajuste os filtros ou cadastre novos registros.",
   emptyTitle = "Nenhum registro encontrado",
   enableSorting = true,
@@ -79,6 +87,7 @@ export function DataTable<TData>({
   const [internalFilter, setInternalFilter] = useState("");
   const effectiveFilter = searchable ? internalFilter : globalFilter;
   const showLoadingState = Boolean(loading) && !data.length;
+  const spacing = densityClasses[density];
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     columns,
@@ -147,17 +156,14 @@ export function DataTable<TData>({
       <div
         className={cn("overflow-x-auto", renderMobileRow && "hidden md:block")}
       >
-        <table className="w-full min-w-[760px] border-collapse text-body tabular-nums">
-          <thead className="bg-muted/50 text-left text-label tracking-wide uppercase text-muted-foreground">
+        <table className="app-table w-full min-w-[760px] text-table tabular-nums">
+          <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className={cn(
-                      "border-b border-border px-4 py-3 font-medium",
-                      columnAlignment(header.column.columnDef),
-                    )}
+                    className={spacing.head}
                     style={
                       header.column.columnDef.size !== undefined
                         ? { width: header.getSize() }
@@ -168,7 +174,7 @@ export function DataTable<TData>({
                       <button
                         type="button"
                         className={cn(
-                          "inline-flex items-center gap-1 text-left",
+                          "inline-flex w-full items-center justify-center gap-1 text-center",
                           header.column.getCanSort()
                             ? "cursor-pointer hover:text-foreground"
                             : "cursor-default",
@@ -201,10 +207,7 @@ export function DataTable<TData>({
               ? Array.from({ length: 5 }).map((_, index) => (
                   <tr key={`skeleton-${index}`}>
                     {table.getAllLeafColumns().map((column) => (
-                      <td
-                        key={column.id}
-                        className="border-b border-border px-4 py-3"
-                      >
+                      <td key={column.id} className={spacing.cell}>
                         <Skeleton className="h-4 w-full max-w-32" />
                       </td>
                     ))}
@@ -214,13 +217,13 @@ export function DataTable<TData>({
             {rows.map((row) => (
               <tr
                 key={row.id}
-                className="transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-background"
+                className="transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]"
               >
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}
                     className={cn(
-                      "border-b border-border px-4 py-3",
+                      spacing.cell,
                       columnAlignment(cell.column.columnDef),
                     )}
                   >
@@ -254,7 +257,7 @@ export function DataTable<TData>({
       {!rows.length && !showLoadingState ? (
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : null}
-      <div className="flex flex-col gap-3 px-4 py-4 text-label text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 px-4 py-4 text-body text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <span>{paginationLabel}</span>
         <div className="flex items-center gap-2">
           <Button

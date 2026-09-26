@@ -983,16 +983,16 @@ function AvailabilityPicker({
                   variant="secondary"
                   onClick={() => onSelectDay(day.key)}
                   className={cn(
-                    "min-w-0 flex-col gap-0 overflow-hidden px-1 py-2",
+                    "h-auto min-w-0 flex-col gap-0 overflow-hidden px-1 py-2",
                     day.key === selectedDay
                       ? "border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary"
                       : "hover:border-primary/50 hover:bg-primary-muted",
                   )}
                 >
-                  <span className="w-full truncate text-[10px] font-semibold uppercase opacity-80">
+                  <span className="w-full truncate text-caption font-semibold uppercase opacity-80">
                     {day.weekdayLabel}
                   </span>
-                  <span className="text-xs font-semibold tabular-nums">
+                  <span className="text-control font-semibold tabular-nums">
                     {day.dateLabel}
                   </span>
                 </Button>
@@ -1023,7 +1023,7 @@ function AvailabilityPicker({
                   variant="secondary"
                   onClick={() => onSelectSlot(slot.id)}
                   className={cn(
-                    "min-w-0 px-1.5 py-2 text-xs font-medium tabular-nums",
+                    "min-w-0 px-1.5 py-2 text-control font-medium tabular-nums",
                     slot.id === selectedSlotId
                       ? "border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary"
                       : "hover:border-primary/50 hover:bg-primary-muted",
@@ -1206,7 +1206,7 @@ function BookingStepper({ step }: { step: BookingStep }) {
           </span>
           <span
             className={cn(
-              "w-full truncate px-0.5 text-[10px] font-medium sm:text-xs",
+              "w-full truncate px-0.5 text-caption font-medium sm:text-xs",
               definition.n === step
                 ? "text-foreground"
                 : "text-muted-foreground",

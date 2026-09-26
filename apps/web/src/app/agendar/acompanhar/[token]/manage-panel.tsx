@@ -45,7 +45,9 @@ export function ManageBookingPanel({ booking }: { booking: BookingDetails }) {
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">Acompanhar agendamento</h1>
+            <h1 className="text-heading font-semibold">
+              Acompanhar agendamento
+            </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {booking.clinicName}
             </p>

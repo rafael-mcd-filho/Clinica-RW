@@ -1,6 +1,6 @@
 /**
  * Paleta categórica do hi-clinic — única origem permitida de cor "de dado"
- * (etapas de funil, tags, séries de gráfico). Cores de UI ficam em globals.css.
+ * (tags e séries de gráfico). Cores de UI ficam em globals.css.
  *
  * Tons calibrados para AA sobre branco quando usados como texto e para leitura
  * confortável como fundo de selo/dot.
@@ -19,9 +19,6 @@ export const categoricalColors = {
 } as const;
 
 export type CategoricalColor = keyof typeof categoricalColors;
-
-/** Cor padrão de uma nova etapa de funil. */
-export const defaultStageColor = categoricalColors.blue;
 
 /** Cor padrão de uma agenda de profissional sem cor configurada. */
 export const defaultScheduleColor = categoricalColors.blue;

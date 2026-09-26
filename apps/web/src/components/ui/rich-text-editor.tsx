@@ -43,7 +43,7 @@ export function RichTextEditor({
       attributes: {
         class: cn(
           minHeightClassName,
-          "prose prose-sm max-w-none rounded-b-md border-x border-b border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/15",
+          "prose prose-sm max-w-none rounded-b-md border-x border-b border-border bg-card px-3 py-2 text-reading font-normal outline-none focus:ring-2 focus:ring-primary/15",
         ),
         "aria-placeholder": placeholder ?? "",
         "data-placeholder": placeholder ?? "",
@@ -118,7 +118,7 @@ export function RichTextEditor({
         {placeholder && isEmpty ? (
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2 text-sm text-muted-foreground"
+            className="pointer-events-none absolute inset-x-0 top-0 px-3 py-2 text-reading font-normal text-muted-foreground"
           >
             {placeholder}
           </span>

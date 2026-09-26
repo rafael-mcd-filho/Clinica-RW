@@ -23,9 +23,6 @@ export type ContactPermissionView = {
   canViewPatient: boolean;
   canViewAgenda: boolean;
   canCreateAppointment: boolean;
-  canViewFunnel: boolean;
-  canManageFunnel: boolean;
-  canConfigureFunnel: boolean;
 };
 
 export type ContactAppointmentView = {
@@ -79,32 +76,6 @@ export type ContactFileView = {
   sentAt: string | null;
 };
 
-export type ContactOpportunityMovementView = {
-  id: string;
-  cardId: string;
-  fromStageName: string | null;
-  toStageName: string;
-  movedByName: string | null;
-  movedAt: string;
-  note: string | null;
-};
-
-export type ContactOpportunityView = {
-  id: string;
-  funnelId: string;
-  funnelName: string;
-  stageId: string;
-  stageName: string;
-  assignedProfessionalId: string | null;
-  assignedProfessionalName: string | null;
-  nextAction: string | null;
-  nextActionDate: string | null;
-  value: number | string | null;
-  archivedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type ContactDetailsData = {
   organizationId: string;
   conversationId: string;
@@ -132,13 +103,10 @@ export type ContactDetailsData = {
   onlineBookings: ContactOnlineBookingView[];
   attendanceEvents: ContactAttendanceEventView[];
   files: ContactFileView[];
-  opportunities: ContactOpportunityView[];
-  opportunityMovements: ContactOpportunityMovementView[];
 };
 
 export type ContactDetailsResult =
-  | { ok: true; data: ContactDetailsData }
-  | { ok: false; error: string };
+  { ok: true; data: ContactDetailsData } | { ok: false; error: string };
 
 type ConversationRow = { id: string; contact_id: string };
 type ContactRow = {
@@ -199,28 +167,6 @@ type FileRow = {
   created_at: string;
   sent_at: string | null;
 };
-type OpportunityRow = {
-  id: string;
-  funnel_id: string;
-  stage_id: string;
-  assigned_professional_id: string | null;
-  next_action: string | null;
-  next_action_date: string | null;
-  value: number | string | null;
-  archived_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-type MovementRow = {
-  id: string;
-  card_id: string;
-  from_stage_id: string | null;
-  to_stage_id: string;
-  moved_by_user_id: string | null;
-  moved_at: string;
-  note: string | null;
-};
-
 export async function loadContactDetailsAction(
   conversationId: string,
 ): Promise<ContactDetailsResult> {
@@ -249,13 +195,6 @@ export async function loadContactDetailsAction(
     canCreateAppointment: context.permissionCodes.has(
       "agenda.criar_agendamento",
     ),
-    canViewFunnel: hasAnyPermission(context.permissionCodes, [
-      "funil.ver",
-      "funil.gerenciar",
-      "funil.configurar",
-    ]),
-    canManageFunnel: context.permissionCodes.has("funil.gerenciar"),
-    canConfigureFunnel: context.permissionCodes.has("funil.configurar"),
   };
   const supabase = await createSupabaseServerClient();
 
@@ -354,25 +293,6 @@ export async function loadContactDetailsAction(
     .limit(20)
     .returns<Array<{ id: string }>>();
 
-  // Cards do paciente e cards criados direto da conversa (que podem nem ter
-  // paciente ainda) contam como oportunidades do mesmo contato.
-  const opportunityFilters = [
-    `contact_id.eq.${contact.id}`,
-    ...(contact.patient_id ? [`patient_id.eq.${contact.patient_id}`] : []),
-  ];
-  const opportunitiesPromise = permissions.canViewFunnel
-    ? supabase
-        .from("funnel_cards")
-        .select(
-          "id, funnel_id, stage_id, assigned_professional_id, next_action, next_action_date, value, archived_at, created_at, updated_at",
-        )
-        .eq("organization_id", organizationId)
-        .or(opportunityFilters.join(","))
-        .order("created_at", { ascending: false })
-        .limit(30)
-        .returns<OpportunityRow[]>()
-    : Promise.resolve({ data: [] as OpportunityRow[], error: null });
-
   // Os catálogos do agendamento não vêm mais daqui: o modal compartilhado
   // (components/agenda/appointment-form-modal) carrega os seus quando abre.
   const [
@@ -381,14 +301,12 @@ export async function loadContactDetailsAction(
     activeAppointmentsResult,
     onlineBookingsResult,
     contactConversationsResult,
-    opportunitiesResult,
   ] = await Promise.all([
     patientPromise,
     allAppointmentsPromise,
     activeAppointmentsPromise,
     onlineBookingsPromise,
     contactConversationsPromise,
-    opportunitiesPromise,
   ]);
 
   const allAppointments = allAppointmentsResult.data ?? [];
@@ -400,7 +318,6 @@ export async function loadContactDetailsAction(
     .filter((appointment) => !activeAppointmentIds.has(appointment.id))
     .slice(0, 50);
   const onlineBookings = onlineBookingsResult.data ?? [];
-  const opportunities = opportunitiesResult.data ?? [];
   const conversationIds = (contactConversationsResult.data ?? []).map(
     (item) => item.id,
   );
@@ -429,16 +346,9 @@ export async function loadContactDetailsAction(
     ...new Set(
       [...activeAppointments, ...appointmentHistory]
         .map((appointment) => appointment.professional_id)
-        .concat(onlineBookings.map((booking) => booking.professional_id))
-        .concat(
-          opportunities
-            .map((opportunity) => opportunity.assigned_professional_id)
-            .filter((id): id is string => Boolean(id)),
-        ),
+        .concat(onlineBookings.map((booking) => booking.professional_id)),
     ),
   ];
-  const funnelIds = [...new Set(opportunities.map((item) => item.funnel_id))];
-  const cardIds = opportunities.map((item) => item.id);
   const eventUserIds = [
     ...new Set(
       events
@@ -451,99 +361,47 @@ export async function loadContactDetailsAction(
     ),
   ];
 
-  const [
-    proceduresResult,
-    professionalsResult,
-    funnelsResult,
-    stagesResult,
-    movementsResult,
-    eventUsersResult,
-    filesResult,
-  ] = await Promise.all([
-    procedureIds.length
-      ? supabase
-          .from("procedures")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .in("id", procedureIds)
-          .returns<Array<{ id: string; name: string }>>()
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
-    professionalIds.length
-      ? supabase
-          .from("professionals")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .in("id", professionalIds)
-          .returns<Array<{ id: string; name: string }>>()
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
-    funnelIds.length
-      ? supabase
-          .from("funnels")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .in("id", funnelIds)
-          .returns<Array<{ id: string; name: string }>>()
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
-    cardIds.length
-      ? supabase
-          .from("funnel_stages")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .in("funnel_id", funnelIds)
-          .returns<Array<{ id: string; name: string }>>()
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
-    cardIds.length
-      ? supabase
-          .from("funnel_card_movements")
-          .select(
-            "id, card_id, from_stage_id, to_stage_id, moved_by_user_id, moved_at, note",
-          )
-          .eq("organization_id", organizationId)
-          .in("card_id", cardIds)
-          .order("moved_at", { ascending: false })
-          .limit(150)
-          .returns<MovementRow[]>()
-      : Promise.resolve({ data: [] as MovementRow[] }),
-    eventUserIds.length
-      ? supabase
-          .from("app_users")
-          .select("id, name")
-          .eq("organization_id", organizationId)
-          .in("id", eventUserIds)
-          .returns<Array<{ id: string; name: string }>>()
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
-    conversationIds.length
-      ? supabase
-          .from("whatsapp_messages")
-          .select(
-            "id, conversation_id, direction, message_type, body, media_mime_type, status, created_at, sent_at",
-          )
-          .eq("organization_id", organizationId)
-          .in("conversation_id", conversationIds)
-          .in("message_type", [...mediaMessageTypes])
-          .not("media_url", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(120)
-          .returns<FileRow[]>()
-      : Promise.resolve({ data: [] as FileRow[] }),
-  ]);
-
-  const movements = movementsResult.data ?? [];
-  const movementUserIds = [
-    ...new Set(
-      movements
-        .map((movement) => movement.moved_by_user_id)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ];
-  const { data: movementUsers } = movementUserIds.length
-    ? await supabase
-        .from("app_users")
-        .select("id, name")
-        .eq("organization_id", organizationId)
-        .in("id", movementUserIds)
-        .returns<Array<{ id: string; name: string }>>()
-    : { data: [] as Array<{ id: string; name: string }> };
+  const [proceduresResult, professionalsResult, eventUsersResult, filesResult] =
+    await Promise.all([
+      procedureIds.length
+        ? supabase
+            .from("procedures")
+            .select("id, name")
+            .eq("organization_id", organizationId)
+            .in("id", procedureIds)
+            .returns<Array<{ id: string; name: string }>>()
+        : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+      professionalIds.length
+        ? supabase
+            .from("professionals")
+            .select("id, name")
+            .eq("organization_id", organizationId)
+            .in("id", professionalIds)
+            .returns<Array<{ id: string; name: string }>>()
+        : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+      eventUserIds.length
+        ? supabase
+            .from("app_users")
+            .select("id, name")
+            .eq("organization_id", organizationId)
+            .in("id", eventUserIds)
+            .returns<Array<{ id: string; name: string }>>()
+        : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+      conversationIds.length
+        ? supabase
+            .from("whatsapp_messages")
+            .select(
+              "id, conversation_id, direction, message_type, body, media_mime_type, status, created_at, sent_at",
+            )
+            .eq("organization_id", organizationId)
+            .in("conversation_id", conversationIds)
+            .in("message_type", [...mediaMessageTypes])
+            .not("media_url", "is", null)
+            .order("created_at", { ascending: false })
+            .limit(120)
+            .returns<FileRow[]>()
+        : Promise.resolve({ data: [] as FileRow[] }),
+    ]);
 
   const procedureName = new Map(
     (proceduresResult.data ?? []).map((item) => [item.id, item.name]),
@@ -551,17 +409,8 @@ export async function loadContactDetailsAction(
   const professionalName = new Map(
     (professionalsResult.data ?? []).map((item) => [item.id, item.name]),
   );
-  const funnelName = new Map(
-    (funnelsResult.data ?? []).map((item) => [item.id, item.name]),
-  );
-  const stageName = new Map(
-    (stagesResult.data ?? []).map((item) => [item.id, item.name]),
-  );
   const eventUserName = new Map(
     (eventUsersResult.data ?? []).map((item) => [item.id, item.name]),
-  );
-  const movementUserName = new Map(
-    (movementUsers ?? []).map((item) => [item.id, item.name]),
   );
 
   function mapAppointment(row: AppointmentRow): ContactAppointmentView {
@@ -651,36 +500,6 @@ export async function loadContactDetailsAction(
         status: file.status,
         createdAt: file.created_at,
         sentAt: file.sent_at,
-      })),
-      opportunities: opportunities.map((opportunity) => ({
-        id: opportunity.id,
-        funnelId: opportunity.funnel_id,
-        funnelName: funnelName.get(opportunity.funnel_id) ?? "Funil",
-        stageId: opportunity.stage_id,
-        stageName: stageName.get(opportunity.stage_id) ?? "Etapa",
-        assignedProfessionalId: opportunity.assigned_professional_id,
-        assignedProfessionalName: opportunity.assigned_professional_id
-          ? (professionalName.get(opportunity.assigned_professional_id) ?? null)
-          : null,
-        nextAction: opportunity.next_action,
-        nextActionDate: opportunity.next_action_date,
-        value: opportunity.value,
-        archivedAt: opportunity.archived_at,
-        createdAt: opportunity.created_at,
-        updatedAt: opportunity.updated_at,
-      })),
-      opportunityMovements: movements.map((movement) => ({
-        id: movement.id,
-        cardId: movement.card_id,
-        fromStageName: movement.from_stage_id
-          ? (stageName.get(movement.from_stage_id) ?? "Etapa")
-          : null,
-        toStageName: stageName.get(movement.to_stage_id) ?? "Etapa",
-        movedByName: movement.moved_by_user_id
-          ? (movementUserName.get(movement.moved_by_user_id) ?? null)
-          : null,
-        movedAt: movement.moved_at,
-        note: movement.note,
       })),
     },
   };

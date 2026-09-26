@@ -20,7 +20,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Prohibit as Ban,
   CalendarDots as CalendarClock,
-  CalendarDots as CalendarDays,
   CaretLeft as ChevronLeft,
   CaretRight as ChevronRight,
   Check,
@@ -61,7 +60,6 @@ import { Input, MultiSelect, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
 import { ConfirmDialog } from "@/components/ui/dialog";
-import { PageHeader } from "@/components/ui/page-header";
 import {
   addAgendaPeriod,
   buildAgendaEncounterHref,
@@ -283,12 +281,6 @@ export function AgendaBoard({
   return (
     <AgendaTimeZoneContext.Provider value={data.timeZone}>
       <div className="grid gap-5">
-        <PageHeader
-          icon={CalendarDays}
-          title="Agenda"
-          description="Operação diária da recepção e dos profissionais."
-        />
-
         <AgendaCalendarView
           data={data}
           date={initialDate}
@@ -1002,7 +994,7 @@ function AgendaSidebar({
                 button_previous:
                   "flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40",
                 weekday:
-                  "h-7 w-8 p-0 text-center text-[11px] font-medium uppercase text-muted-foreground",
+                  "h-7 w-8 p-0 text-center text-caption font-medium uppercase text-muted-foreground",
               }}
             />
           </AgendaDayDensityContext.Provider>
@@ -1034,7 +1026,7 @@ function AgendaSidebar({
               size="sm"
               disabled={!canClear}
               onClick={onClearFilters}
-              className="h-7 px-2 text-xs text-primary hover:bg-primary-muted hover:text-primary"
+              className="h-7 px-2 text-control text-primary hover:bg-primary-muted hover:text-primary"
             >
               Limpar filtros
             </Button>
@@ -1238,7 +1230,9 @@ function DayAgenda({
               <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-semibold">{period.label}</h2>
+                    <h2 className="text-heading-sm font-semibold">
+                      {period.label}
+                    </h2>
                     <Badge variant="primary" className="rounded-md">
                       {periodAppointments.length}
                     </Badge>
@@ -1771,7 +1765,7 @@ function MonthAgenda({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-fit justify-start px-1 text-label text-primary hover:bg-primary-muted hover:text-primary"
+                    className="h-6 w-fit justify-start px-1 text-control text-primary hover:bg-primary-muted hover:text-primary"
                     onClick={() => setDetailsDay(dayKey)}
                   >
                     +{appointments.length - 3} mais
@@ -2322,7 +2316,9 @@ function appointmentPriceHint(appointment: {
     difference > 0
       ? `${formatMoney(difference)} de desconto sobre ${formatMoney(listPrice)}`
       : `${formatMoney(-difference)} acima da tabela de ${formatMoney(listPrice)}`;
-  return appointment.price_note ? `${label} · ${appointment.price_note}` : label;
+  return appointment.price_note
+    ? `${label} · ${appointment.price_note}`
+    : label;
 }
 
 /**
@@ -2348,7 +2344,8 @@ function AppointmentPriceForm({
     if (state.error) toast.error(state.error);
   }, [state]);
 
-  const currentPrice = price === null ? "" : Number(price).toFixed(2).replace(".", ",");
+  const currentPrice =
+    price === null ? "" : Number(price).toFixed(2).replace(".", ",");
   const tableLabel =
     listPrice === null || Number(listPrice) <= 0
       ? null

@@ -59,7 +59,7 @@ export function Modal({
           >
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4">
               <div>
-                <Dialog.Title className="text-heading-sm font-semibold">
+                <Dialog.Title className="text-heading font-semibold">
                   {title}
                 </Dialog.Title>
                 <Dialog.Description

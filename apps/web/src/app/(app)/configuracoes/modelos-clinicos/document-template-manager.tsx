@@ -452,7 +452,7 @@ function DocumentTemplateEditor({
                         variant="secondary"
                         title={`${variable.token} · Exemplo: ${variable.example}`}
                         onClick={() => insertVariable(variable.token)}
-                        className="h-auto rounded-full px-2.5 py-1 text-caption font-normal shadow-none hover:border-primary hover:bg-primary-muted hover:text-primary"
+                        className="h-auto rounded-full px-2.5 py-1 text-control font-normal shadow-none hover:border-primary hover:bg-primary-muted hover:text-primary"
                       >
                         {variable.label}
                       </Button>
@@ -487,7 +487,7 @@ function DocumentTemplateEditor({
               value={body}
               maxLength={30_000}
               required
-              className="min-h-56 resize-y font-mono text-body-sm leading-6"
+              className="min-h-56 resize-y font-mono text-control leading-6"
               aria-invalid={inspection.unknownVariables.length > 0}
               onFocus={() => {
                 activeEditor.current = "body";

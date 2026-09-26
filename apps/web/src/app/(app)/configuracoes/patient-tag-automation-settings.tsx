@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import {
   SealCheck as BadgeCheck,
@@ -11,14 +12,12 @@ import {
   Plus,
   ArrowsClockwise as RefreshCw,
   FloppyDisk as Save,
-  Tag,
   Trash as Trash2,
   UserPlus,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
   createPatientTagRule,
-  createSettingsTag,
   deletePatientTagRule,
   setPatientTagRuleActive,
   type CompanyActionState,
@@ -28,7 +27,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog, FormDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
-import { categoricalColors } from "@/lib/colors";
 
 export type PatientTagSettingsTag = {
   id: string;
@@ -136,38 +134,10 @@ export function PatientTagAutomationSettings({
 }: {
   data: PatientTagAutomationData;
 }) {
-  const [tagEditorOpen, setTagEditorOpen] = useState(false);
   const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
 
   return (
     <div className="grid gap-5">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <Tag className="size-5 shrink-0 text-primary" aria-hidden />
-            <div className="min-w-0">
-              <h2 className="font-semibold">Tags de paciente</h2>
-              <p className="text-sm text-muted-foreground">
-                Marcadores visuais usados em pacientes, agenda e relacionamento.
-              </p>
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="icon-sm"
-            onClick={() => setTagEditorOpen(true)}
-            aria-label="Criar tag"
-            title="Criar tag"
-          >
-            <Plus className="size-4" aria-hidden />
-          </Button>
-        </CardHeader>
-        <CardContent className="py-4">
-          <TagList tags={data.tags} />
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div className="flex min-w-0 items-center gap-3">
@@ -194,7 +164,19 @@ export function PatientTagAutomationSettings({
             Nova automação
           </Button>
         </CardHeader>
-        <CardContent className="py-4">
+        <CardContent className="grid gap-3 py-4">
+          {!data.tags.length ? (
+            <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              As automações põem e tiram tags. Cadastre as tags em{" "}
+              <Link
+                href="/configuracoes/cadastros?section=tags"
+                className="font-medium text-primary hover:underline"
+              >
+                Cadastros e operação › Tags
+              </Link>{" "}
+              para criar a primeira automação.
+            </p>
+          ) : null}
           <RuleList
             rules={data.rules}
             tags={data.tags}
@@ -204,7 +186,6 @@ export function PatientTagAutomationSettings({
         </CardContent>
       </Card>
 
-      <CreateTagDialog open={tagEditorOpen} onOpenChange={setTagEditorOpen} />
       <CreateRuleDialog
         open={automationEditorOpen}
         onOpenChange={setAutomationEditorOpen}
@@ -213,80 +194,6 @@ export function PatientTagAutomationSettings({
         professionals={data.professionals}
       />
     </div>
-  );
-}
-
-function TagList({ tags }: { tags: PatientTagSettingsTag[] }) {
-  if (!tags.length) {
-    return (
-      <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-        Nenhuma tag cadastrada. Use o botão + para criar a primeira.
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {tags.map((tag) => (
-        <span
-          key={tag.id}
-          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 text-xs font-medium"
-        >
-          <span
-            className="size-2 rounded-full"
-            style={{ backgroundColor: tag.color }}
-            aria-hidden
-          />
-          {tag.name}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function CreateTagDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: OpenStateHandler;
-}) {
-  const [state, action, pending] = useActionState(
-    createSettingsTag,
-    initialState,
-  );
-  useActionFeedback(state, onOpenChange);
-
-  return (
-    <FormDialog
-      open={open}
-      onClose={() => onOpenChange(false)}
-      title="Nova tag"
-      description="Informe um nome curto e escolha a cor do marcador."
-      formAction={action}
-      error={state.error}
-      pending={pending}
-      confirmLabel="Criar tag"
-      pendingLabel="Criando..."
-      icon={Plus}
-    >
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_7rem]">
-        <label className="grid gap-1.5 text-sm font-medium">
-          Nome
-          <Input name="name" placeholder="Ex.: Cliente VIP" required />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium">
-          Cor
-          <Input
-            name="color"
-            type="color"
-            className="w-full p-1"
-            defaultValue={categoricalColors.blue}
-            required
-          />
-        </label>
-      </div>
-    </FormDialog>
   );
 }
 

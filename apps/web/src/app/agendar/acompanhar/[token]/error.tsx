@@ -26,7 +26,7 @@ export default function BookingRequestError({
           <span className="flex size-11 items-center justify-center rounded-full bg-destructive/10 text-destructive">
             <AlertTriangle className="size-5" aria-hidden="true" />
           </span>
-          <h1 className="text-lg font-semibold">
+          <h1 className="text-heading font-semibold">
             Não foi possível abrir a solicitação
           </h1>
           <p className="text-sm text-muted-foreground">

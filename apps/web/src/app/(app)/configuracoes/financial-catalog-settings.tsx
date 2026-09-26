@@ -36,6 +36,7 @@ import { Input, Select } from "@/components/ui/field";
 import { FormError } from "@/components/ui/form-error";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
 import { Modal } from "@/components/ui/modal";
+import { StatusToggle } from "@/components/ui/status-toggle";
 import type {
   PaymentMethodFeeRow,
   PaymentMethodRow,
@@ -282,7 +283,6 @@ function ProcedureValueRow({
                 name={cost.name}
                 description={`${procedureCostTypeLabel(cost.cost_type)} · ${calculationLabel(cost.calculation_type, cost.value)}`}
                 active={cost.active}
-                compact
                 onEdit={() => onEditCost(cost)}
                 onToggle={(active) => setProcedureCostActive(cost.id, active)}
                 deleteTitle="Excluir custo?"
@@ -309,7 +309,6 @@ function formatMoney(value: number) {
     currency: "BRL",
   }).format(value);
 }
-
 
 function ProcedureCostForm({
   procedures,
@@ -556,6 +555,7 @@ export function PaymentMethodsSettings({
                       type="button"
                       size="icon-sm"
                       variant="ghost"
+                      className="border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
                       aria-label={`Editar ${paymentMethodDisplayName(method)}`}
                       onClick={() => openMethod(method)}
                     >
@@ -602,7 +602,6 @@ export function PaymentMethodsSettings({
                         fee.value,
                       )}
                       active={fee.active}
-                      compact
                       onEdit={() =>
                         setFeeEditor({
                           paymentMethodId: method.id,
@@ -795,7 +794,6 @@ function CatalogRuleRow({
   name,
   description,
   active,
-  compact,
   onEdit,
   onToggle,
   deleteTitle,
@@ -805,7 +803,6 @@ function CatalogRuleRow({
   name: string;
   description: string;
   active: boolean;
-  compact?: boolean;
   onEdit: () => void;
   onToggle: (active: boolean) => Promise<CatalogActionState>;
   deleteTitle: string;
@@ -829,13 +826,14 @@ function CatalogRuleRow({
       <div className="flex items-center gap-1">
         <Button
           type="button"
-          size={compact ? "icon-sm" : "sm"}
+          size="icon-sm"
           variant="ghost"
-          aria-label={compact ? `Editar ${name}` : undefined}
+          className="border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
+          aria-label={`Editar ${name}`}
+          title="Editar"
           onClick={onEdit}
         >
           <Pencil className="size-3.5" aria-hidden="true" />
-          {!compact ? "Editar" : null}
         </Button>
         <AsyncStatusButton
           active={active}
@@ -882,12 +880,11 @@ function AsyncStatusButton({
 
   return (
     <>
-      <Button
+      <StatusToggle
         type="button"
-        size="sm"
-        variant="ghost"
+        active={active}
+        label={active ? deactivateLabel : activateLabel}
         disabled={pending}
-        aria-label={active ? deactivateLabel : activateLabel}
         onClick={() => {
           if (active) {
             setConfirming(true);
@@ -897,9 +894,7 @@ function AsyncStatusButton({
             await updateStatus(true);
           });
         }}
-      >
-        {pending ? "..." : active ? "Desativar" : "Ativar"}
-      </Button>
+      />
       <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}
@@ -950,6 +945,7 @@ function DeleteCatalogButton({
         type="button"
         size="icon-sm"
         variant="destructive-ghost"
+        className="border border-border bg-card hover:border-destructive hover:bg-destructive-muted"
         aria-label={title}
         onClick={() => {
           setError(undefined);

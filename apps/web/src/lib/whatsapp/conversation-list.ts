@@ -13,14 +13,13 @@ type ConversationRow = {
   status: ConversationStatus;
   contact_id: string;
   assigned_user_id: string | null;
-  funnel_card_id: string | null;
   unread_count: number;
   last_message_at: string | null;
   last_message_preview: string | null;
 };
 
 const conversationSelect =
-  "id, status, contact_id, assigned_user_id, funnel_card_id, unread_count, last_message_at, last_message_preview";
+  "id, status, contact_id, assigned_user_id, unread_count, last_message_at, last_message_preview";
 
 /** Quanto a primeira carga da página traz. */
 export const CONVERSATION_INITIAL_SIZE = 200;
@@ -234,7 +233,6 @@ export async function loadConversationPage({
       assignedUserName: row.assigned_user_id
         ? (userById.get(row.assigned_user_id)?.name ?? null)
         : null,
-      funnelCardId: row.funnel_card_id,
       unreadCount: row.unread_count,
       lastMessageAt: row.last_message_at,
       lastMessagePreview: row.last_message_preview,

@@ -309,7 +309,7 @@ export default async function OnlineBookingPage({
           <p className="text-sm font-medium text-primary-foreground/80">
             Agendamento online
           </p>
-          <h1 className="text-2xl font-bold">{clinicName}</h1>
+          <h1 className="text-heading font-bold">{clinicName}</h1>
           <p className="text-sm text-primary-foreground/80">
             Escolha o profissional, o serviço e o horário. Depois, informe seus
             dados.
@@ -491,7 +491,7 @@ function ProfileHero({
           )}
         </div>
         <div className="min-w-0">
-          <h2 className="text-2xl font-semibold">{professionalName}</h2>
+          <h2 className="text-heading-sm font-semibold">{professionalName}</h2>
           <p className="mt-1 text-sm text-secondary-foreground">
             {headline || clinicName}
           </p>
@@ -583,7 +583,7 @@ function ServicesCard({ procedures }: { procedures: ProcedureRow[] }) {
   return (
     <Card>
       <CardContent className="p-5">
-        <h2 className="text-lg font-semibold">Servicos e precos</h2>
+        <h2 className="text-heading-sm font-semibold">Servicos e precos</h2>
         <div className="mt-4 divide-y divide-border">
           {visible.map((procedure) => (
             <div
@@ -629,7 +629,9 @@ function AcceptedPlansCard({
   return (
     <Card>
       <CardContent className="p-5">
-        <h2 className="text-lg font-semibold">Planos de saude aceitos</h2>
+        <h2 className="text-heading-sm font-semibold">
+          Planos de saude aceitos
+        </h2>
         <p className="mt-3 text-sm leading-6 text-secondary-foreground">
           {notes ||
             "Os planos de saude sao aceitos, mas a cobertura varia por local e servico. Confirme durante o agendamento."}
@@ -654,7 +656,9 @@ function PaymentMethodsCard({ methods }: { methods: PaymentMethodRow[] }) {
   return (
     <Card>
       <CardContent className="p-5">
-        <h2 className="text-lg font-semibold">Modalidades de pagamento</h2>
+        <h2 className="text-heading-sm font-semibold">
+          Modalidades de pagamento
+        </h2>
         {methods.length ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {methods.map((method) => (
@@ -688,7 +692,7 @@ function ReviewsCard({
   return (
     <Card>
       <CardContent className="p-5">
-        <h2 className="text-lg font-semibold">Opinioes</h2>
+        <h2 className="text-heading-sm font-semibold">Opinioes</h2>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <RatingStars rating={rating || 5} />
           <span className="text-sm text-secondary-foreground">
@@ -750,7 +754,7 @@ function ReviewsCard({
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="text-display font-semibold tabular-nums">{value}</p>
       <p className="text-sm text-secondary-foreground">{label}</p>
     </div>
   );

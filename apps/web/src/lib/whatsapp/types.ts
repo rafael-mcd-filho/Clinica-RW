@@ -18,12 +18,7 @@ export type MessageType =
   | "note";
 
 export type MessageStatus =
-  | "received"
-  | "queued"
-  | "sent"
-  | "delivered"
-  | "read"
-  | "failed";
+  "received" | "queued" | "sent" | "delivered" | "read" | "failed";
 
 export type ConversationTagView = {
   id: string;
@@ -43,7 +38,6 @@ export type ConversationListItem = {
   patientName: string | null;
   assignedUserId: string | null;
   assignedUserName: string | null;
-  funnelCardId: string | null;
   unreadCount: number;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;

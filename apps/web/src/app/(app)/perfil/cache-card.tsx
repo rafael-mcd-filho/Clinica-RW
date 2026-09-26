@@ -28,7 +28,7 @@ export function CacheCard() {
           <ImageIcon className="size-5" aria-hidden="true" />
         </div>
         <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold">
+          <h2 className="truncate text-heading-sm font-semibold">
             Fotos dos contatos
           </h2>
           <p className="text-sm text-muted-foreground">

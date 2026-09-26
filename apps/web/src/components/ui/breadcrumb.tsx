@@ -8,7 +8,7 @@ export type BreadcrumbItem = {
 };
 
 // Trilha de navegação para páginas profundas (paciente, prontuário,
-// empresa, funil). O último item é a página atual (aria-current) e nunca
+// empresa). O último item é a página atual (aria-current) e nunca
 // vira link. Itens intermediários sem href são permitidos (rótulos de
 // agrupamento que não têm página própria).
 export function Breadcrumb({

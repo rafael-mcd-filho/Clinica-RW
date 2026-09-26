@@ -1,11 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import {
   Check,
   CheckCircle as CheckCircle2,
   PencilSimpleLine,
-  Plus,
   FloppyDisk as Save,
   ShieldCheck,
   XCircle,
@@ -13,13 +13,11 @@ import {
 import { toast } from "sonner";
 import {
   addPatientConsent,
-  createPatientTag,
   revokePatientConsent,
   setPatientTag,
   updateClinicalSummary,
   type PatientActionState,
 } from "../actions";
-import { categoricalColors } from "@/lib/colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -362,62 +360,43 @@ export function ConsentsPanel({
   );
 }
 
+// Aqui só se aplica tag existente; criar, renomear e excluir é em
+// Configurações > Cadastros e operação > Tags.
 export function TagsPanel({
   patientId,
   tags,
   selectedTagIds,
   canEdit,
+  canManageTags,
 }: {
   patientId: string;
   tags: TagRow[];
   selectedTagIds: string[];
   canEdit: boolean;
+  canManageTags: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(
-    createPatientTag,
-    initialState,
-  );
-
-  useEffect(() => {
-    if (state.success) toast.success(state.success);
-  }, [state]);
-
   return (
     <Card>
       <CardHeader>
         <h2 className="font-semibold">Tags e segmentação</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {canManageTags ? (
+            <>
+              Novas tags são criadas em{" "}
+              <Link
+                href="/configuracoes/cadastros?section=tags"
+                className="font-medium text-primary hover:underline"
+              >
+                Cadastros e operação › Tags
+              </Link>
+              .
+            </>
+          ) : (
+            "Novas tags são criadas por quem administra as configurações da clínica."
+          )}
+        </p>
       </CardHeader>
       <CardContent className="grid gap-5">
-        {canEdit ? (
-          <form
-            action={formAction}
-            className="flex flex-col gap-3 rounded-md border border-border bg-background p-4 sm:flex-row sm:items-end"
-          >
-            <label className="grid flex-1 gap-2 text-sm font-medium">
-              Nova tag
-              <Input name="name" required placeholder="Ex.: acompanhamento" />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Cor
-              <input
-                name="color"
-                type="color"
-                defaultValue={categoricalColors.blue}
-                className="h-10 w-20 rounded-md border border-border bg-card p-1"
-              />
-            </label>
-            <Button type="submit" disabled={pending}>
-              <Plus className="size-4" />
-              {pending ? "Criando..." : "Criar tag"}
-            </Button>
-            {state.error ? (
-              <p className="text-sm text-destructive sm:basis-full">
-                {state.error}
-              </p>
-            ) : null}
-          </form>
-        ) : null}
-
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => {
             const selected = selectedTagIds.includes(tag.id);
@@ -433,7 +412,7 @@ export function TagsPanel({
           })}
           {!tags.length ? (
             <p className="text-sm text-muted-foreground">
-              Nenhuma tag disponível.
+              Nenhuma tag cadastrada ainda.
             </p>
           ) : null}
         </div>

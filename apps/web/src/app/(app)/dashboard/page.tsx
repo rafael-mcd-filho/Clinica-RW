@@ -153,7 +153,7 @@ function DashboardMetricCard({
         <span className="sr-only">Categoria: {status}</span>
       </div>
       <div className="mt-3 flex flex-1 flex-col justify-end">
-        <p className="text-[2rem] font-bold leading-none tabular-nums text-foreground">
+        <p className="text-display font-bold tabular-nums text-foreground">
           {value}
         </p>
         {trend ? (
@@ -314,9 +314,9 @@ export default async function DashboardPage({
               aria-hidden="true"
             />
             <div>
-              <h1 className="text-base font-semibold">
+              <h2 className="text-heading-sm font-semibold">
                 Conta autenticada sem usuário interno
-              </h1>
+              </h2>
               <p className="mt-1 text-sm leading-6">
                 Crie um registro em `app_users` vinculado ao usuário do Supabase
                 Auth para liberar menus, permissões e dados da empresa.
@@ -350,7 +350,7 @@ export default async function DashboardPage({
 
       <section className="rounded-lg border border-border bg-card">
         <div className="border-b border-border px-5 py-4">
-          <h2 className="text-base font-semibold">Próxima entrega</h2>
+          <h2 className="text-heading-sm font-semibold">Próxima entrega</h2>
           <p className="text-sm text-muted-foreground">
             Cadastros e configurações para iniciar a operação das empresas.
           </p>
@@ -1230,11 +1230,12 @@ async function CompanyDashboard({
                   onlineRequests={onlineRequestsResult.data ?? []}
                   onlineRequestsTotal={
                     onlineRequestsResult.count ??
-                    (onlineRequestsResult.data?.length ?? 0)
+                    onlineRequestsResult.data?.length ??
+                    0
                   }
                   waitlist={waitlistResult.data ?? []}
                   waitlistTotal={
-                    waitlistResult.count ?? (waitlistResult.data?.length ?? 0)
+                    waitlistResult.count ?? waitlistResult.data?.length ?? 0
                   }
                   timeZone={timeZone}
                   renderedAt={now.toISOString()}

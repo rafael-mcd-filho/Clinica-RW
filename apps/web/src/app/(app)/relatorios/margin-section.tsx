@@ -89,16 +89,18 @@ export async function MarginSection({
       <CardContent className="p-0">
         {rows.length ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[52rem] border-collapse text-body-sm">
+            <table className="app-table w-full min-w-[52rem] text-body-sm">
               <thead>
-                <tr className="border-b border-border bg-muted/40 text-left">
+                <tr>
                   <th className="px-4 py-2 font-medium">Procedimento</th>
                   <th className="px-4 py-2 text-right font-medium">Atend.</th>
                   <th className="px-4 py-2 text-right font-medium">Receita</th>
                   <th className="px-4 py-2 text-right font-medium">Desconto</th>
                   <th className="px-4 py-2 text-right font-medium">Comissão</th>
                   <th className="px-4 py-2 text-right font-medium">Sala</th>
-                  <th className="px-4 py-2 text-right font-medium">Materiais</th>
+                  <th className="px-4 py-2 text-right font-medium">
+                    Materiais
+                  </th>
                   <th className="px-4 py-2 text-right font-medium">Taxas</th>
                   <th className="px-4 py-2 text-right font-medium">Margem</th>
                   <th className="px-4 py-2 text-right font-medium">%</th>

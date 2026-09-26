@@ -41,13 +41,19 @@ export function CommissionChart({ data }: { data: CommissionPoint[] }) {
             dataKey="month"
             tickLine={false}
             axisLine={{ stroke: "var(--border)" }}
-            tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+            tick={{
+              fill: "var(--muted-foreground)",
+              fontSize: "var(--text-caption)",
+            }}
           />
           <YAxis
             tickLine={false}
             axisLine={false}
             width={72}
-            tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+            tick={{
+              fill: "var(--muted-foreground)",
+              fontSize: "var(--text-caption)",
+            }}
             tickFormatter={(value: number) => compactCurrency(value)}
           />
           <Tooltip
@@ -58,11 +64,14 @@ export function CommissionChart({ data }: { data: CommissionPoint[] }) {
               border: "1px solid var(--border)",
               borderRadius: 8,
               color: "var(--foreground)",
-              fontSize: 13,
+              fontSize: "var(--text-body)",
             }}
           />
           <Legend
-            wrapperStyle={{ fontSize: 13, color: "var(--muted-foreground)" }}
+            wrapperStyle={{
+              fontSize: "var(--text-body)",
+              color: "var(--muted-foreground)",
+            }}
           />
           <Line
             type="monotone"

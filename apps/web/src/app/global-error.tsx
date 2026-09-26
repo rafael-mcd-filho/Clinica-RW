@@ -32,13 +32,19 @@ export default function GlobalError({
             margin: "4rem auto",
             padding: "0 1.5rem",
             fontFamily: "system-ui, sans-serif",
+            fontSize: "0.875rem",
+            lineHeight: 1.5,
           }}
         >
-          <h1 style={{ margin: 0, fontSize: "1.25rem" }}>Hi Clinic</h1>
+          <h1 style={{ margin: 0, fontSize: "1.125rem" }}>Hi Clinic</h1>
           <p style={{ margin: 0, color: "slategray" }}>
             Não foi possível carregar a aplicação.
           </p>
-          <Button type="button" onClick={() => unstable_retry()}>
+          <Button
+            type="button"
+            style={{ font: "inherit" }}
+            onClick={() => unstable_retry()}
+          >
             Tentar novamente
           </Button>
         </main>

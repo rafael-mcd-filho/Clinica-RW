@@ -12,12 +12,7 @@ import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
 
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type AuditLogItem = {
   id: string;
@@ -238,26 +233,28 @@ export function AuditLogTable({ rows }: { rows: AuditLogItem[] }) {
               type="button"
               variant="ghost"
               onClick={() => setSelected(audit)}
-              className="grid h-auto w-full gap-2 rounded-none px-5 py-4 text-left text-body font-normal text-foreground hover:bg-background focus-visible:bg-background focus-visible:outline-inset md:grid-cols-[1.35fr_0.95fr_0.9fr_0.65fr_2.25rem] md:items-center md:gap-4"
+              className="app-list-row grid h-auto w-full gap-2 rounded-none px-5 py-4 text-left text-body font-normal text-foreground hover:bg-background focus-visible:bg-background focus-visible:outline-inset lg:grid-cols-[1.35fr_0.95fr_0.9fr_0.65fr_5rem] lg:items-center lg:gap-4"
             >
-              <div className="min-w-0 md:text-center">
-                <p className="truncate text-sm font-medium">
-                  {actionLabel[audit.action] ?? audit.action}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {audit.resourceType}
-                </p>
+              <div className="app-list-cell min-w-0 lg:text-center">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {actionLabel[audit.action] ?? audit.action}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {audit.resourceType}
+                  </p>
+                </div>
               </div>
-              <span className="truncate text-sm md:text-center">
+              <span className="app-list-cell truncate text-sm lg:text-center">
                 {audit.organizationName}
               </span>
-              <span className="truncate text-sm md:text-center">
+              <span className="app-list-cell truncate text-sm lg:text-center">
                 {audit.actorName}
               </span>
-              <span className="text-xs text-muted-foreground tabular-nums md:text-center">
+              <span className="app-list-cell text-xs text-muted-foreground tabular-nums lg:text-center">
                 {formatDate(audit.createdAt)}
               </span>
-              <span className="flex items-center justify-between gap-2 md:justify-center">
+              <span className="app-list-cell flex items-center justify-between gap-2 lg:justify-center">
                 {statuses.currentStatus ? (
                   <Badge variant="neutral" className="md:hidden">
                     {humanValue(statuses.currentStatus, "status")}

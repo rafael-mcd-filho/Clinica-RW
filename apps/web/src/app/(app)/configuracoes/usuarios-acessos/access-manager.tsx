@@ -251,22 +251,22 @@ function UsersPanel({
         </Button>
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="hidden grid-cols-[1.35fr_0.8fr_0.9fr_0.9fr_2.5rem] gap-4 border-b border-border bg-muted px-5 py-3 text-xs font-medium uppercase text-muted-foreground lg:grid">
-          <span>Usuário</span>
-          <span>Perfil</span>
-          <span>Profissional</span>
-          <span>Status e acesso</span>
-          <span className="sr-only">Ações</span>
+      <Card className="app-list-table-lg overflow-hidden">
+        <div className="app-list-row hidden grid-cols-[1.35fr_0.8fr_0.9fr_0.9fr_5rem] gap-4 border-b border-border bg-muted px-5 py-3 text-xs font-semibold text-foreground lg:grid">
+          <span className="app-list-cell">Usuário</span>
+          <span className="app-list-cell">Perfil</span>
+          <span className="app-list-cell">Profissional</span>
+          <span className="app-list-cell">Status e acesso</span>
+          <span className="app-list-cell">Ações</span>
         </div>
         {filtered.length ? (
           <div className="divide-y divide-border">
             {filtered.map((user) => (
               <div
                 key={user.id}
-                className="grid gap-3 px-5 py-4 hover:bg-muted/40 lg:grid-cols-[1.35fr_0.8fr_0.9fr_0.9fr_2.5rem] lg:items-center lg:gap-4"
+                className="app-list-row grid gap-3 px-5 py-4 hover:bg-muted/40 lg:grid-cols-[1.35fr_0.8fr_0.9fr_0.9fr_5rem] lg:items-center lg:gap-4"
               >
-                <div className="flex min-w-0 items-center gap-3">
+                <div className="app-list-cell flex min-w-0 items-center gap-3">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
                     <UserCircle className="size-5" aria-hidden="true" />
                   </span>
@@ -285,32 +285,36 @@ function UsersPanel({
                     </p>
                   </div>
                 </div>
-                <span className="text-sm text-secondary-foreground">
+                <span className="app-list-cell text-sm text-secondary-foreground">
                   {user.profileNames.join(", ") || "Sem perfil"}
                 </span>
-                <span className="text-sm text-muted-foreground">
+                <span className="app-list-cell text-sm text-muted-foreground">
                   {user.professionalName ?? "Não vinculado"}
                 </span>
-                <div className="grid gap-1">
-                  <Badge
-                    variant={
-                      user.status === "active"
-                        ? "success"
-                        : user.status === "suspended"
-                          ? "destructive"
-                          : "warning"
-                    }
-                    className="w-fit"
-                  >
-                    {statusLabels[user.status]}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {user.lastSignInAt
-                      ? `Último acesso: ${formatDateTime(user.lastSignInAt)}`
-                      : "Nunca acessou"}
-                  </span>
+                <div className="app-list-cell">
+                  <div className="grid gap-1">
+                    <Badge
+                      variant={
+                        user.status === "active"
+                          ? "success"
+                          : user.status === "suspended"
+                            ? "destructive"
+                            : "warning"
+                      }
+                      className="w-fit"
+                    >
+                      {statusLabels[user.status]}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {user.lastSignInAt
+                        ? `Último acesso: ${formatDateTime(user.lastSignInAt)}`
+                        : "Nunca acessou"}
+                    </span>
+                  </div>
                 </div>
-                <UserActions user={user} onOpenDialog={onOpenDialog} />
+                <div className="app-list-cell">
+                  <UserActions user={user} onOpenDialog={onOpenDialog} />
+                </div>
               </div>
             ))}
           </div>
@@ -421,7 +425,7 @@ function ProfilesPanel({
     <div className="grid gap-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-base font-semibold">Perfis e permissões</h2>
+          <h2 className="text-heading-sm font-semibold">Perfis e permissões</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Perfis padrão são protegidos. Duplique um deles para criar uma
             versão personalizada.
@@ -1613,7 +1617,7 @@ function LinkResultModal({
             readOnly
             value={link}
             onFocus={(event) => event.currentTarget.select()}
-            className="flex-1 font-mono text-xs"
+            className="flex-1 font-mono text-control"
           />
           <Button type="button" variant="secondary" onClick={copyLink}>
             {copied ? (

@@ -30,6 +30,13 @@ export type PatientTagSettingsData = {
   color: string;
 };
 
+/** Tag em Cadastros > Tags, com o uso que a exclusão vai desfazer. */
+export type TagSettingsData = PatientTagSettingsData & {
+  patientCount: number;
+  conversationCount: number;
+  automationNames: string[];
+};
+
 export type PatientAutomationScheduleData = {
   id: string;
   name: string;
@@ -127,8 +134,7 @@ type PlatformConfigurationAccess = {
 };
 
 export type ConfigurationAccess =
-  | CompanyConfigurationAccess
-  | PlatformConfigurationAccess;
+  CompanyConfigurationAccess | PlatformConfigurationAccess;
 
 export async function getConfigurationAccess(): Promise<ConfigurationAccess> {
   const context = await getRequestContext();
@@ -442,6 +448,33 @@ export async function getOnlineBookingSettingsData(organizationId: string) {
       availabilities: availabilities.data ?? [],
     },
   };
+}
+
+type TagUsageRpcRow = {
+  id: string;
+  name: string;
+  color: string;
+  patient_count: number;
+  conversation_count: number;
+  automation_names: string[] | null;
+};
+
+export async function getTagSettingsData(): Promise<TagSettingsData[]> {
+  const context = await getRequestContext();
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase.rpc("list_patient_tags_with_usage", {
+    p_impersonation_session_id: context.impersonation?.id ?? null,
+  });
+  const rows = (data ?? []) as TagUsageRpcRow[];
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    patientCount: row.patient_count,
+    conversationCount: row.conversation_count,
+    automationNames: row.automation_names ?? [],
+  }));
 }
 
 export async function getPatientTagAutomationData(

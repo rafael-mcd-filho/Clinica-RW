@@ -46,14 +46,8 @@ import {
   type ContactDetailsResult,
   type ContactFileView,
   type ContactOnlineBookingView,
-  type ContactOpportunityMovementView,
-  type ContactOpportunityView,
 } from "./contact-actions";
 import { linkPatientAction, setConversationTagAction } from "./actions";
-import {
-  createCardFromContactAction,
-  listActiveFunnelsAction,
-} from "../funis/actions";
 import { loadAppointmentFormData } from "../agenda/actions";
 import { AppointmentFormModal } from "@/components/agenda/appointment-form-modal";
 import type { AppointmentFormData } from "@/lib/agenda/slots";
@@ -223,7 +217,7 @@ export function ContactDetailsPanel({
                   <p className="truncate text-body-sm font-semibold">
                     {conversation.contactName}
                   </p>
-                  <p className="truncate text-label tabular-nums text-muted-foreground">
+                  <p className="truncate text-caption tabular-nums text-muted-foreground">
                     {formatPhone(conversation.contactPhone)}
                   </p>
                 </div>
@@ -292,14 +286,7 @@ export function ContactDetailsPanel({
                 id: "historico",
                 label: "Histórico",
                 icon: <TrendUp />,
-                content: (
-                  <HistoryTab
-                    data={current.data}
-                    conversationId={conversation.id}
-                    hasFunnelCard={Boolean(conversation.funnelCardId)}
-                    onRefresh={refresh}
-                  />
-                ),
+                content: <HistoryTab data={current.data} />,
               },
             ]}
           />
@@ -402,7 +389,7 @@ function ContactTab({
           photoUrl={conversation.contactPhotoUrl}
           size="lg"
         />
-        <h2 className="mt-3 max-w-full truncate text-base font-semibold">
+        <h2 className="mt-3 max-w-full truncate text-heading-sm font-semibold">
           {data.contact.name}
         </h2>
         {data.patient ? (
@@ -528,7 +515,7 @@ function ContactTab({
             {conversation.tags.map((tag) => (
               <span
                 key={tag.id}
-                className="inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-label font-medium"
+                className="inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-caption font-medium"
                 style={{
                   borderColor: tag.color,
                   color: tag.color,
@@ -1001,28 +988,7 @@ function FileSizeLabel({
   return <span ref={ref}>{size ? formatFileSize(size) : "Tamanho n/d"}</span>;
 }
 
-function HistoryTab({
-  data,
-  conversationId,
-  hasFunnelCard,
-  onRefresh,
-}: {
-  data: ContactDetailsData;
-  conversationId: string;
-  /** A conversa já está em um funil: não oferece criar outro card. */
-  hasFunnelCard: boolean;
-  onRefresh: () => void;
-}) {
-  const movementsByCard = useMemo(() => {
-    const grouped = new Map<string, ContactOpportunityMovementView[]>();
-    for (const movement of data.opportunityMovements) {
-      const list = grouped.get(movement.cardId) ?? [];
-      list.push(movement);
-      grouped.set(movement.cardId, list);
-    }
-    return grouped;
-  }, [data.opportunityMovements]);
-
+function HistoryTab({ data }: { data: ContactDetailsData }) {
   return (
     <div className="grid gap-6">
       <HistorySection title="Agendamentos">
@@ -1056,38 +1022,6 @@ function HistoryTab({
           <EmptyText>Nenhuma reserva on-line.</EmptyText>
         )}
       </HistorySection>
-
-      <HistorySection title="Oportunidades">
-        {data.permissions.canManageFunnel && !hasFunnelCard ? (
-          <div className="mb-3">
-            <CreateFunnelCardButton
-              conversationId={conversationId}
-              onCreated={onRefresh}
-            />
-          </div>
-        ) : null}
-        {!data.permissions.canViewFunnel ? (
-          <PermissionNotice>
-            Você não possui permissão para visualizar oportunidades.
-          </PermissionNotice>
-        ) : data.opportunities.length ? (
-          <ul className="grid gap-3">
-            {data.opportunities.map((opportunity) => (
-              <OpportunityItem
-                key={opportunity.id}
-                opportunity={opportunity}
-                movements={movementsByCard.get(opportunity.id) ?? []}
-              />
-            ))}
-          </ul>
-        ) : data.contact.patientId ? (
-          <EmptyText>Nenhuma oportunidade vinculada ao paciente.</EmptyText>
-        ) : (
-          <EmptyText>
-            Vincule o contato a um paciente para consultar oportunidades.
-          </EmptyText>
-        )}
-      </HistorySection>
     </div>
   );
 }
@@ -1097,94 +1031,6 @@ type PatientSearchResult = {
   full_name: string;
   social_name: string | null;
 };
-
-/**
- * Cria um card de funil direto da conversa.
- *
- * O card nasce ligado ao contato — não exige o paciente cadastrado — e a
- * conversa passa a apontar para ele. Com mais de um funil ativo, a escolha
- * vira um passo; com um só, cria direto.
- */
-function CreateFunnelCardButton({
-  conversationId,
-  onCreated,
-}: {
-  conversationId: string;
-  onCreated: () => void;
-}) {
-  const [funnels, setFunnels] = useState<Array<{ id: string; name: string }>>(
-    [],
-  );
-  const [choosing, setChoosing] = useState(false);
-  const [pending, startCreating] = useTransition();
-
-  function create(funnelId: string) {
-    setChoosing(false);
-    startCreating(async () => {
-      const result = await createCardFromContactAction(
-        funnelId,
-        conversationId,
-      );
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success(result.success ?? "Card criado no funil.");
-      onCreated();
-    });
-  }
-
-  async function start() {
-    const options = await listActiveFunnelsAction();
-    if (!options.length) {
-      toast.error("Nenhum funil ativo para receber o card.");
-      return;
-    }
-    if (options.length === 1) {
-      create(options[0].id);
-      return;
-    }
-    setFunnels(options);
-    setChoosing(true);
-  }
-
-  return (
-    <>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={pending}
-        onClick={() => void start()}
-      >
-        <FunnelSimple className="size-4" aria-hidden="true" />
-        {pending ? "Criando..." : "Criar card no funil"}
-      </Button>
-      <Modal
-        open={choosing}
-        onClose={() => setChoosing(false)}
-        title="Em qual funil?"
-        description="O card entra na primeira etapa do funil escolhido."
-        className="max-w-sm"
-      >
-        <ul className="grid gap-1">
-          {funnels.map((funnel) => (
-            <li key={funnel.id}>
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full justify-start"
-                onClick={() => create(funnel.id)}
-              >
-                {funnel.name}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </Modal>
-    </>
-  );
-}
 
 function PatientLinkSearch({
   contactId,
@@ -1277,7 +1123,7 @@ function PatientLinkSearch({
                 type="button"
                 disabled={linking}
                 onClick={() => link(patient.id)}
-                className="flex min-h-10 w-full items-center justify-between gap-2 px-3 py-2 text-left text-body-sm hover:bg-muted disabled:opacity-50"
+                className="flex min-h-10 w-full items-center justify-between gap-2 px-3 py-2 text-left text-control hover:bg-muted disabled:opacity-50"
               >
                 <span className="truncate">
                   {patient.social_name || patient.full_name}
@@ -1311,7 +1157,7 @@ function AppointmentItem({
           <p className="truncate text-body-sm font-medium">
             {appointment.procedureName}
           </p>
-          <p className="mt-0.5 truncate text-label text-muted-foreground">
+          <p className="mt-0.5 truncate text-caption text-muted-foreground">
             {appointment.professionalName}
           </p>
         </div>
@@ -1319,7 +1165,7 @@ function AppointmentItem({
           {appointmentStatusLabel(appointment.status)}
         </Badge>
       </div>
-      <p className="mt-2 text-label tabular-nums text-muted-foreground">
+      <p className="mt-2 text-caption tabular-nums text-muted-foreground">
         {formatDateTime(appointment.startAt)}
       </p>
     </li>
@@ -1334,7 +1180,7 @@ function BookingItem({ booking }: { booking: ContactOnlineBookingView }) {
           <p className="truncate text-body-sm font-medium">
             {booking.procedureName}
           </p>
-          <p className="mt-0.5 truncate text-label text-muted-foreground">
+          <p className="mt-0.5 truncate text-caption text-muted-foreground">
             {booking.professionalName}
           </p>
         </div>
@@ -1342,68 +1188,9 @@ function BookingItem({ booking }: { booking: ContactOnlineBookingView }) {
           {bookingStatusLabel(booking.status)}
         </Badge>
       </div>
-      <p className="mt-2 text-label tabular-nums text-muted-foreground">
+      <p className="mt-2 text-caption tabular-nums text-muted-foreground">
         {formatDateTime(booking.requestedStartAt)}
       </p>
-    </li>
-  );
-}
-
-function OpportunityItem({
-  opportunity,
-  movements,
-}: {
-  opportunity: ContactOpportunityView;
-  movements: ContactOpportunityMovementView[];
-}) {
-  return (
-    <li className="rounded-lg border border-border p-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-body-sm font-medium">
-            {opportunity.funnelName}
-          </p>
-          <p className="mt-0.5 truncate text-label text-muted-foreground">
-            Etapa: {opportunity.stageName}
-          </p>
-        </div>
-        <Badge variant={opportunity.archivedAt ? "neutral" : "primary"}>
-          {opportunity.archivedAt ? "Arquivada" : "Ativa"}
-        </Badge>
-      </div>
-      {opportunity.assignedProfessionalName ? (
-        <p className="mt-2 text-label text-muted-foreground">
-          Responsável: {opportunity.assignedProfessionalName}
-        </p>
-      ) : null}
-      {opportunity.nextAction ? (
-        <p className="mt-2 rounded-md bg-muted px-2.5 py-2 text-label">
-          {opportunity.nextAction}
-          {opportunity.nextActionDate
-            ? ` · ${formatDate(opportunity.nextActionDate)}`
-            : ""}
-        </p>
-      ) : null}
-      {opportunity.value != null ? (
-        <p className="mt-2 text-label font-medium">
-          {formatCurrency(opportunity.value)}
-        </p>
-      ) : null}
-      {movements.length ? (
-        <ul className="mt-3 grid gap-1.5 border-t border-border pt-3">
-          {movements.slice(0, 3).map((movement) => (
-            <li
-              key={movement.id}
-              className="text-caption text-muted-foreground"
-            >
-              {movement.fromStageName
-                ? `${movement.fromStageName} → ${movement.toStageName}`
-                : `Entrada em ${movement.toStageName}`}{" "}
-              · {formatDateTime(movement.movedAt)}
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </li>
   );
 }
@@ -1423,7 +1210,7 @@ function PanelSection({
   return (
     <section className="border-b border-border px-1 pb-5 last:border-b-0">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="flex min-w-0 items-center gap-2 text-body-sm font-semibold">
+        <h2 className="flex min-w-0 items-center gap-2 text-heading-sm font-semibold">
           {icon}
           {title}
         </h2>
@@ -1443,7 +1230,7 @@ function HistorySection({
 }) {
   return (
     <section>
-      <h2 className="mb-3 text-body-sm font-semibold">{title}</h2>
+      <h2 className="mb-3 text-heading-sm font-semibold">{title}</h2>
       {children}
     </section>
   );
@@ -1639,19 +1426,6 @@ function formatDateTime(value: string): string {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(
-    new Date(`${value}T12:00:00`),
-  );
-}
-
-function formatCurrency(value: number | string): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(Number(value));
 }
 
 function formatPhone(phone: string): string {

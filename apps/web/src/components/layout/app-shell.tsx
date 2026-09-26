@@ -3,23 +3,31 @@
 import Link, { useLinkStatus } from "next/link";
 import {
   Pulse as Activity,
+  ArrowCircleDown,
+  ArrowCircleUp,
+  ArrowsLeftRight,
   ChartBar as BarChart3,
+  ChartLineUp,
   Buildings as Building2,
   CalendarBlank as CalendarDays,
   CaretDown as ChevronDown,
   ClockCounterClockwise as History,
   CurrencyCircleDollar as WalletCards,
+  FileText,
+  GlobeHemisphereWest,
+  HandCoins,
   SquaresFour as LayoutDashboard,
+  ListDashes,
   ListBullets as MessagesSquare,
   SidebarSimple as PanelLeftClose,
   Sidebar as PanelLeftOpen,
   Gear as Settings,
   ShieldWarning as ShieldAlert,
   Stethoscope,
+  Lightning,
   type Icon as LucideIcon,
   UserGear as UserCog,
   Users as UsersRound,
-  FlowArrow as Waypoints,
 } from "@phosphor-icons/react";
 import { useId, useState, useSyncExternalStore } from "react";
 import { endImpersonation } from "@/app/(app)/suporte/actions";
@@ -44,6 +52,7 @@ export type AppShellNavItem = {
 export type AppShellNavChild = {
   href: string;
   label: string;
+  icon: AppShellIconName;
 };
 
 export type AppShellIconName =
@@ -53,12 +62,20 @@ export type AppShellIconName =
   | "empresas"
   | "usuarios"
   | "financeiro"
-  | "funis"
   | "relatorios"
   | "auditoria"
   | "configuracoes"
   | "pacientes"
-  | "prontuario";
+  | "prontuario"
+  | "receber"
+  | "pagar"
+  | "movimentacoes"
+  | "repasses"
+  | "dre"
+  | "cadastros"
+  | "agendamento-online"
+  | "tags"
+  | "modelos-clinicos";
 
 const iconMap: Record<AppShellIconName, LucideIcon> = {
   agenda: CalendarDays,
@@ -67,12 +84,43 @@ const iconMap: Record<AppShellIconName, LucideIcon> = {
   empresas: Building2,
   usuarios: UserCog,
   financeiro: WalletCards,
-  funis: Waypoints,
   relatorios: BarChart3,
   auditoria: History,
   configuracoes: Settings,
   pacientes: UsersRound,
   prontuario: Stethoscope,
+  receber: ArrowCircleDown,
+  pagar: ArrowCircleUp,
+  movimentacoes: ArrowsLeftRight,
+  repasses: HandCoins,
+  dre: ChartLineUp,
+  cadastros: ListDashes,
+  "agendamento-online": GlobeHemisphereWest,
+  tags: Lightning,
+  "modelos-clinicos": FileText,
+};
+
+const iconToneMap: Record<AppShellIconName, string> = {
+  dashboard: "indigo",
+  atendimento: "teal",
+  agenda: "blue",
+  pacientes: "rose",
+  prontuario: "violet",
+  financeiro: "green",
+  relatorios: "indigo",
+  auditoria: "slate",
+  configuracoes: "slate",
+  empresas: "blue",
+  usuarios: "violet",
+  receber: "green",
+  pagar: "amber",
+  movimentacoes: "blue",
+  repasses: "teal",
+  dre: "indigo",
+  cadastros: "blue",
+  "agendamento-online": "teal",
+  tags: "rose",
+  "modelos-clinicos": "violet",
 };
 
 type AppShellProps = {
@@ -254,7 +302,7 @@ export function AppShell({
         className={cn(
           "min-w-0 w-full [--app-sticky-offset:4rem] [--today-rail-offset:0rem]",
           pathname.startsWith("/atendimento") ? "h-full overflow-hidden" : "",
-          sidebarPinned ? "lg:pl-64" : "lg:pl-0",
+          sidebarPinned ? "lg:pl-72" : "lg:pl-0",
           hasTodayRail && todayRailPinned ? "xl:pr-[21rem]" : "",
           hasTodayRail && (todayRailOpen || todayRailPinned)
             ? "[--today-rail-offset:21rem]"
@@ -332,13 +380,9 @@ function navigationSearchPages(
 }
 
 function contentWidthClass(pathname: string) {
-  if (pathname.startsWith("/atendimento")) {
+  if (pathname.startsWith("/atendimento") || pathname.startsWith("/agenda")) {
     return "max-w-none";
   }
-  if (pathname.startsWith("/agenda") || /^\/funis\/[^/]+/.test(pathname)) {
-    return "max-w-[112rem]";
-  }
-
   if (
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/financeiro") ||
@@ -375,7 +419,7 @@ function Sidebar({
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 w-64 flex-col border-r border-sidebar-border bg-sidebar shadow-[var(--shadow-soft)]",
+        "fixed inset-y-0 left-0 w-72 flex-col border-r border-sidebar-border bg-sidebar shadow-[var(--shadow-soft)]",
         className,
       )}
     >
@@ -431,7 +475,7 @@ function Sidebar({
         </Tooltip>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1.5 overflow-y-auto px-4 py-5 [scrollbar-gutter:stable]">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4 [scrollbar-gutter:stable]">
         {navItems.map((item) => (
           <SidebarLink key={item.href} item={item} onNavigate={onNavigate} />
         ))}
@@ -490,7 +534,10 @@ function SidebarLink({
 
   if (hasChildren) {
     return (
-      <div className="grid gap-1">
+      <div
+        className="sidebar-nav-item grid gap-0.5"
+        data-nav-tone={iconToneMap[item.icon]}
+      >
         <button
           type="button"
           aria-controls={childrenId}
@@ -499,17 +546,19 @@ function SidebarLink({
             setExpansionOverride({ pathname, expanded: !expanded })
           }
           className={cn(
-            "relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+            "relative flex min-h-10 w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-control font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
             routeInGroup
-              ? "font-semibold text-sidebar-foreground"
+              ? "bg-sidebar-active font-semibold text-sidebar-foreground"
               : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
           )}
         >
-          <Icon
-            className="size-5 shrink-0"
-            weight="regular"
-            aria-hidden="true"
-          />
+          <span className="sidebar-nav-icon flex size-7 shrink-0 items-center justify-center rounded-md">
+            <Icon
+              className="size-4"
+              weight={routeInGroup ? "fill" : "duotone"}
+              aria-hidden="true"
+            />
+          </span>
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
           <ChevronDown
             className={cn(
@@ -533,11 +582,12 @@ function SidebarLink({
           <div className="min-h-0 overflow-hidden">
             <div
               className={cn(
-                "ml-5 grid gap-0.5 border-l border-sidebar-border pl-3 transition-transform duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+                "ml-5 grid gap-0.5 border-l border-sidebar-border pl-2 transition-transform duration-[var(--motion-normal)] ease-[var(--ease-out)]",
                 expanded ? "translate-y-0" : "-translate-y-1",
               )}
             >
               {item.children?.map((child) => {
+                const ChildIcon = iconMap[child.icon];
                 const childIsActive =
                   child.href === item.href
                     ? pathname === child.href
@@ -551,14 +601,25 @@ function SidebarLink({
                     aria-current={childIsActive ? "page" : undefined}
                     tabIndex={expanded ? undefined : -1}
                     onClick={onNavigate}
+                    data-nav-tone={iconToneMap[child.icon]}
                     className={cn(
-                      "relative flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+                      "sidebar-nav-item relative flex min-h-9 items-center gap-2 rounded-md px-2 py-1.5 text-body-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
                       childIsActive
                         ? "bg-sidebar-active font-semibold text-sidebar-active-foreground"
                         : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
                     )}
                   >
-                    {child.label}
+                    <ChildIcon
+                      className="sidebar-nav-child-icon size-4 shrink-0"
+                      weight={childIsActive ? "fill" : "duotone"}
+                      aria-hidden="true"
+                    />
+                    <span
+                      className="min-w-0 flex-1 break-words"
+                      title={child.label}
+                    >
+                      {child.label}
+                    </span>
                     <NavLinkPending />
                   </Link>
                 );
@@ -582,15 +643,22 @@ function SidebarLink({
       prefetch={true}
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
+      data-nav-tone={iconToneMap[item.icon]}
       className={cn(
-        "relative flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+        "sidebar-nav-item relative flex min-h-10 items-center gap-2.5 rounded-md px-2 py-1.5 text-body-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
         active
           ? "bg-sidebar-active font-semibold text-sidebar-active-foreground"
           : "text-sidebar-muted-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground",
       )}
     >
-      <Icon className="size-5" weight="regular" aria-hidden="true" />
-      {item.label}
+      <span className="sidebar-nav-icon flex size-7 shrink-0 items-center justify-center rounded-md">
+        <Icon
+          className="size-4"
+          weight={active ? "fill" : "duotone"}
+          aria-hidden="true"
+        />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
       <NavLinkPending />
     </Link>
   );
@@ -621,9 +689,11 @@ function SidebarSupport({
             aria-hidden="true"
           />
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold leading-4">Suporte ativo</p>
+            <p className="text-caption font-semibold leading-4">
+              Suporte ativo
+            </p>
             <p
-              className="truncate text-[10px] leading-4 text-sidebar-muted-foreground"
+              className="truncate text-caption leading-4 text-sidebar-muted-foreground"
               title={`${impersonation.organizationName} como ${impersonation.targetUserName}`}
             >
               {impersonation.organizationName} · {impersonation.targetUserName}
@@ -633,7 +703,7 @@ function SidebarSupport({
         <form action={endImpersonation} className="mt-1">
           <button
             type="submit"
-            className="flex h-7 w-full items-center justify-center rounded px-2 text-[11px] font-medium text-primary transition-colors hover:bg-primary-muted-hover"
+            className="flex h-7 w-full items-center justify-center rounded px-2 text-control font-medium text-primary transition-colors hover:bg-primary-muted-hover"
           >
             Encerrar suporte
           </button>

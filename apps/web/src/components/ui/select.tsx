@@ -1,6 +1,11 @@
 "use client";
 
-import { Check, CaretUpDown as ChevronsUpDown, X } from "@phosphor-icons/react";
+import {
+  Check,
+  CaretUpDown as ChevronsUpDown,
+  MagnifyingGlass,
+  X,
+} from "@phosphor-icons/react";
 import {
   Children,
   isValidElement,
@@ -89,6 +94,8 @@ type SelectProps = {
   required?: boolean;
   disabled?: boolean;
   allowEmptyOption?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
   className?: string;
   "aria-label"?: string;
 };
@@ -142,13 +149,22 @@ function extractOptions(children: ReactNode): SelectOption[] {
   return options;
 }
 
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .trim();
+}
+
 /**
  * Custom select rendered as a popover listbox (selected item marked with a
  * check). Drop-in for native `<select>` with `<option>` children, controlled
  * (`value` + `onValueChange`) or uncontrolled (`defaultValue`). When `name` is
  * set it renders a hidden input so it works inside plain forms / server actions.
  * Empty options act as placeholders by default; set `allowEmptyOption` when an
- * empty value is a real selectable option.
+ * empty value is a real selectable option. `searchable` adds a filter field
+ * (accent-insensitive) at the top of the panel, for long lists.
  */
 export function Select({
   children,
@@ -160,6 +176,8 @@ export function Select({
   required,
   disabled,
   allowEmptyOption = false,
+  searchable = false,
+  searchPlaceholder = "Pesquisar...",
   className,
   "aria-label": ariaLabel,
 }: SelectProps) {
@@ -185,9 +203,21 @@ export function Select({
   const listboxId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [panelLayout, setPanelLayout] = useState<PanelLayout | null>(null);
+  const [query, setQuery] = useState("");
+
+  const visibleOptions = useMemo(() => {
+    const needle = normalizeSearch(query);
+    if (!searchable || !needle) {
+      return options;
+    }
+    return options.filter((option) =>
+      normalizeSearch(option.label).includes(needle),
+    );
+  }, [options, query, searchable]);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -195,14 +225,21 @@ export function Select({
   const openMenu = useCallback(() => {
     const trigger = triggerRef.current;
     if (trigger) {
-      setPanelLayout(measurePanelLayout(trigger, options.length, 256));
+      setPanelLayout(
+        measurePanelLayout(
+          trigger,
+          options.length + (searchable ? 1 : 0),
+          searchable ? 320 : 256,
+        ),
+      );
     }
     const selectedIndex = options.findIndex(
       (option) => option.value === currentValue,
     );
+    setQuery("");
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
     setOpen(true);
-  }, [options, currentValue]);
+  }, [options, currentValue, searchable]);
 
   const commit = useCallback(
     (next: string) => {
@@ -255,17 +292,41 @@ export function Select({
     };
   }, [open, close]);
 
+  useEffect(() => {
+    if (open && searchable) {
+      searchRef.current?.focus({ preventScroll: true });
+    }
+  }, [open, searchable]);
+
+  // Keeps the active row visible while navigating long lists by keyboard.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    panelRef.current
+      ?.querySelector<HTMLElement>('[data-active="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [open, activeIndex]);
+
   function moveActive(direction: 1 | -1) {
     setActiveIndex((index) => {
       let next = index;
-      for (let step = 0; step < options.length; step += 1) {
-        next = (next + direction + options.length) % options.length;
-        if (!options[next]?.disabled) {
+      for (let step = 0; step < visibleOptions.length; step += 1) {
+        next =
+          (next + direction + visibleOptions.length) % visibleOptions.length;
+        if (!visibleOptions[next]?.disabled) {
           return next;
         }
       }
       return index;
     });
+  }
+
+  function commitActive() {
+    const option = visibleOptions[activeIndex];
+    if (option && !option.disabled) {
+      commit(option.value);
+    }
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
@@ -292,10 +353,29 @@ export function Select({
       moveActive(-1);
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      const option = options[activeIndex];
-      if (option && !option.disabled) {
-        commit(option.value);
-      }
+      commitActive();
+    }
+  }
+
+  // Same as the trigger, except Space types into the filter.
+  function onSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    } else if (event.key === "Tab") {
+      // Back on the trigger, the browser's Tab continues to the next field.
+      setOpen(false);
+      triggerRef.current?.focus();
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveActive(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveActive(-1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      commitActive();
     }
   }
 
@@ -316,7 +396,7 @@ export function Select({
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
         className={cn(
-          "flex h-10 w-full min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden rounded-md border border-border bg-card px-3 text-left text-sm shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/15",
+          "flex h-10 w-full min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden rounded-md border border-border bg-card px-3 text-left font-sans text-control font-normal shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/15",
           className,
         )}
       >
@@ -339,8 +419,6 @@ export function Select({
         ? createPortal(
             <div
               ref={panelRef}
-              id={listboxId}
-              role="listbox"
               style={{
                 top: panelLayout.top,
                 bottom: panelLayout.bottom,
@@ -349,48 +427,81 @@ export function Select({
                 maxHeight: panelLayout.maxHeight,
                 position: panelLayout.position,
               }}
-              className="pointer-events-auto z-[60] animate-content-enter overflow-auto rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]"
-            >
-              {options.length ? (
-                options.map((option, index) => {
-                  const isSelected = option.value === currentValue;
-                  const isActive = index === activeIndex;
-
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      disabled={option.disabled}
-                      onClick={() => commit(option.value)}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      className={cn(
-                        "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded px-2.5 py-2 text-left text-sm transition-colors duration-[var(--motion-fast)] disabled:pointer-events-none disabled:opacity-50",
-                        isActive ? "bg-muted" : "",
-                        isSelected
-                          ? "font-medium text-foreground"
-                          : "text-secondary-foreground",
-                      )}
-                    >
-                      <Check
-                        className={cn(
-                          "size-4 shrink-0 text-primary",
-                          isSelected ? "opacity-100" : "opacity-0",
-                        )}
-                        aria-hidden="true"
-                      />
-                      <span className="w-0 min-w-0 flex-1 truncate">
-                        {option.label}
-                      </span>
-                    </button>
-                  );
-                })
-              ) : (
-                <p className="px-2.5 py-2 text-sm text-muted-foreground">
-                  Nenhuma opção disponível
-                </p>
+              className={cn(
+                "pointer-events-auto z-[60] animate-content-enter overflow-auto rounded-lg border border-border bg-popover p-1 shadow-[var(--shadow-md)]",
+                searchable ? "pt-0" : "",
               )}
+            >
+              {searchable ? (
+                <div className="sticky top-0 z-10 -mx-1 mb-1 border-b border-border bg-popover p-1.5">
+                  <div className="relative">
+                    <MagnifyingGlass
+                      className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <input
+                      ref={searchRef}
+                      type="text"
+                      value={query}
+                      onChange={(event) => {
+                        setQuery(event.target.value);
+                        setActiveIndex(0);
+                      }}
+                      onKeyDown={onSearchKeyDown}
+                      placeholder={searchPlaceholder}
+                      aria-label={searchPlaceholder}
+                      aria-controls={listboxId}
+                      autoComplete="off"
+                      className="h-9 w-full min-w-0 rounded-md border border-border bg-card pl-8 pr-2.5 font-sans text-control font-normal text-foreground outline-none transition-[border-color] duration-[var(--motion-fast)] placeholder:text-placeholder focus:border-primary"
+                    />
+                  </div>
+                </div>
+              ) : null}
+              <div id={listboxId} role="listbox">
+                {visibleOptions.length ? (
+                  visibleOptions.map((option, index) => {
+                    const isSelected = option.value === currentValue;
+                    const isActive = index === activeIndex;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        data-active={isActive}
+                        disabled={option.disabled}
+                        onClick={() => commit(option.value)}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        className={cn(
+                          "flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded px-2.5 py-2 text-left text-control font-normal transition-colors duration-[var(--motion-fast)] disabled:pointer-events-none disabled:opacity-50",
+                          isActive ? "bg-muted" : "",
+                          isSelected
+                            ? "font-medium text-foreground"
+                            : "text-secondary-foreground",
+                        )}
+                      >
+                        <Check
+                          className={cn(
+                            "size-4 shrink-0 text-primary",
+                            isSelected ? "opacity-100" : "opacity-0",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className="w-0 min-w-0 flex-1 truncate">
+                          {option.label}
+                        </span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="px-2.5 py-2 text-sm text-muted-foreground">
+                    {query.trim()
+                      ? "Nenhum resultado encontrado"
+                      : "Nenhuma opção disponível"}
+                  </p>
+                )}
+              </div>
             </div>,
             panelLayout.portalTarget ?? document.body,
           )
@@ -512,7 +623,7 @@ export function MultiSelect({
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
-        className="peer flex h-10 w-full min-w-0 max-w-full items-center overflow-hidden rounded-md border border-border bg-card py-2 pl-3 pr-9 text-left text-sm shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/15"
+        className="peer flex h-10 w-full min-w-0 max-w-full items-center overflow-hidden rounded-md border border-border bg-card py-2 pl-3 pr-9 text-left font-sans text-control font-normal shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/15"
       >
         <span
           className={cn(
@@ -560,7 +671,7 @@ export function MultiSelect({
             >
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm font-medium text-secondary-foreground transition-colors hover:bg-muted"
+                className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-control font-medium text-secondary-foreground transition-colors hover:bg-muted"
                 onClick={() => onValueChange([])}
               >
                 <Check
@@ -583,7 +694,7 @@ export function MultiSelect({
                     aria-selected={isSelected}
                     disabled={option.disabled}
                     onClick={() => toggle(option.value)}
-                    className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-secondary-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                    className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-control font-normal text-secondary-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
                   >
                     <span
                       className={cn(

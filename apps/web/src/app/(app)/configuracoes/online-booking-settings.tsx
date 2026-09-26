@@ -213,7 +213,7 @@ export function OnlineBookingSettings({
                   <input
                     name="public_slug"
                     defaultValue={settings.public_slug}
-                    className="h-10 min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none"
+                    className="h-10 min-w-0 flex-1 bg-transparent pr-3 text-control font-normal outline-none"
                     required
                   />
                 </div>

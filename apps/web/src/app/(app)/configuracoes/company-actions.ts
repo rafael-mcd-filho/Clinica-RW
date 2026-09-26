@@ -237,9 +237,19 @@ const clinicSchema = z
   });
 
 const settingsTagSchema = z.object({
-  name: z.string().trim().min(2, "Informe o nome da tag."),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Informe o nome da tag.")
+    .max(80, "Use até 80 caracteres."),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Cor inválida."),
 });
+
+function tagErrorMessage(error: { code?: string; message: string }) {
+  // O banco compara o nome sem diferenciar maiúsculas ("VIP" = "vip").
+  if (error.code === "23505") return "Já existe uma tag com este nome.";
+  return friendlyDatabaseError(error.message);
+}
 
 const patientAutomationTriggerSchema = z.enum(
   [
@@ -687,9 +697,7 @@ async function saveInsurancePricesFromForm(
       entries.push({ insuranceId, price: null });
       continue;
     }
-    const parsed = Number.parseFloat(
-      text.replace(/\./g, "").replace(",", "."),
-    );
+    const parsed = Number.parseFloat(text.replace(/\./g, "").replace(",", "."));
     if (!Number.isFinite(parsed) || parsed < 0) {
       return "Informe apenas valores numéricos e não negativos nos convênios.";
     }
@@ -1037,11 +1045,76 @@ export async function createSettingsTag(
   });
 
   if (error) {
-    return { error: friendlyDatabaseError(error.message) };
+    return { error: tagErrorMessage(error) };
   }
 
-  refreshCompanySettings();
+  refreshTagViews();
   return { success: "Tag criada." };
+}
+
+export async function updateSettingsTag(
+  tagId: string,
+  _previousState: CompanyActionState,
+  formData: FormData,
+): Promise<CompanyActionState> {
+  const context = await requireCompanyConfig();
+  if (!context?.organization || !z.string().uuid().safeParse(tagId).success) {
+    return { error: "Você não pode configurar tags desta empresa." };
+  }
+
+  const parsed = settingsTagSchema.safeParse(valuesFromFormData(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("update_patient_tag", {
+    p_tag_id: tagId,
+    p_name: parsed.data.name,
+    p_color: parsed.data.color,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
+  });
+
+  if (error) {
+    return { error: tagErrorMessage(error) };
+  }
+  if (data === false) {
+    return { error: "Esta tag não existe mais." };
+  }
+
+  refreshTagViews();
+  return { success: "Tag atualizada." };
+}
+
+// Exclui de vez: a tag sai de pacientes e conversas, e as automações que a
+// usam são excluídas junto (a tela avisa o uso antes de confirmar).
+export async function deleteSettingsTag(
+  tagId: string,
+): Promise<CompanyActionState> {
+  const context = await requireCompanyConfig();
+  if (!context?.organization || !z.string().uuid().safeParse(tagId).success) {
+    return { error: "Você não pode configurar tags desta empresa." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("delete_patient_tag", {
+    p_tag_id: tagId,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
+  });
+
+  if (error) {
+    return { error: tagErrorMessage(error) };
+  }
+
+  refreshTagViews();
+  return { success: "Tag excluída." };
+}
+
+// Tags aparecem em pacientes, atendimento e automações, além de Configurações.
+function refreshTagViews() {
+  refreshCompanySettings();
+  revalidatePath("/pacientes", "layout");
+  revalidatePath("/atendimento");
 }
 
 export async function createPatientAutomationRule(

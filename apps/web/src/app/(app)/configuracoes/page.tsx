@@ -21,7 +21,7 @@ const legacyTabRoutes: Record<string, CompanyConfigurationRoute> = {
   agenda: "agenda",
   "agendamento-online": "agendamento-online",
   whatsapp: "whatsapp",
-  tags: "tags-automacoes",
+  tags: "cadastros",
   "tags-automacoes": "tags-automacoes",
   "modelos-clinicos": "modelos-clinicos",
 };

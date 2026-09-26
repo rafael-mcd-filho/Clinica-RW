@@ -46,7 +46,7 @@ export function PatientPhotoForm({
   const preview = removePhoto ? null : (selectedPreview ?? photoUrl);
   const hasChange = Boolean(selectedPreview) || removePhoto;
   const avatarBox = (
-    <div className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-heading-lg font-semibold text-primary sm:size-20 lg:size-24">
+    <div className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-display font-semibold text-primary sm:size-20 lg:size-24">
       {preview ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img

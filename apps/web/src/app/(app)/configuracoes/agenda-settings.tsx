@@ -218,7 +218,7 @@ export function AgendaSettings({
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border border-border bg-muted/20 px-4 py-3">
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="text-display font-semibold tabular-nums">{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
     </div>
   );
@@ -909,7 +909,7 @@ function DayPeriodsEditor({
                   onChange(period.key, { start_time: event.target.value })
                 }
                 required
-                className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-xs shadow-none"
+                className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-control shadow-none"
               />
               <span className="text-xs text-muted-foreground">–</span>
               <label className="sr-only" htmlFor={`${period.key}-end`}>
@@ -924,7 +924,7 @@ function DayPeriodsEditor({
                   onChange(period.key, { end_time: event.target.value })
                 }
                 required
-                className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-xs shadow-none"
+                className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-control shadow-none"
               />
               <Button
                 type="button"

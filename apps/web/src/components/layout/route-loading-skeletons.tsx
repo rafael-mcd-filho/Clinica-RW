@@ -19,18 +19,6 @@ function LoadingFrame({
   );
 }
 
-function Heading({ action = false }: { action?: boolean }) {
-  return (
-    <section className="flex min-h-14 items-start justify-between gap-4">
-      <div className="grid gap-2">
-        <Skeleton className="h-6 w-40" />
-        <Skeleton className="h-4 w-72 max-w-[70vw]" />
-      </div>
-      {action ? <Skeleton className="h-9 w-36" /> : null}
-    </section>
-  );
-}
-
 function CardSkeleton({ className = "" }: { className?: string }) {
   return (
     <div
@@ -47,8 +35,6 @@ export function DashboardLoadingSkeleton() {
   return (
     <LoadingFrame label="Carregando painel">
       <div className="grid gap-4">
-        <Heading />
-
         <section className="rounded-lg border border-border bg-card p-3 shadow-[var(--shadow-soft)]">
           <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[11rem_13rem_minmax(14rem,1fr)_auto]">
             <Skeleton className="h-9 w-full" />
@@ -154,7 +140,6 @@ export function DashboardLoadingSkeleton() {
 export function AgendaLoadingSkeleton() {
   return (
     <LoadingFrame label="Carregando agenda">
-      <Heading />
       <div className="grid gap-4 xl:grid-cols-[17rem_minmax(0,1fr)] xl:items-start">
         <div className="order-2 hidden gap-4 xl:order-1 xl:grid">
           <section className="rounded-lg border border-border bg-card p-3 shadow-[var(--shadow-soft)]">
@@ -226,7 +211,6 @@ export function AgendaLoadingSkeleton() {
 export function SettingsLoadingSkeleton() {
   return (
     <LoadingFrame label="Carregando configurações">
-      <Heading />
       <Skeleton className="h-12 w-full max-w-4xl rounded-xl" />
       <section className="rounded-lg border border-border bg-card p-5 shadow-[var(--shadow-soft)]">
         <div className="flex items-center justify-between gap-4">
@@ -263,7 +247,7 @@ export function SettingsLoadingSkeleton() {
 export function FinanceLoadingSkeleton() {
   return (
     <LoadingFrame label="Carregando financeiro">
-      <Heading action />
+      <Skeleton className="h-9 w-36 justify-self-end" />
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <CardSkeleton key={index} />

@@ -10,7 +10,7 @@ export default function EsqueciSenhaPage() {
             <Activity className="size-5" aria-hidden="true" />
           </div>
           <div>
-            <h1 className="text-base font-semibold">Redefinir senha</h1>
+            <h1 className="text-heading font-semibold">Redefinir senha</h1>
             <p className="text-sm text-muted-foreground">
               Receba um link seguro por e-mail.
             </p>

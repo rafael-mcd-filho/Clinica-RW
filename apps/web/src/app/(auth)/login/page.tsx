@@ -19,7 +19,7 @@ export default async function LoginPage() {
               <Activity className="size-5" aria-hidden="true" />
             </div>
             <div>
-              <h1 className="text-base font-semibold">Hi Clinic</h1>
+              <h1 className="text-heading font-semibold">Hi Clinic</h1>
               <p className="text-sm text-muted-foreground">Acesso interno</p>
             </div>
           </div>
@@ -33,7 +33,7 @@ export default async function LoginPage() {
           <p className="text-sm font-medium uppercase text-primary">
             Operação clínica
           </p>
-          <p className="mt-4 text-4xl font-semibold leading-tight text-foreground">
+          <p className="mt-4 text-display font-semibold text-foreground">
             Agenda, paciente, atendimento e financeiro no mesmo fluxo.
           </p>
         </div>

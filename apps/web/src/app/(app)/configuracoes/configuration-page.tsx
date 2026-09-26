@@ -1,4 +1,3 @@
-import { GearSix as Settings } from "@phosphor-icons/react/dist/ssr";
 import type {
   CompanyConfigurationAccess,
   CompanyConfigurationRoute,
@@ -31,12 +30,9 @@ export function CompanyConfigurationPage({
 
 export function UnavailableConfigurationPage() {
   return (
-    <div className="grid gap-6">
-      <PageHeader
-        icon={Settings}
-        title="Configurações"
-        description="Seu perfil não permite alterar configurações disponíveis nesta tela."
-      />
+    <div className="rounded-md border border-border bg-card p-4 text-body text-muted-foreground">
+      <h1 className="sr-only">Configurações</h1>
+      Seu perfil não permite alterar configurações disponíveis nesta tela.
     </div>
   );
 }

@@ -144,6 +144,7 @@ export default async function EditPatientPage({
   return (
     <div className="grid gap-6">
       <section className="grid min-w-0 gap-2">
+        <h1 className="sr-only">Editar {displayName}</h1>
         <Breadcrumb
           items={[
             { label: "Pacientes", href: "/pacientes" },
@@ -157,34 +158,25 @@ export default async function EditPatientPage({
               <ArrowLeft className="size-4" />
             </Link>
           </Button>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-heading-lg">Editar {displayName}</h1>
-              <Badge
-                variant={
-                  patient.deceased_at
-                    ? "destructive"
-                    : patient.deleted_at
-                      ? "neutral"
-                      : patient.status === "active"
-                        ? "success"
-                        : "neutral"
-                }
-              >
-                {patient.deceased_at
-                  ? "Óbito"
-                  : patient.deleted_at
-                    ? "Arquivado"
-                    : patient.status === "active"
-                      ? "Ativo"
-                      : "Inativo"}
-              </Badge>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Altere dados pessoais, informações clínicas ou configurações do
-              cadastro.
-            </p>
-          </div>
+          <Badge
+            variant={
+              patient.deceased_at
+                ? "destructive"
+                : patient.deleted_at
+                  ? "neutral"
+                  : patient.status === "active"
+                    ? "success"
+                    : "neutral"
+            }
+          >
+            {patient.deceased_at
+              ? "Óbito"
+              : patient.deleted_at
+                ? "Arquivado"
+                : patient.status === "active"
+                  ? "Ativo"
+                  : "Inativo"}
+          </Badge>
         </div>
       </section>
 
@@ -253,6 +245,7 @@ export default async function EditPatientPage({
                     (item) => item.tag_id,
                   )}
                   canEdit={canEdit}
+                  canManageTags={context.permissionCodes.has("config.geral")}
                 />
               </div>
             ),

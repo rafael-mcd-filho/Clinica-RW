@@ -215,6 +215,7 @@ export default async function EmpresaDetailsPage({
   return (
     <div className="grid gap-6">
       <section className="grid min-w-0 gap-2">
+        <h1 className="sr-only">{organization.name}</h1>
         <Breadcrumb
           items={[
             { label: "Empresas", href: "/empresas" },
@@ -222,22 +223,11 @@ export default async function EmpresaDetailsPage({
           ]}
         />
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-          <div className="flex min-w-0 items-start gap-3">
-            <Button asChild variant="secondary" size="icon">
-              <Link href="/empresas" aria-label="Voltar para empresas">
-                <ArrowLeft className="size-4" aria-hidden="true" />
-              </Link>
-            </Button>
-            <div className="min-w-0">
-              <h1 className="truncate text-heading-lg">{organization.name}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Cadastro e operacao da empresa cliente.
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Criada em {formatDate(organization.created_at)}
-              </p>
-            </div>
-          </div>
+          <Button asChild variant="secondary" size="icon">
+            <Link href="/empresas" aria-label="Voltar para empresas">
+              <ArrowLeft className="size-4" aria-hidden="true" />
+            </Link>
+          </Button>
           <ImpersonateButton
             organizationId={organization.id}
             organizationName={organization.name}
@@ -249,9 +239,9 @@ export default async function EmpresaDetailsPage({
       <section className="grid gap-4 lg:grid-cols-[1fr_20rem]">
         <Card className="animate-panel-enter">
           <CardHeader>
-            <h2 className="text-base font-semibold">Dados da empresa</h2>
+            <h2 className="text-heading-sm font-semibold">Dados da empresa</h2>
             <p className="text-sm text-muted-foreground">
-              Atualize cadastro e estado operacional.
+              Criada em {formatDate(organization.created_at)}
             </p>
           </CardHeader>
           <CardContent>
@@ -261,7 +251,7 @@ export default async function EmpresaDetailsPage({
 
         <Card className="animate-panel-enter">
           <CardHeader>
-            <h2 className="text-base font-semibold">Responsavel</h2>
+            <h2 className="text-heading-sm font-semibold">Responsavel</h2>
             <p className="text-sm text-muted-foreground">
               Dados de contato do responsavel pela empresa.
             </p>
@@ -289,7 +279,7 @@ export default async function EmpresaDetailsPage({
           <CardHeader className="flex items-center gap-3">
             <UsersRound className="size-5 text-primary" aria-hidden="true" />
             <div>
-              <h2 className="text-base font-semibold">Usuarios</h2>
+              <h2 className="text-heading-sm font-semibold">Usuarios</h2>
               <p className="text-sm text-muted-foreground">
                 Contas vinculadas a esta empresa.
               </p>
@@ -338,7 +328,7 @@ export default async function EmpresaDetailsPage({
           <CardHeader className="flex items-center gap-3">
             <UserRound className="size-5 text-primary" aria-hidden="true" />
             <div>
-              <h2 className="text-base font-semibold">Perfis</h2>
+              <h2 className="text-heading-sm font-semibold">Perfis</h2>
               <p className="text-sm text-muted-foreground">
                 Grupos de permissao disponiveis na empresa.
               </p>
@@ -385,7 +375,7 @@ export default async function EmpresaDetailsPage({
         <CardHeader className="flex items-center gap-3">
           <History className="size-5 text-primary" aria-hidden="true" />
           <div>
-            <h2 className="text-base font-semibold">Auditoria recente</h2>
+            <h2 className="text-heading-sm font-semibold">Auditoria recente</h2>
             <p className="text-sm text-muted-foreground">
               Ultimas alteracoes registradas nesta empresa.
             </p>

@@ -329,7 +329,10 @@ function CashFlowCard({ series }: { series: FinanceOverview["series"] }) {
                     dataKey="label"
                     tickLine={false}
                     axisLine={{ stroke: "var(--border)" }}
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    tick={{
+                      fontSize: "var(--text-caption)",
+                      fill: "var(--muted-foreground)",
+                    }}
                     interval="preserveStartEnd"
                     minTickGap={16}
                   />
@@ -337,7 +340,10 @@ function CashFlowCard({ series }: { series: FinanceOverview["series"] }) {
                     tickLine={false}
                     axisLine={false}
                     width={64}
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    tick={{
+                      fontSize: "var(--text-caption)",
+                      fill: "var(--muted-foreground)",
+                    }}
                     tickFormatter={formatCompactCurrency}
                   />
                   <Tooltip
@@ -610,8 +616,8 @@ function CategoriesCard({
           >
             {(
               [
-                { id: "revenue", label: "Receita" },
-                { id: "expense", label: "Despesa" },
+                { id: "revenue", label: "Entradas" },
+                { id: "expense", label: "Saídas" },
               ] as const
             ).map((option) => (
               <button

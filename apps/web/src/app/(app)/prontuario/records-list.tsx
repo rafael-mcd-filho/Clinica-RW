@@ -207,7 +207,7 @@ export function RecordsList({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Digite nome, codigo, telefone, e-mail ou CPF..."
-            className="h-12 w-full pl-9 text-base"
+            className="w-full pl-9"
             aria-label="Buscar prontuarios"
           />
         </div>
@@ -215,7 +215,6 @@ export function RecordsList({
           value={professionalId}
           onValueChange={setProfessionalId}
           aria-label="Filtrar profissional"
-          className="h-12"
         >
           <option value="all">Todos os profissionais</option>
           {professionals.map((professional) => (
@@ -225,7 +224,7 @@ export function RecordsList({
           ))}
         </Select>
         {canCreatePatient ? (
-          <Button asChild className="h-12">
+          <Button asChild className="h-10">
             <Link href="/pacientes/novo">Novo paciente</Link>
           </Button>
         ) : null}

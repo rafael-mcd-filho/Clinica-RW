@@ -19,6 +19,7 @@ import {
   Plus,
   FloppyDisk as Save,
   Stethoscope,
+  Tag,
   Trash,
   UsersThree as UsersRound,
 } from "@phosphor-icons/react";
@@ -39,6 +40,8 @@ import {
   ProcedureCostsSection,
 } from "./financial-catalog-settings";
 import { InsurancePriceFields } from "./insurance-price-fields";
+import { TagSettings } from "./tag-settings";
+import type { TagSettingsData } from "./_lib/server";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -51,8 +54,10 @@ import { HelpTooltip } from "@/components/ui/help-tooltip";
 import { LogoUploadField } from "@/components/ui/logo-upload-field";
 import { Modal } from "@/components/ui/modal";
 import { RequiredMark } from "@/components/ui/required-mark";
+import { StatusToggle } from "@/components/ui/status-toggle";
 import { Switch } from "@/components/ui/switch";
 import { Tabs } from "@/components/ui/tabs";
+import { AddressFields, type AddressValues } from "@/components/address-fields";
 import type {
   BaseRow,
   BusinessHourRow,
@@ -87,42 +92,14 @@ const weekdays = [
   "Sábado",
 ];
 
-const brazilianStates = [
-  ["AC", "Acre"],
-  ["AL", "Alagoas"],
-  ["AP", "Amapá"],
-  ["AM", "Amazonas"],
-  ["BA", "Bahia"],
-  ["CE", "Ceará"],
-  ["DF", "Distrito Federal"],
-  ["ES", "Espírito Santo"],
-  ["GO", "Goiás"],
-  ["MA", "Maranhão"],
-  ["MT", "Mato Grosso"],
-  ["MS", "Mato Grosso do Sul"],
-  ["MG", "Minas Gerais"],
-  ["PA", "Pará"],
-  ["PB", "Paraíba"],
-  ["PR", "Paraná"],
-  ["PE", "Pernambuco"],
-  ["PI", "Piauí"],
-  ["RJ", "Rio de Janeiro"],
-  ["RN", "Rio Grande do Norte"],
-  ["RS", "Rio Grande do Sul"],
-  ["RO", "Rondônia"],
-  ["RR", "Roraima"],
-  ["SC", "Santa Catarina"],
-  ["SP", "São Paulo"],
-  ["SE", "Sergipe"],
-  ["TO", "Tocantins"],
-] as const;
-
 export function CompanySettings({
   data,
+  tags,
   organizationLogoUrl,
   canManageUsers,
 }: {
   data: CompanySettingsData;
+  tags: TagSettingsData[];
   organizationLogoUrl: string | null;
   canManageUsers: boolean;
 }) {
@@ -372,9 +349,7 @@ export function CompanySettings({
                   // procurar um segundo formulário.
                   extraFields={(editing) => (
                     <InsurancePriceFields
-                      procedureId={
-                        editing ? String(editing.id) : null
-                      }
+                      procedureId={editing ? String(editing.id) : null}
                       insurances={data.healthInsurances}
                       insurancePrices={insurancePriceMap}
                     />
@@ -409,6 +384,12 @@ export function CompanySettings({
                 />
               </div>
             ),
+          },
+          {
+            id: "tags",
+            label: "Tags",
+            icon: <Tag />,
+            content: <TagSettings tags={tags} />,
           },
         ]}
       />
@@ -569,61 +550,7 @@ function ClinicForm({
                 defaultValue={data.clinic.email ?? ""}
               />
             </FormField>
-            <FormField label="CEP">
-              <MaskedInput
-                name="postal_code"
-                maskKind="cep"
-                inputMode="numeric"
-                autoComplete="postal-code"
-                placeholder="00000-000"
-                defaultValue={data.clinic.postal_code ?? ""}
-              />
-            </FormField>
-            <FormField label="Endereço" wide>
-              <Input
-                name="address_line"
-                autoComplete="address-line1"
-                defaultValue={data.clinic.address_line ?? ""}
-              />
-            </FormField>
-            <FormField label="Número">
-              <Input
-                name="address_number"
-                inputMode="numeric"
-                defaultValue={data.clinic.address_number ?? ""}
-              />
-            </FormField>
-            <FormField label="Complemento">
-              <Input
-                name="address_complement"
-                autoComplete="address-line2"
-                defaultValue={data.clinic.address_complement ?? ""}
-              />
-            </FormField>
-            <FormField label="Bairro">
-              <Input
-                name="district"
-                autoComplete="address-level3"
-                defaultValue={data.clinic.district ?? ""}
-              />
-            </FormField>
-            <FormField label="Cidade">
-              <Input
-                name="city"
-                autoComplete="address-level2"
-                defaultValue={data.clinic.city ?? ""}
-              />
-            </FormField>
-            <FormField label="UF">
-              <Select name="state" defaultValue={data.clinic.state ?? ""}>
-                <option value="">Selecione a UF</option>
-                {brazilianStates.map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {code} — {name}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
+            <AddressFields defaultValues={data.clinic} />
             <FormField
               label="Fuso horário"
               required
@@ -1001,7 +928,8 @@ function DeleteRegistrationButton({
       <Button
         type="button"
         size="icon-sm"
-        variant="ghost"
+        variant="destructive-ghost"
+        className="border border-border bg-card hover:border-destructive hover:bg-destructive-muted"
         aria-label={`Excluir ${String(row.name)}`}
         title="Excluir"
         disabled={pending}
@@ -1124,86 +1052,86 @@ function RegistrationSection({
           />
         ) : null}
 
-        <div
-          className={
-            rows.length && modalForm
-              ? "divide-y divide-border overflow-hidden rounded-md border border-border"
-              : "grid gap-2"
-          }
-        >
+        <div className="app-list-table-lg overflow-hidden rounded-md border border-border">
           {rows.length ? (
-            rows.map((row) => (
-              <div
-                key={row.id}
-                className={
-                  modalForm
-                    ? "flex min-h-12 flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
-                    : "flex flex-col gap-3 rounded-md border border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                }
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-medium">
-                      {String(row.name)}
-                    </p>
+            <div className="app-list-row hidden grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_6rem_8rem] border-b border-border bg-muted text-label font-semibold text-foreground lg:grid">
+              <span className="app-list-cell">Nome</span>
+              <span className="app-list-cell">Detalhamento</span>
+              <span className="app-list-cell">Status</span>
+              <span className="app-list-cell">Ações</span>
+            </div>
+          ) : null}
+          {rows.length ? (
+            <div className="divide-y divide-border">
+              {rows.map((row) => (
+                <div
+                  key={row.id}
+                  className="app-list-row grid gap-2 px-4 py-3 transition-colors duration-[var(--motion-fast)] hover:bg-background sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_6rem_8rem]"
+                >
+                  <div className="app-list-cell min-w-0 text-sm font-medium">
+                    <span className="truncate">{String(row.name)}</span>
+                  </div>
+                  <div className="app-list-cell min-w-0 text-body-sm text-muted-foreground">
+                    <span className="truncate">{summary(row)}</span>
+                  </div>
+                  <div className="app-list-cell">
                     <Badge variant={row.active ? "success" : "neutral"}>
                       {row.active ? "Ativo" : "Inativo"}
                     </Badge>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {summary(row)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() =>
-                      modalForm ? openEditRegistration(row) : setEditing(row)
-                    }
-                  >
-                    <Pencil className="size-3.5" aria-hidden="true" />
-                    Editar
-                  </Button>
-                  {row.active ? (
+                  <div className="app-list-cell flex shrink-0 gap-1">
                     <Button
                       type="button"
-                      size="sm"
+                      size="icon-sm"
                       variant="ghost"
-                      onClick={() => setConfirmingDeactivate(row)}
+                      className="border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
+                      aria-label={`Editar ${String(row.name)}`}
+                      title="Editar"
+                      onClick={() =>
+                        modalForm ? openEditRegistration(row) : setEditing(row)
+                      }
                     >
-                      Desativar
+                      <Pencil className="size-3.5" aria-hidden="true" />
                     </Button>
-                  ) : (
-                    <form
-                      action={setRegistrationActive.bind(
-                        null,
-                        kind,
-                        row.id,
-                        true,
-                      )}
-                    >
-                      <Button type="submit" size="sm" variant="ghost">
-                        Ativar
-                      </Button>
-                    </form>
-                  )}
-                  {/* Desativar é para item com histórico; excluir é para o que
+                    {row.active ? (
+                      <StatusToggle
+                        type="button"
+                        active
+                        label={`Desativar ${String(row.name)}`}
+                        onClick={() => setConfirmingDeactivate(row)}
+                      />
+                    ) : (
+                      <form
+                        action={setRegistrationActive.bind(
+                          null,
+                          kind,
+                          row.id,
+                          true,
+                        )}
+                      >
+                        <StatusToggle
+                          type="submit"
+                          active={false}
+                          label={`Ativar ${String(row.name)}`}
+                        />
+                      </form>
+                    )}
+                    {/* Desativar é para item com histórico; excluir é para o que
                       entrou por engano. O banco decide qual dos dois cabe — se
                       houver vínculo, a exclusão é recusada dizendo qual. */}
-                  {deletableKind ? (
-                    <DeleteRegistrationButton
-                      kind={deletableKind}
-                      row={row}
-                      itemLabel={itemLabelLower}
-                    />
-                  ) : null}
+                    {deletableKind ? (
+                      <DeleteRegistrationButton
+                        kind={deletableKind}
+                        row={row}
+                        itemLabel={itemLabelLower}
+                      />
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           ) : (
-            <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
               Nenhum cadastro nesta seção.
             </p>
           )}
@@ -1382,6 +1310,12 @@ function RegistrationForm({
               editing={editing}
               field={professionalUserField}
               canManageUsers={canManageUsers}
+            />
+          ) : null}
+          {kind === "unit" ? (
+            <AddressFields
+              defaultValues={addressValuesFromRow(editing)}
+              compact={modal}
             />
           ) : null}
         </div>
@@ -1582,7 +1516,7 @@ function ProfessionalAccessCreatedPanel({
             readOnly
             value={setupLink}
             onFocus={(event) => event.currentTarget.select()}
-            className="flex-1 font-mono text-xs"
+            className="flex-1 font-mono text-control"
           />
           <Button type="button" variant="secondary" onClick={copySetupLink}>
             {copied ? (
@@ -1707,14 +1641,22 @@ const unitFields: FieldDefinition[] = [
   textField("code", "Código interno"),
   textField("phone", "Telefone"),
   { ...textField("email", "E-mail"), type: "email" },
-  textField("postal_code", "CEP"),
-  { ...textField("address_line", "Endereço"), wide: true },
-  textField("address_number", "Número"),
-  textField("address_complement", "Complemento"),
-  textField("district", "Bairro"),
-  textField("city", "Cidade"),
-  textField("state", "UF"),
+  // Endereço vem do AddressFields (CEP preenche o resto), no RegistrationForm.
 ];
+
+function addressValuesFromRow(row: EditableRow | null): AddressValues {
+  const text = (key: keyof AddressValues) =>
+    row?.[key] == null ? null : String(row[key]);
+  return {
+    postal_code: text("postal_code"),
+    address_line: text("address_line"),
+    address_number: text("address_number"),
+    address_complement: text("address_complement"),
+    district: text("district"),
+    city: text("city"),
+    state: text("state"),
+  };
+}
 
 function textField(
   name: string,

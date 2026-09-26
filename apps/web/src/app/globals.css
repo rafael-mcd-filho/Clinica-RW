@@ -48,7 +48,7 @@
   --destructive-muted: color-mix(in srgb, var(--destructive) 14%, white);
   --destructive-foreground: color-mix(in srgb, var(--destructive) 60%, black);
 
-  /* Superfície rebaixada: fundo de coluna de kanban, "wells". */
+  /* Superfície rebaixada para áreas de menor ênfase. */
   --surface-sunken: color-mix(
     in srgb,
     var(--background) 65%,
@@ -90,6 +90,50 @@
   --sidebar-hover-bg: #f4f6f8;
   --sidebar-active-bg: color-mix(in srgb, var(--primary) 4%, #e8edf2);
   --sidebar-active-foreground: #101828;
+
+  /* Cores de identificação das áreas da navegação. */
+  --nav-blue: #2563a6;
+  --nav-indigo: #4f46a5;
+  --nav-teal: #0f766e;
+  --nav-green: #15803d;
+  --nav-amber: #a16207;
+  --nav-rose: #be185d;
+  --nav-violet: #7c3aed;
+  --nav-slate: #475569;
+}
+
+.sidebar-nav-item[data-nav-tone="blue"] {
+  --nav-icon-color: var(--nav-blue);
+}
+.sidebar-nav-item[data-nav-tone="indigo"] {
+  --nav-icon-color: var(--nav-indigo);
+}
+.sidebar-nav-item[data-nav-tone="teal"] {
+  --nav-icon-color: var(--nav-teal);
+}
+.sidebar-nav-item[data-nav-tone="green"] {
+  --nav-icon-color: var(--nav-green);
+}
+.sidebar-nav-item[data-nav-tone="amber"] {
+  --nav-icon-color: var(--nav-amber);
+}
+.sidebar-nav-item[data-nav-tone="rose"] {
+  --nav-icon-color: var(--nav-rose);
+}
+.sidebar-nav-item[data-nav-tone="violet"] {
+  --nav-icon-color: var(--nav-violet);
+}
+.sidebar-nav-item[data-nav-tone="slate"] {
+  --nav-icon-color: var(--nav-slate);
+}
+
+.sidebar-nav-icon {
+  color: var(--nav-icon-color);
+  background: color-mix(in srgb, var(--nav-icon-color) 10%, white);
+}
+
+.sidebar-nav-child-icon {
+  color: var(--nav-icon-color);
 }
 
 @theme inline {
@@ -133,27 +177,29 @@
   --radius-md: 0.625rem;
   --radius-lg: var(--radius);
 
-  /*
-   * Escala tipográfica fechada — todo tamanho de fonte da UI sai daqui.
-   * caption 11 · label 12 · body-sm 13 · body 14 · heading-sm 16 ·
-   * heading 18 · heading-lg 24 · display 30
-   */
-  --text-caption: 0.6875rem;
+  /* Escala principal: 12 · 14 · 16 · 18 · 24px. */
+  --text-caption: 0.75rem;
   --text-caption--line-height: 1rem;
-  --text-label: 0.75rem;
-  --text-label--line-height: 1rem;
-  --text-body-sm: 0.8125rem;
+  --text-label: 0.875rem;
+  --text-label--line-height: 1.25rem;
+  --text-control: 0.875rem;
+  --text-control--line-height: 1.25rem;
+  --text-table: 0.875rem;
+  --text-table--line-height: 1.25rem;
+  --text-body-sm: 0.875rem;
   --text-body-sm--line-height: 1.25rem;
   --text-body: 0.875rem;
   --text-body--line-height: 1.25rem;
+  --text-reading: 1rem;
+  --text-reading--line-height: 1.5rem;
   --text-heading-sm: 1rem;
   --text-heading-sm--line-height: 1.5rem;
   --text-heading: 1.125rem;
-  --text-heading--line-height: 1.75rem;
-  --text-heading-lg: 1.5rem;
-  --text-heading-lg--line-height: 2rem;
-  --text-display: 1.875rem;
-  --text-display--line-height: 2.25rem;
+  --text-heading--line-height: 1.5rem;
+  --text-heading-lg: 1.125rem;
+  --text-heading-lg--line-height: 1.5rem;
+  --text-display: 1.5rem;
+  --text-display--line-height: 2rem;
 
   /* Animações nomeadas — sempre com duração/ease dos tokens de motion. */
   --animate-content-enter: content-enter var(--motion-fast) var(--ease-out) both;
@@ -185,19 +231,47 @@ html {
   }
 }
 
-body {
-  min-width: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family:
-    var(--font-body), system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+@layer base {
+  body {
+    min-width: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    font-family:
+      var(--font-body), system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+
+  /* As utilities podem ajustar títulos de cards e modais sem !important. */
+  h1,
+  h2 {
+    font-family: var(--font-heading), var(--font-body), system-ui, sans-serif;
+    font-weight: 600;
+  }
+
+  h1 {
+    font-size: var(--text-heading);
+    line-height: var(--text-heading--line-height);
+  }
+
+  h2 {
+    font-size: var(--text-heading-sm);
+    line-height: var(--text-heading-sm--line-height);
+  }
+
+  h3 {
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    font-weight: 600;
+  }
 }
 
-/* Quicksand nos títulos "H1/H2" da escala tipográfica (título de página,
-   números de dashboard/hero); o restante da UI segue no --font-body (Inter). */
-.text-heading-lg,
-.text-display {
-  font-family: var(--font-heading), var(--font-body), system-ui, sans-serif;
+/* Entrada de texto confortável em celulares, inclusive nos campos com máscara. */
+@media (max-width: 767px) {
+  :is(input, textarea, [contenteditable="true"]) {
+    font-size: var(--text-reading);
+    line-height: var(--text-reading--line-height);
+  }
 }
 
 /* Scrollbars discretas, mas sempre perceptiveis e operaveis. */
@@ -259,6 +333,80 @@ textarea {
 }
 
 /* Iconografia: Phosphor Icons (peso regular; duotone em nav/cabeçalhos). */
+
+/* Padrão das tabelas de cadastro, financeiro e relatórios. */
+.app-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-table);
+  line-height: var(--text-table--line-height);
+}
+
+.app-table :is(th, td) {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-table :is(th, td):last-child {
+  border-right: 0;
+}
+
+.app-table tbody tr:last-child > td,
+.app-table tfoot tr:last-child > td {
+  border-bottom: 0;
+}
+
+.app-table thead {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.app-table thead th {
+  text-align: center;
+  font-size: var(--text-table);
+  line-height: var(--text-table--line-height);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  vertical-align: middle;
+}
+
+.app-table tbody tr {
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.app-table tbody tr:hover {
+  background: var(--background);
+}
+
+/* Listas responsivas com colunas também recebem a mesma grade no desktop. */
+.app-list-table-lg .app-list-row {
+  font-size: var(--text-table);
+  line-height: var(--text-table--line-height);
+}
+
+@media (min-width: 1024px) {
+  .app-list-table-lg .app-list-row {
+    gap: 0;
+    padding: 0;
+  }
+
+  .app-list-table-lg .app-list-row > .app-list-cell {
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid var(--border);
+    padding: 0.75rem 1rem;
+    text-align: center;
+  }
+
+  .app-list-table-lg .app-list-row > .app-list-cell:last-child {
+    border-right: 0;
+    padding-inline: 0.5rem;
+  }
+}
 
 @keyframes shimmer {
   100% {

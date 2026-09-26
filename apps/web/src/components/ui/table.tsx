@@ -5,12 +5,9 @@ export function Table({
   ...props
 }: React.TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <table
-        className={cn(
-          "w-full border-collapse text-left text-body tabular-nums",
-          className,
-        )}
+        className={cn("app-table w-full text-table tabular-nums", className)}
         {...props}
       />
     </div>
@@ -20,13 +17,13 @@ export function Table({
 export function TableHeader(
   props: React.HTMLAttributes<HTMLTableSectionElement>,
 ) {
-  return <thead className="bg-background" {...props} />;
+  return <thead {...props} />;
 }
 
 export function TableBody(
   props: React.HTMLAttributes<HTMLTableSectionElement>,
 ) {
-  return <tbody className="divide-y divide-border" {...props} />;
+  return <tbody {...props} />;
 }
 
 export function TableRow({
@@ -48,15 +45,7 @@ export function TableHead({
   className,
   ...props
 }: React.ThHTMLAttributes<HTMLTableCellElement>) {
-  return (
-    <th
-      className={cn(
-        "px-4 py-3 text-label font-medium tracking-wide uppercase text-muted-foreground",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <th className={cn("px-4 py-3", className)} {...props} />;
 }
 
 export function TableCell({

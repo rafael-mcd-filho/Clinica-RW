@@ -180,34 +180,44 @@ export function EmpresasTable({
         </Select>
       </section>
 
-      <section className="animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+      <section className="app-list-table-lg animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
         <div className="max-h-[calc(100vh-18rem)] overflow-y-auto">
-          <div className="sticky top-0 z-10 hidden grid-cols-[1.45fr_1fr_0.55fr_0.55fr_2.25rem] items-center gap-4 border-b border-border bg-muted px-5 py-3 md:grid">
-            <SortHeader
-              label="Empresa"
-              sortKey="name"
-              sort={sort}
-              onSort={toggleSort}
-            />
-            <SortHeader
-              label="Responsável"
-              sortKey="admin"
-              sort={sort}
-              onSort={toggleSort}
-            />
-            <SortHeader
-              label="Status"
-              sortKey="status"
-              sort={sort}
-              onSort={toggleSort}
-            />
-            <SortHeader
-              label="Cadastro"
-              sortKey="created_at"
-              sort={sort}
-              onSort={toggleSort}
-            />
-            <span className="sr-only">Ações</span>
+          <div className="app-list-row sticky top-0 z-10 hidden grid-cols-[1.45fr_1fr_0.55fr_0.55fr_5rem] items-center gap-4 border-b border-border bg-muted px-5 py-3 lg:grid">
+            <div className="app-list-cell">
+              <SortHeader
+                label="Empresa"
+                sortKey="name"
+                sort={sort}
+                onSort={toggleSort}
+              />
+            </div>
+            <div className="app-list-cell">
+              <SortHeader
+                label="Responsável"
+                sortKey="admin"
+                sort={sort}
+                onSort={toggleSort}
+              />
+            </div>
+            <div className="app-list-cell">
+              <SortHeader
+                label="Status"
+                sortKey="status"
+                sort={sort}
+                onSort={toggleSort}
+              />
+            </div>
+            <div className="app-list-cell">
+              <SortHeader
+                label="Cadastro"
+                sortKey="created_at"
+                sort={sort}
+                onSort={toggleSort}
+              />
+            </div>
+            <span className="app-list-cell text-label font-semibold text-foreground">
+              Ações
+            </span>
           </div>
 
           {sorted.length ? (
@@ -219,13 +229,13 @@ export function EmpresasTable({
                 return (
                   <div
                     key={org.id}
-                    className="grid gap-3 px-5 py-4 transition-[background-color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-background md:grid-cols-[1.45fr_1fr_0.55fr_0.55fr_2.25rem] md:items-center md:gap-4"
+                    className="app-list-row grid gap-3 px-5 py-4 transition-[background-color] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-background lg:grid-cols-[1.45fr_1fr_0.55fr_0.55fr_5rem] lg:items-center lg:gap-4"
                   >
-                    <div className="flex min-w-0 items-center gap-3 md:justify-center">
+                    <div className="app-list-cell flex min-w-0 items-center gap-3 lg:justify-center">
                       <div className="flex size-9 shrink-0 items-center justify-center rounded bg-muted text-primary">
                         <Building2 className="size-4" aria-hidden="true" />
                       </div>
-                      <div className="min-w-0 md:text-center">
+                      <div className="min-w-0 lg:text-center">
                         <Link
                           href={`/empresas/${org.id}`}
                           className="block truncate text-sm font-medium transition-colors duration-[var(--motion-fast)] hover:text-primary"
@@ -237,24 +247,25 @@ export function EmpresasTable({
                         </p>
                       </div>
                     </div>
-                    <div className="min-w-0 text-sm md:text-center">
-                      <p className="truncate font-medium">
-                        {admin?.name ?? "Pendente"}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {admin?.email ?? "Sem admin vinculado"}
-                      </p>
+                    <div className="app-list-cell min-w-0 text-sm lg:text-center">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          {admin?.name ?? "Pendente"}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {admin?.email ?? "Sem admin vinculado"}
+                        </p>
+                      </div>
                     </div>
-                    <Badge
-                      variant={statusVariant[org.status] ?? "neutral"}
-                      className="md:justify-self-center"
-                    >
-                      {statusLabel[org.status] ?? org.status}
-                    </Badge>
-                    <span className="text-sm tabular-nums md:justify-self-center">
+                    <div className="app-list-cell">
+                      <Badge variant={statusVariant[org.status] ?? "neutral"}>
+                        {statusLabel[org.status] ?? org.status}
+                      </Badge>
+                    </div>
+                    <span className="app-list-cell text-sm tabular-nums lg:justify-self-center">
                       {formatDate(org.created_at)}
                     </span>
-                    <div className="flex justify-end">
+                    <div className="app-list-cell flex justify-end">
                       <DropdownMenu
                         triggerLabel={`Ações de ${org.name}`}
                         trigger={
@@ -380,7 +391,7 @@ function SortHeader({
       type="button"
       variant="ghost"
       onClick={() => onSort(sortKey)}
-      className="h-auto justify-self-center gap-1 p-0 text-label font-medium uppercase text-muted-foreground hover:bg-transparent hover:text-foreground"
+      className="h-auto justify-self-center gap-1 p-0 text-control font-semibold text-foreground hover:bg-transparent hover:text-primary"
     >
       {label}
       {active ? (

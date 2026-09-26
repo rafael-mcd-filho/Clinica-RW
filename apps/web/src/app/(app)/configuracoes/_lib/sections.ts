@@ -4,7 +4,7 @@ import {
   ChatsCircle,
   FileText,
   Globe,
-  Tag,
+  Lightning,
   UserGear,
 } from "@phosphor-icons/react/dist/ssr";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
@@ -26,9 +26,9 @@ export const configurationSections: Record<
     title: "Cadastros e operação",
     icon: Buildings,
     pageDescription: (name) =>
-      `Dados da clínica, estrutura, equipe e serviços de ${name}.`,
+      `Dados da clínica, estrutura, equipe, serviços e tags de ${name}.`,
     cardDescription:
-      "Dados da clínica, unidades, profissionais, serviços e financeiro.",
+      "Dados da clínica, unidades, profissionais, serviços, financeiro e tags.",
   },
   "usuarios-acessos": {
     title: "Usuários e acessos",
@@ -58,12 +58,14 @@ export const configurationSections: Record<
       `Conexão da Evolution API e canal de atendimento de ${name}.`,
     cardDescription: "Conexão da instância e canal de atendimento.",
   },
+  // A rota continua `tags-automacoes` para não quebrar links; as tags em si
+  // agora são geridas em Cadastros > Tags.
   "tags-automacoes": {
-    title: "Tags e automações",
-    icon: Tag,
+    title: "Automações",
+    icon: Lightning,
     pageDescription: (name) =>
-      `Tags de pacientes e regras automáticas de ${name}.`,
-    cardDescription: "Etiquetas de pacientes e regras automáticas.",
+      `Regras que põem e tiram tags dos pacientes de ${name} a partir de eventos da clínica.`,
+    cardDescription: "Regras que põem e tiram tags a partir de eventos.",
   },
   "modelos-clinicos": {
     title: "Modelos clínicos",

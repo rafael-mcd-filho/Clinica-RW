@@ -147,34 +147,38 @@ export function PatientsTable({
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Link
                     href={`/pacientes/${patient.id}`}
-                    className="block truncate text-[15px] font-semibold text-foreground hover:text-primary"
+                    className="block truncate text-body font-medium text-foreground hover:text-primary"
                   >
                     {displayName}
                   </Link>
                   {patient.deceased_at ? (
                     <Badge
                       variant="destructive"
-                      className="h-5 px-1.5 text-[10px]"
+                      className="h-5 px-1.5 text-caption"
                     >
                       Óbito
                     </Badge>
                   ) : !patient.deleted_at && patient.status !== "active" ? (
-                    <Badge variant="neutral" className="h-5 px-1.5 text-[10px]">
+                    <Badge
+                      variant="neutral"
+                      className="h-5 px-1.5 text-caption"
+                    >
                       Inativo
                     </Badge>
                   ) : null}
                 </div>
                 {patient.social_name ? (
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  <p className="truncate text-xs text-muted-foreground">
                     {patient.full_name}
                   </p>
                 ) : null}
                 {visibleTags.length ? (
-                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+                  // Uma linha só: as tags encolhem (reticências) em vez de quebrar e aumentar a linha.
+                  <div className="mt-0.5 flex min-w-0 items-center gap-1">
                     {visibleTags.map((tag) => (
                       <span
                         key={tag.id}
-                        className="inline-flex h-[18px] max-w-24 items-center rounded-full border px-1.5 text-[10px] font-medium leading-none"
+                        className="inline-flex h-5 min-w-0 max-w-24 items-center rounded-full border px-1.5 text-caption font-medium leading-none"
                         style={{
                           borderColor: `${tag.color}55`,
                           color: tag.color,
@@ -185,7 +189,7 @@ export function PatientsTable({
                       </span>
                     ))}
                     {remainingTags > 0 ? (
-                      <span className="inline-flex h-[18px] items-center rounded-full bg-muted px-1.5 text-[10px] font-medium leading-none text-muted-foreground">
+                      <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-muted px-1.5 text-caption font-medium leading-none text-muted-foreground">
                         +{remainingTags}
                       </span>
                     ) : null}
@@ -199,6 +203,7 @@ export function PatientsTable({
       {
         accessorFn: (patient) => patient.phone ?? patient.whatsapp ?? "",
         header: "Telefone",
+        meta: { align: "center" },
         cell: ({ row }) => {
           const patient = row.original;
           const phone = patient.phone || patient.whatsapp;
@@ -213,6 +218,7 @@ export function PatientsTable({
       {
         accessorKey: "birth_date",
         header: "Nascimento",
+        meta: { align: "center" },
         cell: ({ row }) =>
           row.original.birth_date ? (
             <div>
@@ -233,17 +239,19 @@ export function PatientsTable({
       {
         accessorFn: (patient) => patient.lastInsuranceName ?? "Particular",
         header: "Convênio",
+        meta: { align: "center" },
         cell: ({ row }) => row.original.lastInsuranceName ?? "Particular",
       },
       {
         accessorFn: (patient) => patient.lastEncounterAt ?? "",
         header: "Último atendimento",
+        meta: { align: "center" },
         cell: ({ row }) => {
           const patient = row.original;
 
           return (
-            <div className="grid gap-1">
-              <div className="flex items-center gap-2">
+            <div className="grid justify-items-center gap-0.5">
+              <div className="flex items-center justify-center gap-2">
                 <span>
                   {patient.lastEncounterAt
                     ? formatDate(patient.lastEncounterAt)
@@ -264,7 +272,7 @@ export function PatientsTable({
                 ) : null}
               </div>
               {patient.lastProfessionalName ? (
-                <span className="truncate text-xs text-muted-foreground">
+                <span className="max-w-full truncate text-xs text-muted-foreground">
                   {patient.lastProfessionalName}
                 </span>
               ) : null}
@@ -281,11 +289,12 @@ export function PatientsTable({
           const archived = Boolean(patient.deleted_at);
 
           return (
-            <div className="flex justify-end gap-1">
+            <div className="flex justify-center gap-1">
               <Button
                 asChild
                 size="icon"
                 variant="ghost"
+                className="size-8 border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
                 aria-label="Abrir paciente"
               >
                 <Link href={`/pacientes/${patient.id}`}>
@@ -297,6 +306,7 @@ export function PatientsTable({
                   asChild
                   size="icon"
                   variant="ghost"
+                  className="size-8 border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
                   aria-label="Abrir atendimento"
                 >
                   <Link
@@ -360,7 +370,7 @@ export function PatientsTable({
             {visibleTags.map((tag) => (
               <span
                 key={tag.id}
-                className="inline-flex h-[18px] max-w-28 items-center rounded-full border px-1.5 text-[10px] font-medium"
+                className="inline-flex h-5 max-w-28 items-center rounded-full border px-1.5 text-caption font-medium"
                 style={{
                   borderColor: `${tag.color}55`,
                   color: tag.color,
@@ -371,21 +381,23 @@ export function PatientsTable({
               </span>
             ))}
             {remainingTags > 0 ? (
-              <span className="inline-flex h-[18px] items-center rounded-full bg-muted px-1.5 text-[10px] font-medium leading-none text-muted-foreground">
+              <span className="inline-flex h-5 items-center rounded-full bg-muted px-1.5 text-caption font-medium leading-none text-muted-foreground">
                 +{remainingTags}
               </span>
             ) : null}
           </div>
         ) : null}
-        <dl className="grid grid-cols-2 gap-3 rounded-md bg-muted/40 p-3 text-xs">
+        <dl className="grid grid-cols-2 gap-3 rounded-md bg-muted/40 p-3 text-body">
           <div>
-            <dt className="text-muted-foreground">Nascimento</dt>
+            <dt className="text-caption text-muted-foreground">Nascimento</dt>
             <dd className="mt-0.5 font-medium">
               {patient.birth_date ? formatDate(patient.birth_date) : "—"}
             </dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Último atendimento</dt>
+            <dt className="text-caption text-muted-foreground">
+              Último atendimento
+            </dt>
             <dd className="mt-0.5 font-medium">
               {patient.lastEncounterAt
                 ? formatDate(patient.lastEncounterAt)
@@ -407,8 +419,8 @@ export function PatientsTable({
 
   return (
     <div className="grid gap-4" aria-busy={pending}>
-      <section className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="relative flex-1">
+      <section className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[min(100%,18rem)] flex-1 basis-72">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
@@ -432,7 +444,7 @@ export function PatientsTable({
             navigate({ page: null, status: next });
           }}
           aria-label="Filtrar status"
-          className="lg:w-44"
+          className="sm:w-36 sm:shrink-0"
         >
           <option value="active">Ativos</option>
           <option value="deceased">Óbito</option>
@@ -445,7 +457,7 @@ export function PatientsTable({
             navigate({ page: null, tag: value });
           }}
           aria-label="Filtrar tag"
-          className="lg:w-48"
+          className="sm:w-44 sm:shrink-0"
         >
           <option value="all">Todas as tags</option>
           {tags.map((tag) => (
@@ -461,14 +473,14 @@ export function PatientsTable({
             navigate({ page: null, sort: next });
           }}
           aria-label="Ordenar pacientes"
-          className="lg:w-44"
+          className="sm:w-44 sm:shrink-0"
         >
           <option value="name">Nome A–Z</option>
           <option value="newest">Mais recentes</option>
           <option value="oldest">Mais antigos</option>
         </Select>
         {canCreate ? (
-          <Button asChild>
+          <Button asChild className="h-10 shrink-0">
             <Link href="/pacientes/novo">
               <Plus className="size-4" aria-hidden="true" /> Novo paciente
             </Link>
@@ -487,6 +499,7 @@ export function PatientsTable({
         <DataTable
           columns={columns}
           data={patients}
+          density="compact"
           enableSorting={false}
           emptyTitle="Nenhum paciente encontrado"
           emptyDescription="Ajuste a busca ou os filtros."
@@ -567,6 +580,11 @@ function PatientArchiveButton({
           type="submit"
           size={compact ? "icon" : "sm"}
           variant="ghost"
+          className={
+            compact
+              ? "size-8 border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
+              : undefined
+          }
           aria-label={compact ? "Restaurar paciente" : undefined}
         >
           {compact ? <RotateCcw className="size-4" /> : "Restaurar"}
@@ -581,6 +599,11 @@ function PatientArchiveButton({
         type="button"
         size={compact ? "icon" : "sm"}
         variant="ghost"
+        className={
+          compact
+            ? "size-8 border border-border bg-card text-destructive hover:border-destructive hover:bg-destructive-muted hover:text-destructive"
+            : undefined
+        }
         aria-label={compact ? "Arquivar paciente" : undefined}
         onClick={() => setConfirming(true)}
       >
