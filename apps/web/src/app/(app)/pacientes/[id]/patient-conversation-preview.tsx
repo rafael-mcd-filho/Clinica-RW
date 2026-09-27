@@ -115,7 +115,8 @@ export function PatientConversationPreview({
         open={open}
         onClose={() => setOpen(false)}
         title={`Conversa com ${contactName}`}
-        description={`Últimas ${PREVIEW_LIMIT} mensagens, somente leitura.`}
+        // "Últimas 50" numa conversa de 3 mensagens prometia o que não há.
+        description={`Até as ${PREVIEW_LIMIT} mensagens mais recentes, somente leitura.`}
         className="max-w-2xl"
         footer={
           <>
@@ -170,7 +171,7 @@ export function PatientConversationPreview({
                 >
                   <div
                     className={cn(
-                      "min-w-0 max-w-[86%] rounded-lg px-3 pb-1 pt-2 text-body leading-5 shadow-sm",
+                      "min-w-0 max-w-[86%] rounded-lg px-3 pb-1 pt-2 text-body leading-5 shadow-[var(--shadow-soft)]",
                       outbound
                         ? "rounded-tr-sm border border-primary/30 bg-primary-muted-hover"
                         : "rounded-tl-sm border border-border bg-card",

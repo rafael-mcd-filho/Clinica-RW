@@ -155,7 +155,7 @@ export default async function EditPatientPage({
         <div className="flex min-w-0 items-center gap-3">
           <Button asChild variant="secondary" size="icon">
             <Link href={`/pacientes/${id}`} aria-label="Voltar para o resumo">
-              <ArrowLeft className="size-4" />
+              <ArrowLeft className="size-4" aria-hidden="true" />
             </Link>
           </Button>
           <Badge
@@ -183,6 +183,9 @@ export default async function EditPatientPage({
       <Tabs
         ariaLabel="Seções editáveis do paciente"
         urlParam="section"
+        // Cada aba tem o próprio formulário e o próprio botão de salvar;
+        // montadas, uma edição não salva sobrevive à troca de aba.
+        keepMounted
         items={[
           {
             id: "pessoais",

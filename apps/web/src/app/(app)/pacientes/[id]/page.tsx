@@ -12,6 +12,7 @@ import {
   PencilSimpleLine as Edit3,
   FileText,
   Heartbeat as HeartPulse,
+  Lifebuoy,
   EnvelopeSimple as Mail,
   MapPin,
   Phone,
@@ -19,6 +20,7 @@ import {
   Stethoscope,
   Tag,
   UserCircle as UserRound,
+  WarningCircle,
 } from "@phosphor-icons/react/dist/ssr";
 import {
   ClinicalQuickEditButton,
@@ -28,12 +30,14 @@ import {
 import { PatientAppointmentActions } from "./patient-appointment-actions";
 import { PatientConversationPreview } from "./patient-conversation-preview";
 import { PatientPhotoForm } from "./patient-photo-form";
+import { PatientSidebarDetails } from "./patient-sidebar-details";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabSelectionButton } from "@/components/ui/tabs";
+import { normalizeAgendaTimeZone } from "@/lib/agenda/range";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { getPatientCompleteness } from "@/lib/patients/completeness";
 import { createPatientPhotoSignedUrl } from "@/lib/storage/patient-photos";
@@ -268,6 +272,7 @@ export default async function PatientDetailsPage({
     encountersResult,
     patientAppointmentsResult,
     whatsappContactsResult,
+    settingsResult,
   ] = await Promise.all([
     canSeeSensitive
       ? supabase
@@ -323,7 +328,17 @@ export default async function PatientDetailsPage({
           .order("updated_at", { ascending: false })
           .returns<WhatsAppContactRow[]>()
       : Promise.resolve({ data: [] as WhatsAppContactRow[] }),
+    supabase
+      .from("organization_settings")
+      .select("timezone")
+      .eq("organization_id", organizationId)
+      .maybeSingle<{ timezone: string | null }>(),
   ]);
+  // Horários da ficha saem no fuso da clínica, como na agenda. Sem isso o
+  // servidor formatava no fuso dele (em produção costuma ser UTC, e "14:00"
+  // viraria "17:00"), e o link "Ver na agenda" de um horário noturno caía no
+  // dia seguinte, porque a data saía do ISO em UTC.
+  const timeZone = normalizeAgendaTimeZone(settingsResult.data?.timezone);
 
   const encounters = encountersResult.data ?? [];
   const patientAppointments = patientAppointmentsResult.data ?? [];
@@ -472,6 +487,19 @@ export default async function PatientDetailsPage({
         sum + Math.max(0, Number(item.amount) - Number(item.paid_amount)),
       0,
     );
+  // "Hoje" no fuso da clínica: é o que separa um lançamento em aberto de um
+  // vencido, que antes apareciam iguais ("Aberto").
+  const today = localDateKey(new Date().toISOString(), timeZone);
+  const overdueBalance = (receivablesResult.data ?? [])
+    .filter((item) => isReceivableOverdue(item, today))
+    .reduce(
+      (sum, item) =>
+        sum + Math.max(0, Number(item.amount) - Number(item.paid_amount)),
+      0,
+    );
+  const allergyItems = canSeeSensitive
+    ? splitSummary(clinicalResult.data?.allergies)
+    : [];
 
   return (
     <div className="grid gap-6">
@@ -483,47 +511,40 @@ export default async function PatientDetailsPage({
             { label: displayName },
           ]}
         />
-        <div className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div className="flex min-w-0 items-center gap-3">
-            <Button asChild variant="secondary" size="icon">
-              <Link href="/pacientes" aria-label="Voltar para pacientes">
-                <ArrowLeft className="size-4" aria-hidden="true" />
-              </Link>
-            </Button>
-            <Badge
-              variant={
-                patient.deceased_at
-                  ? "destructive"
-                  : patient.deleted_at
-                    ? "neutral"
-                    : patient.status === "active"
-                      ? "success"
-                      : "neutral"
-              }
-            >
-              {patient.deceased_at
-                ? "Óbito"
+        <div className="flex min-w-0 items-center gap-3">
+          <Button asChild variant="secondary" size="icon">
+            <Link href="/pacientes" aria-label="Voltar para pacientes">
+              <ArrowLeft className="size-4" aria-hidden="true" />
+            </Link>
+          </Button>
+          <Badge
+            variant={
+              patient.deceased_at
+                ? "destructive"
                 : patient.deleted_at
-                  ? "Arquivado"
+                  ? "neutral"
                   : patient.status === "active"
-                    ? "Ativo"
-                    : "Inativo"}
-            </Badge>
-          </div>
-          {canEdit ? (
-            <Button asChild className="w-full sm:w-auto">
-              <Link href={`/pacientes/${patient.id}/editar`}>
-                <Edit3 className="size-4" aria-hidden="true" />
-                Editar paciente
-              </Link>
-            </Button>
-          ) : null}
+                    ? "success"
+                    : "neutral"
+            }
+          >
+            {patient.deceased_at
+              ? "Óbito"
+              : patient.deleted_at
+                ? "Arquivado"
+                : patient.status === "active"
+                  ? "Ativo"
+                  : "Inativo"}
+          </Badge>
         </div>
       </section>
 
       <div className="grid min-w-0 gap-6 lg:grid-cols-[19rem_minmax(0,1fr)]">
         <aside className="grid min-w-0 self-start overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)] lg:sticky lg:top-24">
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 bg-gradient-to-b from-primary-muted to-transparent px-4 py-5 lg:grid-cols-1 lg:justify-items-center lg:gap-3 lg:px-5 lg:pb-5 lg:pt-6">
+          {/* Foto e nome empilhados em toda largura. Lado a lado (o antigo
+              layout abaixo de lg) o nome ficava espremido e cortado no
+              celular, com a ajuda da foto sobrando embaixo dos dois. */}
+          <div className="grid justify-items-center gap-3 bg-gradient-to-b from-primary-muted to-transparent px-4 pb-5 pt-6 lg:px-5">
             <PatientPhotoForm
               patientId={patient.id}
               photoUrl={photoUrl}
@@ -533,105 +554,139 @@ export default async function PatientDetailsPage({
               deceased={Boolean(patient.deceased_at)}
             />
 
-            <div className="min-w-0 text-left lg:text-center">
-              <h2 className="truncate font-semibold">{displayName}</h2>
+            <div className="min-w-0 max-w-full text-center">
+              {/* Quebra em vez de cortar: é o nome do paciente, a
+                  informação que confirma que a ficha é a certa. */}
+              <h2 className="text-balance break-words font-semibold">
+                {displayName}
+              </h2>
               {patient.social_name ? (
                 <p className="mt-1 text-xs text-muted-foreground">
                   Nome civil: {patient.full_name}
                 </p>
               ) : null}
               {patient.deceased_at ? (
-                <p className="mt-2 text-xs font-semibold text-destructive">
+                <p className="mt-2 text-xs font-semibold text-destructive-foreground">
                   Óbito em {formatDate(patient.deceased_at)}
                 </p>
               ) : null}
             </div>
+
+            {/* Editar fica junto da identificação do paciente, no cartão da
+                foto, e não solto no topo da página. */}
+            {canEdit ? (
+              <Button asChild className="w-full">
+                <Link href={`/pacientes/${patient.id}/editar`}>
+                  <Edit3 className="size-4" aria-hidden="true" />
+                  Editar paciente
+                </Link>
+              </Button>
+            ) : null}
           </div>
 
           <div className="grid min-w-0 gap-4 px-4 pb-5 sm:px-5">
             <div className="h-px bg-border" />
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-              <SidebarInfo
-                icon={CalendarDays}
-                label="Nascimento"
-                value={
-                  patient.birth_date
-                    ? `${formatDate(patient.birth_date)} (${patientAge(
-                        patient.birth_date,
-                        patient.deceased_at,
-                      )})`
-                    : "Não informado"
-                }
-              />
-              <SidebarInfo
-                icon={UserRound}
-                label="Sexo"
-                value={sexLabel(patient.sex_at_birth)}
-              />
-              {canSeeSensitive ? (
+            <PatientSidebarDetails
+              alert={
+                allergyItems.length ? (
+                  <AllergyAlert items={allergyItems} />
+                ) : null
+              }
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
                 <SidebarInfo
-                  icon={CreditCard}
-                  label="CPF"
-                  value={patient.cpf ? formatCPF(patient.cpf) : "Não informado"}
-                />
-              ) : null}
-              <SidebarInfo
-                icon={Phone}
-                label="Telefone"
-                value={
-                  patient.phone
-                    ? formatPhoneBR(patient.phone)
-                    : patient.whatsapp
-                      ? formatPhoneBR(patient.whatsapp)
+                  icon={CalendarDays}
+                  label="Nascimento"
+                  value={
+                    patient.birth_date
+                      ? `${formatDate(patient.birth_date)} (${patientAge(
+                          patient.birth_date,
+                          patient.deceased_at,
+                        )})`
                       : "Não informado"
-                }
-              />
-              <SidebarInfo
-                icon={Mail}
-                label="E-mail"
-                value={patient.email || "Não informado"}
-              />
-              {canSeeSensitive ? (
-                <SidebarInfo
-                  icon={MapPin}
-                  label="Endereço"
-                  value={formatAddress(addressResult.data)}
+                  }
                 />
-              ) : null}
-            </div>
-
-            {selectedTags.length ? (
-              <SidebarSection icon={Tag} title="Tags">
-                <div className="flex flex-wrap gap-2">
-                  {selectedTags.map((tag) => (
-                    <span
-                      key={tag.id}
-                      className="rounded-full border px-1.5 py-0.5 text-caption font-medium leading-none"
-                      style={{
-                        borderColor: `${tag.color}55`,
-                        color: tag.color,
-                        backgroundColor: `${tag.color}0D`,
-                      }}
-                    >
-                      {tag.name}
-                    </span>
-                  ))}
-                </div>
-              </SidebarSection>
-            ) : null}
-
-            {canSeeSensitive ? (
-              <ClinicalSidebar
-                patientId={patient.id}
-                summary={clinicalResult.data}
-                canEdit={canEdit}
-              />
-            ) : (
-              <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-                Dados clínicos permanentes protegidos.
+                <SidebarInfo
+                  icon={UserRound}
+                  label="Sexo"
+                  value={sexLabel(patient.sex_at_birth)}
+                />
+                {canSeeSensitive ? (
+                  <SidebarInfo
+                    icon={CreditCard}
+                    label="CPF"
+                    value={
+                      patient.cpf ? formatCPF(patient.cpf) : "Não informado"
+                    }
+                  />
+                ) : null}
+                <SidebarInfo
+                  icon={Phone}
+                  label="Telefone"
+                  value={
+                    patient.phone
+                      ? formatPhoneBR(patient.phone)
+                      : patient.whatsapp
+                        ? formatPhoneBR(patient.whatsapp)
+                        : "Não informado"
+                  }
+                />
+                <SidebarInfo
+                  icon={Mail}
+                  label="E-mail"
+                  value={patient.email || "Não informado"}
+                />
+                {canSeeSensitive ? (
+                  <SidebarInfo
+                    icon={MapPin}
+                    label="Endereço"
+                    value={formatAddress(addressResult.data)}
+                  />
+                ) : null}
+                {/* Era preenchido na edição e não aparecia em lugar nenhum da
+                  ficha — justo quando alguém precisa ligar para ele. */}
+                {canSeeSensitive ? (
+                  <SidebarInfo
+                    icon={Lifebuoy}
+                    label="Contato de emergência"
+                    value={formatEmergencyContact(clinicalResult.data)}
+                  />
+                ) : null}
               </div>
-            )}
+
+              {selectedTags.length ? (
+                <SidebarSection icon={Tag} title="Tags">
+                  <div className="flex flex-wrap gap-2">
+                    {selectedTags.map((tag) => (
+                      <span
+                        key={tag.id}
+                        className="rounded-full border px-1.5 py-0.5 text-caption font-medium leading-none"
+                        style={{
+                          borderColor: `${tag.color}55`,
+                          color: tag.color,
+                          backgroundColor: `${tag.color}0D`,
+                        }}
+                      >
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
+                </SidebarSection>
+              ) : null}
+
+              {canSeeSensitive ? (
+                <ClinicalSidebar
+                  patientId={patient.id}
+                  summary={clinicalResult.data}
+                  canEdit={canEdit}
+                />
+              ) : (
+                <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                  Dados clínicos permanentes protegidos.
+                </div>
+              )}
+            </PatientSidebarDetails>
           </div>
         </aside>
 
@@ -672,6 +727,7 @@ export default async function PatientDetailsPage({
                         canSeeAgenda={canSeeAgenda}
                         canEditAgenda={canEditAgenda}
                         canSeeClinicalRecords={canSeeClinicalRecords}
+                        timeZone={timeZone}
                         viewAll
                       />
                     ) : null}
@@ -681,6 +737,7 @@ export default async function PatientDetailsPage({
                         <DocumentsPanel
                           documents={documentsResult.data ?? []}
                           total={documentsResult.count ?? 0}
+                          timeZone={timeZone}
                           viewAll
                         />
                       ) : null}
@@ -689,10 +746,12 @@ export default async function PatientDetailsPage({
                           receivables={receivablesResult.data ?? []}
                           total={receivablesResult.count ?? 0}
                           openBalance={openBalance}
+                          overdueBalance={overdueBalance}
                           partialBalance={
                             (receivablesResult.count ?? 0) >
                             (receivablesResult.data?.length ?? 0)
                           }
+                          today={today}
                           viewAll
                         />
                       ) : null}
@@ -704,6 +763,7 @@ export default async function PatientDetailsPage({
                         contactById={contactById}
                         communications={[]}
                         organizationId={organizationId}
+                        timeZone={timeZone}
                         viewAll
                       />
                     ) : null}
@@ -734,6 +794,7 @@ export default async function PatientDetailsPage({
                           canSeeAgenda={canSeeAgenda}
                           canEditAgenda={canEditAgenda}
                           canSeeClinicalRecords={canSeeClinicalRecords}
+                          timeZone={timeZone}
                         />
                       ),
                     },
@@ -749,6 +810,7 @@ export default async function PatientDetailsPage({
                         <DocumentsPanel
                           documents={documentsResult.data ?? []}
                           total={documentsResult.count ?? 0}
+                          timeZone={timeZone}
                         />
                       ),
                     },
@@ -767,10 +829,12 @@ export default async function PatientDetailsPage({
                           receivables={receivablesResult.data ?? []}
                           total={receivablesResult.count ?? 0}
                           openBalance={openBalance}
+                          overdueBalance={overdueBalance}
                           partialBalance={
                             (receivablesResult.count ?? 0) >
                             (receivablesResult.data?.length ?? 0)
                           }
+                          today={today}
                         />
                       ),
                     },
@@ -790,6 +854,7 @@ export default async function PatientDetailsPage({
                           contactById={contactById}
                           communications={communications}
                           organizationId={organizationId}
+                          timeZone={timeZone}
                         />
                       ),
                     },
@@ -835,6 +900,7 @@ function PatientHistoryModule({
   encounters,
   entryByEncounter,
   professionalName,
+  timeZone,
   viewAll = false,
 }: {
   appointmentById: Map<string, AppointmentRow>;
@@ -848,6 +914,7 @@ function PatientHistoryModule({
   encounters: EncounterRow[];
   entryByEncounter: Map<string, EncounterEntryRow>;
   professionalName: Map<string, string>;
+  timeZone: string;
   viewAll?: boolean;
 }) {
   const visibleAppointments = viewAll ? appointments.slice(0, 5) : appointments;
@@ -881,6 +948,7 @@ function PatientHistoryModule({
           encounters={encounters}
           professionalName={professionalName}
           total={appointmentTotal}
+          timeZone={timeZone}
         />
       ) : null}
 
@@ -898,6 +966,7 @@ function PatientHistoryModule({
             diagnosisByEncounter={diagnosisByEncounter}
             professionalName={professionalName}
             appointmentById={appointmentById}
+            timeZone={timeZone}
           />
         </section>
       ) : (
@@ -915,12 +984,14 @@ function AppointmentsPanel({
   canEditAgenda,
   encounters,
   professionalName,
+  timeZone,
   total,
 }: {
   appointments: AppointmentRow[];
   canEditAgenda: boolean;
   encounters: EncounterRow[];
   professionalName: Map<string, string>;
+  timeZone: string;
   total: number;
 }) {
   const encounterByAppointmentId = new Map(
@@ -958,13 +1029,17 @@ function AppointmentsPanel({
               dateTimeLabel={formatDateTimeRange(
                 appointment.start_at,
                 appointment.end_at,
+                timeZone,
               )}
               professionalName={
                 professionalName.get(appointment.professional_id) ??
                 "Profissional"
               }
               insuranceName={appointment.health_insurances?.name ?? null}
-              agendaHref={`/agenda?date=${appointment.start_at.slice(0, 10)}`}
+              agendaHref={`/agenda?date=${localDateKey(
+                appointment.start_at,
+                timeZone,
+              )}`}
               canEditAgenda={canEditAgenda}
               encounterHref={
                 encounter
@@ -991,12 +1066,14 @@ function EncounterTimeline({
   diagnosisByEncounter,
   professionalName,
   appointmentById,
+  timeZone,
 }: {
   encounters: EncounterRow[];
   entryByEncounter: Map<string, EncounterEntryRow>;
   diagnosisByEncounter: Map<string, DiagnosisRow>;
   professionalName: Map<string, string>;
   appointmentById: Map<string, AppointmentRow>;
+  timeZone: string;
 }) {
   if (!encounters.length) {
     return (
@@ -1067,11 +1144,12 @@ function EncounterTimeline({
                   <div className="shrink-0 text-sm text-muted-foreground md:text-right">
                     <p className="inline-flex items-center gap-1">
                       <Clock3 className="size-3.5" aria-hidden="true" />
-                      {formatDateTime(encounter.started_at)}
+                      {formatDateTime(encounter.started_at, timeZone)}
                     </p>
                     {encounter.finalized_at ? (
                       <p className="mt-1 text-xs">
-                        Finalizado {formatDateTime(encounter.finalized_at)}
+                        Finalizado em{" "}
+                        {formatDateTime(encounter.finalized_at, timeZone)}
                       </p>
                     ) : null}
                   </div>
@@ -1233,7 +1311,10 @@ function SidebarInfo({
 }) {
   return (
     <div className="flex gap-3">
-      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <Icon
+        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        aria-hidden="true"
+      />
       <div className="min-w-0">
         <p className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
           {label}
@@ -1245,10 +1326,12 @@ function SidebarInfo({
 }
 
 const sectionTones = {
+  // Tom "-foreground": o vermelho base em 12px sobre o fundo rosado ficava
+  // abaixo do contraste mínimo, justo no título de Alergias.
   danger: {
     box: "border-destructive-muted bg-destructive-muted/40",
-    icon: "text-destructive",
-    title: "text-destructive",
+    icon: "text-destructive-foreground",
+    title: "text-destructive-foreground",
   },
   warning: {
     box: "border-warning-muted bg-warning-muted/40",
@@ -1334,29 +1417,38 @@ function BulletList({ items, empty }: { items: string[]; empty: string }) {
 
 function DocumentsPanel({
   documents,
+  timeZone,
   total,
   viewAll = false,
 }: {
   documents: PatientDocumentRow[];
+  timeZone: string;
   total: number;
   viewAll?: boolean;
 }) {
   const visibleDocuments = viewAll ? documents.slice(0, 5) : documents;
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-start justify-between gap-3">
-        <div>
+    <Card className="min-w-0">
+      {/* flex de verdade: com só `flex-row` o "Ver todos" caía embaixo do
+          texto em vez de ficar à direita do título. O wrap com a largura
+          mínima do texto faz o botão descer de linha no celular, em vez de
+          espremer o texto em três linhas. */}
+      <CardHeader className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="min-w-48 flex-1">
           <h2 className="font-semibold">
             {viewAll ? "Documentos recentes" : "Documentos"}
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {total} documento{total === 1 ? "" : "s"} emitido
-            {total === 1 ? "" : "s"}.
-          </p>
+          {/* Sem documentos, o estado vazio logo abaixo já diz isso. */}
+          {total ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {total} documento{total === 1 ? "" : "s"} emitido
+              {total === 1 ? "" : "s"}.
+            </p>
+          ) : null}
         </div>
-        {viewAll ? (
-          <Button asChild variant="ghost" size="sm">
+        {viewAll && total ? (
+          <Button asChild variant="ghost" size="sm" className="shrink-0">
             <TabSelectionButton value="documents">
               Ver todos
               <ArrowRight className="size-4" aria-hidden="true" />
@@ -1373,18 +1465,22 @@ function DocumentsPanel({
         {visibleDocuments.map((document) => (
           <div
             key={document.id}
-            className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+            className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
           >
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{document.title}</p>
               <p className="text-xs text-muted-foreground">
                 {documentTypeLabels[document.document_type] ??
                   document.document_type}{" "}
-                · {formatDateTime(document.issued_at)}
+                · {formatDateTime(document.issued_at, timeZone)}
               </p>
             </div>
-            <Button asChild variant="ghost" size="sm">
-              <Link href={`/documentos/${document.id}/pdf`} target="_blank">
+            <Button asChild variant="ghost" size="sm" className="shrink-0">
+              <Link
+                href={`/documentos/${document.id}/pdf`}
+                target="_blank"
+                aria-label={`Abrir ${document.title} em nova aba`}
+              >
                 Abrir
               </Link>
             </Button>
@@ -1400,35 +1496,50 @@ function DocumentsPanel({
 
 function FinancePanel({
   openBalance,
+  overdueBalance,
   partialBalance = false,
   receivables,
+  today,
   total,
   viewAll = false,
 }: {
   openBalance: number;
+  overdueBalance: number;
   partialBalance?: boolean;
   receivables: PatientReceivableRow[];
+  /** Hoje (yyyy-mm-dd) no fuso da clínica. */
+  today: string;
   total: number;
   viewAll?: boolean;
 }) {
   const visibleReceivables = viewAll ? receivables.slice(0, 5) : receivables;
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-start justify-between gap-3">
-        <div>
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="min-w-48 flex-1">
           <h2 className="font-semibold">Financeiro</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {partialBalance ? "Saldo nos itens recentes" : "Saldo em aberto"}:{" "}
             {formatCurrency(openBalance)}
+            {overdueBalance > 0 ? (
+              <>
+                {" · "}
+                <span className="font-medium text-destructive-foreground">
+                  {formatCurrency(overdueBalance)} vencido
+                </span>
+              </>
+            ) : null}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {total} lançamento{total === 1 ? "" : "s"} vinculado
             {total === 1 ? "" : "s"} ao paciente.
           </p>
         </div>
-        {viewAll ? (
-          <Button asChild variant="ghost" size="sm">
+        {/* shrink-0: no card estreito o botão encolhia e o rótulo
+            quebrava em "Ver / todos". */}
+        {viewAll && total ? (
+          <Button asChild variant="ghost" size="sm" className="shrink-0">
             <TabSelectionButton value="finance">
               Ver todos
               <ArrowRight className="size-4" aria-hidden="true" />
@@ -1442,45 +1553,54 @@ function FinancePanel({
             Exibindo os {visibleReceivables.length} lançamentos mais recentes.
           </p>
         ) : null}
-        {visibleReceivables.map((receivable) => (
-          <div
-            key={receivable.id}
-            className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">
-                {receivable.description}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Venc. {formatDate(receivable.due_date)} ·{" "}
-                {formatCurrency(receivable.paid_amount)} recebido de{" "}
-                {formatCurrency(receivable.amount)}
-              </p>
-            </div>
-            <Badge
-              variant={
-                receivable.status === "paid"
-                  ? "success"
-                  : receivable.status === "open"
-                    ? "warning"
-                    : "neutral"
-              }
+        {visibleReceivables.map((receivable) => {
+          const overdue = isReceivableOverdue(receivable, today);
+
+          return (
+            // min-w-0: sem ele o título em linha única esticava a linha além
+            // do card e a página inteira ganhava rolagem lateral.
+            <div
+              key={receivable.id}
+              className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
             >
-              {receivable.status === "paid" ? (
-                <CircleCheck className="mr-1 size-3" aria-hidden="true" />
-              ) : receivable.status === "open" ? (
-                <Clock3 className="mr-1 size-3" aria-hidden="true" />
-              ) : null}
-              {receivable.status === "paid"
-                ? "Pago"
-                : receivable.status === "open"
-                  ? "Aberto"
-                  : receivable.status}
-            </Badge>
-          </div>
-        ))}
+              <div className="min-w-0">
+                <p
+                  className="truncate text-sm font-medium"
+                  title={receivable.description}
+                >
+                  {receivable.description}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Venc. {formatDate(receivable.due_date)} ·{" "}
+                  {formatCurrency(receivable.paid_amount)} recebido de{" "}
+                  {formatCurrency(receivable.amount)}
+                </p>
+              </div>
+              {/* Vencido é o "Aberto" (ou "Parcial") que passou da data:
+                  aparecia igual ao que ainda vai vencer. */}
+              <Badge
+                variant={
+                  overdue
+                    ? "destructive"
+                    : receivableStatusVariant(receivable.status)
+                }
+              >
+                {overdue ? (
+                  <WarningCircle className="mr-1 size-3" aria-hidden="true" />
+                ) : receivable.status === "paid" ? (
+                  <CircleCheck className="mr-1 size-3" aria-hidden="true" />
+                ) : receivable.status === "open" ? (
+                  <Clock3 className="mr-1 size-3" aria-hidden="true" />
+                ) : null}
+                {overdue ? "Vencido" : receivableStatusLabel(receivable.status)}
+              </Badge>
+            </div>
+          );
+        })}
         {!visibleReceivables.length ? (
-          <EmptyState icon={CreditCard} title="Nenhuma pendência financeira" />
+          // Vazio aqui é sem lançamento nenhum, nem pago: "pendência" dizia
+          // menos do que isso.
+          <EmptyState icon={CreditCard} title="Nenhum lançamento financeiro" />
         ) : null}
       </CardContent>
     </Card>
@@ -1492,12 +1612,14 @@ function MessagesPanel({
   conversations,
   communications,
   organizationId,
+  timeZone,
   viewAll = false,
 }: {
   contactById: Map<string, WhatsAppContactRow>;
   conversations: WhatsAppConversationRow[];
   communications: PatientCommunicationRow[];
   organizationId: string;
+  timeZone: string;
   viewAll?: boolean;
 }) {
   const visibleConversations = viewAll
@@ -1505,22 +1627,22 @@ function MessagesPanel({
     : conversations;
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-start justify-between gap-3">
-        <div>
+    <Card className="min-w-0">
+      <CardHeader className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="min-w-48 flex-1">
           <h2 className="font-semibold">Mensagens</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {conversations.length
-              ? `${conversations.length} conversa${
-                  conversations.length === 1 ? "" : "s"
-                } vinculada${
-                  conversations.length === 1 ? "" : "s"
-                } ao paciente.`
-              : "Nenhuma conversa vinculada a este paciente."}
-          </p>
+          {/* Sem conversa, o estado vazio abaixo já explica; repetir no
+              cabeçalho dizia a mesma coisa duas vezes. */}
+          {conversations.length ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {`${conversations.length} conversa${
+                conversations.length === 1 ? "" : "s"
+              } vinculada${conversations.length === 1 ? "" : "s"} ao paciente.`}
+            </p>
+          ) : null}
         </div>
         {viewAll && conversations.length ? (
-          <Button asChild variant="ghost" size="sm">
+          <Button asChild variant="ghost" size="sm" className="shrink-0">
             <TabSelectionButton value="messages">
               Ver mensagens
               <ArrowRight className="size-4" aria-hidden="true" />
@@ -1534,7 +1656,7 @@ function MessagesPanel({
           return (
             <div
               key={conversation.id}
-              className="flex flex-col justify-between gap-3 rounded-md border border-border px-3 py-3 sm:flex-row sm:items-center"
+              className="flex min-w-0 flex-col justify-between gap-3 rounded-md border border-border px-3 py-3 sm:flex-row sm:items-center"
             >
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1555,7 +1677,7 @@ function MessagesPanel({
                 </p>
                 {conversation.last_message_at ? (
                   <p className="mt-1 text-caption text-muted-foreground">
-                    {formatDateTime(conversation.last_message_at)}
+                    {formatDateTime(conversation.last_message_at, timeZone)}
                   </p>
                 ) : null}
               </div>
@@ -1618,8 +1740,11 @@ function MessagesPanel({
                 </p>
                 <p className="text-caption text-muted-foreground">
                   {communication.sent_at
-                    ? `Enviada em ${formatDateTime(communication.sent_at)}`
-                    : `Agendada para ${formatDateTime(communication.scheduled_at)}`}
+                    ? `Enviada em ${formatDateTime(communication.sent_at, timeZone)}`
+                    : `Agendada para ${formatDateTime(
+                        communication.scheduled_at,
+                        timeZone,
+                      )}`}
                   {" · "}
                   {communication.recipient}
                 </p>
@@ -1706,6 +1831,69 @@ function appointmentStatusVariant(
   return "neutral";
 }
 
+// Mesmos rótulos do módulo Financeiro: "partial", "cancelled" e
+// "written_off" apareciam em inglês na ficha.
+function receivableStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    open: "Aberto",
+    partial: "Parcial",
+    paid: "Pago",
+    cancelled: "Cancelado",
+    written_off: "Baixado",
+  };
+  return labels[status] ?? status;
+}
+
+function receivableStatusVariant(
+  status: string,
+): "neutral" | "success" | "warning" {
+  if (status === "paid") return "success";
+  if (status === "open") return "warning";
+  return "neutral";
+}
+
+/** Em aberto (ou parcial) com vencimento antes de hoje. */
+function isReceivableOverdue(
+  receivable: Pick<PatientReceivableRow, "due_date" | "status">,
+  today: string,
+) {
+  return (
+    ["open", "partial"].includes(receivable.status) &&
+    receivable.due_date < today
+  );
+}
+
+function formatEmergencyContact(summary?: ClinicalSummary | null) {
+  const name = summary?.emergency_contact_name?.trim();
+  const relationship = summary?.emergency_contact_relationship?.trim();
+  const phone = summary?.emergency_contact_phone?.trim();
+  const person = name
+    ? relationship
+      ? `${name} (${relationship})`
+      : name
+    : relationship;
+  const parts = [person, phone ? formatPhoneBR(phone) : null].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "Não informado";
+}
+
+/** Alergias à vista no celular, com os dados do paciente recolhidos. */
+function AllergyAlert({ items }: { items: string[] }) {
+  return (
+    <div className="flex gap-2 rounded-md border border-destructive-muted bg-destructive-muted/40 px-3 py-2">
+      <ShieldAlert
+        className="mt-0.5 size-4 shrink-0 text-destructive-foreground"
+        aria-hidden="true"
+      />
+      <p className="min-w-0 break-words text-sm">
+        <span className="font-semibold text-destructive-foreground">
+          Alergias:
+        </span>{" "}
+        {items.join(", ")}
+      </p>
+    </div>
+  );
+}
+
 function conversationStatusLabel(status: string) {
   if (status === "pending") return "Novo";
   if (status === "open") return "Em atendimento";
@@ -1760,7 +1948,7 @@ function splitSummary(value?: string | null) {
 function summarizeNotes(value?: string | null) {
   const clean = value?.replace(/\s+/g, " ").trim();
   if (!clean) return null;
-  return clean.length > 140 ? `${clean.slice(0, 137)}...` : clean;
+  return clean.length > 140 ? `${clean.slice(0, 139).trimEnd()}…` : clean;
 }
 
 function formatAddress(address?: AddressRow | null) {
@@ -1815,24 +2003,32 @@ function formatDate(value: string) {
   );
 }
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string, timeZone: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone,
   }).format(new Date(value));
 }
 
-function formatDateTimeRange(startAt: string, endAt: string) {
+function formatDateTimeRange(startAt: string, endAt: string, timeZone: string) {
   const start = new Date(startAt);
   const end = new Date(endAt);
   const date = new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "medium",
+    timeZone,
   }).format(start);
   const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   });
   return `${date}, ${timeFormatter.format(start)}–${timeFormatter.format(end)}`;
+}
+
+/** Data (yyyy-mm-dd) do instante no fuso da clínica, para links da agenda. */
+function localDateKey(value: string, timeZone: string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(value));
 }
 
 function formatCurrency(value: number) {

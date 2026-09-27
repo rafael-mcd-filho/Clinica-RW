@@ -158,7 +158,16 @@ export function PatientsTable({
                     >
                       Óbito
                     </Badge>
-                  ) : !patient.deleted_at && patient.status !== "active" ? (
+                  ) : patient.deleted_at ? (
+                    // No filtro "Todos" o arquivado aparecia sem selo no
+                    // desktop (o celular já mostrava).
+                    <Badge
+                      variant="neutral"
+                      className="h-5 px-1.5 text-caption"
+                    >
+                      Arquivado
+                    </Badge>
+                  ) : patient.status !== "active" ? (
                     <Badge
                       variant="neutral"
                       className="h-5 px-1.5 text-caption"
@@ -178,6 +187,7 @@ export function PatientsTable({
                     {visibleTags.map((tag) => (
                       <span
                         key={tag.id}
+                        title={tag.name}
                         className="inline-flex h-5 min-w-0 max-w-24 items-center rounded-full border px-1.5 text-caption font-medium leading-none"
                         style={{
                           borderColor: `${tag.color}55`,
@@ -189,7 +199,10 @@ export function PatientsTable({
                       </span>
                     ))}
                     {remainingTags > 0 ? (
-                      <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-muted px-1.5 text-caption font-medium leading-none text-muted-foreground">
+                      <span
+                        title={hiddenTagNames(patient.tagIds, tagById)}
+                        className="inline-flex h-5 shrink-0 items-center rounded-full bg-muted px-1.5 text-caption font-medium leading-none text-muted-foreground"
+                      >
                         +{remainingTags}
                       </span>
                     ) : null}
@@ -233,14 +246,14 @@ export function PatientsTable({
               </p>
             </div>
           ) : (
-            "---"
+            "—"
           ),
       },
       {
-        accessorFn: (patient) => patient.lastInsuranceName ?? "Particular",
+        accessorFn: (patient) => insuranceLabel(patient),
         header: "Convênio",
         meta: { align: "center" },
-        cell: ({ row }) => row.original.lastInsuranceName ?? "Particular",
+        cell: ({ row }) => insuranceLabel(row.original),
       },
       {
         accessorFn: (patient) => patient.lastEncounterAt ?? "",
@@ -255,7 +268,7 @@ export function PatientsTable({
                 <span>
                   {patient.lastEncounterAt
                     ? formatDate(patient.lastEncounterAt)
-                    : "---"}
+                    : "—"}
                 </span>
                 {patient.lastEncounterStatus ? (
                   <Badge
@@ -290,12 +303,14 @@ export function PatientsTable({
 
           return (
             <div className="flex justify-center gap-1">
+              {/* Só ícone: o title dá nome à ação para quem usa o mouse. */}
               <Button
                 asChild
                 size="icon"
                 variant="ghost"
                 className="size-8 border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
                 aria-label="Abrir paciente"
+                title="Abrir paciente"
               >
                 <Link href={`/pacientes/${patient.id}`}>
                   <ExternalLink className="size-4" aria-hidden />
@@ -307,7 +322,8 @@ export function PatientsTable({
                   size="icon"
                   variant="ghost"
                   className="size-8 border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
-                  aria-label="Abrir atendimento"
+                  aria-label="Abrir último atendimento"
+                  title="Abrir último atendimento"
                 >
                   <Link
                     href={`/prontuario/${patient.lastEncounterId}?from=pacientes`}
@@ -370,6 +386,7 @@ export function PatientsTable({
             {visibleTags.map((tag) => (
               <span
                 key={tag.id}
+                title={tag.name}
                 className="inline-flex h-5 max-w-28 items-center rounded-full border px-1.5 text-caption font-medium"
                 style={{
                   borderColor: `${tag.color}55`,
@@ -381,7 +398,10 @@ export function PatientsTable({
               </span>
             ))}
             {remainingTags > 0 ? (
-              <span className="inline-flex h-5 items-center rounded-full bg-muted px-1.5 text-caption font-medium leading-none text-muted-foreground">
+              <span
+                title={hiddenTagNames(patient.tagIds, tagById)}
+                className="inline-flex h-5 items-center rounded-full bg-muted px-1.5 text-caption font-medium leading-none text-muted-foreground"
+              >
                 +{remainingTags}
               </span>
             ) : null}
@@ -443,7 +463,7 @@ export function PatientsTable({
             const next = value as typeof filters.status;
             navigate({ page: null, status: next });
           }}
-          aria-label="Filtrar status"
+          aria-label="Filtrar por status"
           className="sm:w-36 sm:shrink-0"
         >
           <option value="active">Ativos</option>
@@ -456,7 +476,7 @@ export function PatientsTable({
           onValueChange={(value) => {
             navigate({ page: null, tag: value });
           }}
-          aria-label="Filtrar tag"
+          aria-label="Filtrar por tag"
           className="sm:w-44 sm:shrink-0"
         >
           <option value="all">Todas as tags</option>
@@ -519,7 +539,9 @@ export function PatientsTable({
           />
           <p className="mt-3 text-sm font-medium">Nenhum paciente cadastrado</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Cadastre o primeiro paciente ou carregue os dados demonstrativos.
+            {canCreate
+              ? "Cadastre o primeiro paciente em “Novo paciente”."
+              : "Os pacientes cadastrados pela clínica aparecem aqui."}
           </p>
         </div>
       )}
@@ -586,8 +608,13 @@ function PatientArchiveButton({
               : undefined
           }
           aria-label={compact ? "Restaurar paciente" : undefined}
+          title={compact ? "Restaurar paciente" : undefined}
         >
-          {compact ? <RotateCcw className="size-4" /> : "Restaurar"}
+          {compact ? (
+            <RotateCcw className="size-4" aria-hidden="true" />
+          ) : (
+            "Restaurar"
+          )}
         </Button>
       </form>
     );
@@ -598,16 +625,22 @@ function PatientArchiveButton({
       <Button
         type="button"
         size={compact ? "icon" : "sm"}
-        variant="ghost"
+        // No celular (sem ícone) segue o vermelho do botão do desktop.
+        variant={compact ? "ghost" : "destructive-ghost"}
         className={
           compact
             ? "size-8 border border-border bg-card text-destructive hover:border-destructive hover:bg-destructive-muted hover:text-destructive"
             : undefined
         }
         aria-label={compact ? "Arquivar paciente" : undefined}
+        title={compact ? "Arquivar paciente" : undefined}
         onClick={() => setConfirming(true)}
       >
-        {compact ? <Archive className="size-4" /> : "Arquivar"}
+        {compact ? (
+          <Archive className="size-4" aria-hidden="true" />
+        ) : (
+          "Arquivar"
+        )}
       </Button>
       <ConfirmDialog
         open={confirming}
@@ -621,6 +654,25 @@ function PatientArchiveButton({
       />
     </>
   );
+}
+
+// A coluna mostra o convênio do último atendimento. Sem atendimento não há o
+// que mostrar — "Particular" ali afirmava algo que o sistema não sabe. Com
+// atendimento e sem convênio, o rótulo é o mesmo do painel e da agenda.
+function insuranceLabel(patient: PatientListRow) {
+  if (!patient.lastEncounterId) return "—";
+  return patient.lastInsuranceName ?? "Sem convênio";
+}
+
+function hiddenTagNames(
+  tagIds: string[],
+  tagById: Map<string, PatientTagOption>,
+) {
+  return tagIds
+    .slice(2)
+    .map((id) => tagById.get(id)?.name)
+    .filter(Boolean)
+    .join(", ");
 }
 
 function formatDate(value: string) {

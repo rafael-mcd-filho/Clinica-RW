@@ -19,11 +19,7 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { Modal } from "@/components/ui/modal";
 
 type StatusVariant =
-  | "neutral"
-  | "primary"
-  | "success"
-  | "warning"
-  | "destructive";
+  "neutral" | "primary" | "success" | "warning" | "destructive";
 
 type PatientAppointmentActionsProps = {
   id: string;
@@ -47,12 +43,15 @@ type AppointmentAction = {
   destructive?: boolean;
 };
 
+// Os rótulos dizem o que acontece: "Cancelar" sozinho, dentro de um modal, lê
+// como "fechar a janela", e "Faltou" descreve em vez de agir. Mesmos textos
+// do modal da agenda.
 const actionsByStatus: Record<string, AppointmentAction[]> = {
   scheduled: [
     { nextStatus: "confirmed", label: "Confirmar", icon: Check },
     {
       nextStatus: "cancelled",
-      label: "Cancelar",
+      label: "Cancelar agendamento",
       icon: X,
       requiresConfirmation: true,
       destructive: true,
@@ -62,7 +61,7 @@ const actionsByStatus: Record<string, AppointmentAction[]> = {
     { nextStatus: "waiting", label: "Check-in", icon: UserCheck },
     {
       nextStatus: "cancelled",
-      label: "Cancelar",
+      label: "Cancelar agendamento",
       icon: X,
       requiresConfirmation: true,
       destructive: true,
@@ -72,7 +71,7 @@ const actionsByStatus: Record<string, AppointmentAction[]> = {
     { nextStatus: "in_progress", label: "Iniciar", icon: Clock },
     {
       nextStatus: "no_show",
-      label: "Faltou",
+      label: "Registrar falta",
       icon: X,
       requiresConfirmation: true,
       destructive: true,
@@ -155,7 +154,9 @@ export function PatientAppointmentActions({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Abrir detalhes e ações de ${procedureName}, ${dateTimeLabel}`}
+        aria-label={`${
+          availableActions.length ? "Abrir detalhes e ações" : "Abrir detalhes"
+        } de ${procedureName}, ${dateTimeLabel}`}
         onClick={() => setOpen(true)}
         className="flex w-full flex-col justify-between gap-3 rounded-md border border-border px-3 py-3 text-left transition-[background-color,border-color,box-shadow] hover:border-border-strong hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 sm:flex-row sm:items-center"
       >
@@ -171,8 +172,10 @@ export function PatientAppointmentActions({
             {insuranceName ? ` · ${insuranceName}` : ""}
           </span>
         </span>
+        {/* Atendido, cancelado, falta ou sem permissão de editar: o modal
+            não tem ação nenhuma, e "Ver ações" prometia o que não há. */}
         <span className="shrink-0 text-sm font-medium text-muted-foreground">
-          Ver ações
+          {availableActions.length ? "Ver ações" : "Ver detalhes"}
         </span>
       </button>
 
@@ -199,7 +202,7 @@ export function PatientAppointmentActions({
             <DetailItem label="Profissional" value={professionalName} />
             <DetailItem
               label="Convênio"
-              value={insuranceName || "Particular"}
+              value={insuranceName || "Sem convênio"}
             />
           </section>
 

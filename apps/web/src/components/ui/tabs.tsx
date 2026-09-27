@@ -25,6 +25,7 @@ export function Tabs({
   defaultTab,
   iconOnly = false,
   items,
+  keepMounted = false,
   onValueChange,
   urlParam,
   value,
@@ -35,6 +36,10 @@ export function Tabs({
   defaultTab?: string;
   iconOnly?: boolean;
   items: TabItem[];
+  /** Mantém os painéis inativos montados (só escondidos). Necessário quando
+      as abas guardam formulários: desmontar descartava o que já tinha sido
+      digitado e não salvo ao trocar de aba. */
+  keepMounted?: boolean;
   onValueChange?: (value: string) => void;
   urlParam?: string;
   value?: string;
@@ -201,7 +206,23 @@ export function Tabs({
             })}
           </div>
         </div>
-        {activeItem?.content !== undefined ? (
+        {keepMounted ? (
+          items.map((item) =>
+            item.content !== undefined ? (
+              <div
+                key={item.id}
+                id={panelId(item.id)}
+                role="tabpanel"
+                aria-labelledby={tabId(item.id)}
+                tabIndex={0}
+                hidden={item.id !== activeItem?.id}
+                className={cn("min-w-0 w-full pt-5", contentClassName)}
+              >
+                {item.content}
+              </div>
+            ) : null,
+          )
+        ) : activeItem?.content !== undefined ? (
           <div
             id={panelId(activeItem.id)}
             role="tabpanel"

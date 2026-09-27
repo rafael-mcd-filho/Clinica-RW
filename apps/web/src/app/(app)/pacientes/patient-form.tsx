@@ -88,7 +88,9 @@ export function PatientForm({
               aria-invalid={fieldErrors.full_name ? true : undefined}
             />
           </Field>
-          <Field label="Nome social" wide>
+          {/* Uma coluna: com duas, o nome social não cabia ao lado do nome
+              completo e descia de linha, deixando um buraco na primeira. */}
+          <Field label="Nome social">
             <Input
               name="social_name"
               defaultValue={patient?.social_name ?? ""}
@@ -195,8 +197,12 @@ export function PatientForm({
               <option value="none">Não contatar</option>
             </Select>
           </Field>
-          <div className="grid gap-2 md:col-span-2 lg:col-span-2">
-            <span className="text-sm font-medium">Autorizações de contato</span>
+          {/* fieldset/legend: o leitor de tela anuncia "Autorizações de
+              contato" junto de cada caixa, e não só "WhatsApp, marcado". */}
+          <fieldset className="grid min-w-0 gap-2 md:col-span-2 lg:col-span-2">
+            <legend className="mb-2 text-sm font-medium">
+              Autorizações de contato
+            </legend>
             <div className="flex flex-wrap gap-4 rounded-md border border-border bg-background px-3 py-2.5">
               <Checkbox
                 name="allow_whatsapp"
@@ -214,7 +220,7 @@ export function PatientForm({
                 label="SMS"
               />
             </div>
-          </div>
+          </fieldset>
         </CardContent>
       </Card>
 
@@ -248,9 +254,9 @@ export function PatientForm({
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>
           {editing ? (
-            <Save className="size-4" />
+            <Save className="size-4" aria-hidden="true" />
           ) : (
-            <UserPlus className="size-4" />
+            <UserPlus className="size-4" aria-hidden="true" />
           )}
           {pending
             ? "Salvando..."

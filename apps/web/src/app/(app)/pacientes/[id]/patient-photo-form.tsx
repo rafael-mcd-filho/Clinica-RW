@@ -3,10 +3,12 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ArrowCounterClockwise,
   Camera,
   FloppyDisk as Save,
   Trash as Trash2,
   UploadSimple as Upload,
+  X,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { updatePatientPhoto, type PatientActionState } from "../actions";
@@ -17,6 +19,14 @@ import { PatientCompletenessRing } from "@/components/patients/patient-completen
 import type { PatientCompleteness } from "@/lib/patients/completeness";
 
 const initialState: PatientActionState = {};
+// Mesmo teto e formatos que o servidor aceita (lib/storage/patient-photos).
+const maxPhotoBytes = 2 * 1024 * 1024;
+const acceptedPhotoTypes = [
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+];
 
 export function PatientPhotoForm({
   patientId,
@@ -43,10 +53,21 @@ export function PatientPhotoForm({
     updatePatientPhoto.bind(null, patientId),
     initialState,
   );
+  // Salvou: a foto nova volta do servidor com outro caminho (ou null, se foi
+  // removida). É o sinal para largar a prévia local — antes ela ficava, e o
+  // "Salvar foto" continuava na tela depois de salvo. Compara só o caminho:
+  // a assinatura da URL renova sozinha e não é troca de foto.
+  const photoPath = photoUrl?.split("?")[0] ?? null;
+  const [syncedPhotoPath, setSyncedPhotoPath] = useState(photoPath);
+  if (photoPath !== syncedPhotoPath) {
+    setSyncedPhotoPath(photoPath);
+    setSelectedPreview(null);
+    setRemovePhoto(false);
+  }
   const preview = removePhoto ? null : (selectedPreview ?? photoUrl);
   const hasChange = Boolean(selectedPreview) || removePhoto;
   const avatarBox = (
-    <div className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-display font-semibold text-primary sm:size-20 lg:size-24">
+    <div className="flex size-20 items-center justify-center overflow-hidden rounded-full border border-border bg-primary-muted text-display font-semibold text-primary lg:size-24">
       {preview ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -79,20 +100,51 @@ export function PatientPhotoForm({
   useEffect(() => {
     if (state.success) {
       toast.success(state.success);
+      if (inputRef.current) inputRef.current.value = "";
       router.refresh();
     }
     if (state.error) toast.error(state.error);
   }, [router, state]);
 
+  // A prévia é um blob em memória: solta ao trocar de arquivo ou sair.
+  useEffect(() => {
+    if (!selectedPreview) return;
+    return () => URL.revokeObjectURL(selectedPreview);
+  }, [selectedPreview]);
+
+  function clearFileInput() {
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    // Barra aqui o que o servidor recusaria: antes a prévia aparecia e o
+    // erro só vinha depois de clicar em salvar.
+    if (!acceptedPhotoTypes.includes(file.type)) {
+      toast.error("Use uma imagem PNG, JPG ou WEBP.");
+      clearFileInput();
+      return;
+    }
+    if (file.size > maxPhotoBytes) {
+      toast.error("A imagem deve ter no máximo 2 MB.");
+      clearFileInput();
+      return;
+    }
     setSelectedPreview(URL.createObjectURL(file));
     setRemovePhoto(false);
   }
 
+  // Desistir de uma foto escolhida e ainda não salva volta para a foto atual.
+  // Antes isso passava pelo "Remover", que também marcava a foto atual para
+  // ser apagada.
+  function discardSelection() {
+    clearFileInput();
+    setSelectedPreview(null);
+  }
+
   function handleRemove() {
-    if (inputRef.current) inputRef.current.value = "";
+    clearFileInput();
     setSelectedPreview(null);
     setRemovePhoto(Boolean(photoUrl));
   }
@@ -121,7 +173,14 @@ export function PatientPhotoForm({
             size="icon-sm"
             onClick={() => inputRef.current?.click()}
             className="absolute bottom-0 right-0 rounded-full text-primary"
-            aria-label="Trocar foto do paciente"
+            aria-label={
+              preview ? "Trocar foto do paciente" : "Enviar foto do paciente"
+            }
+            title={
+              preview
+                ? "Trocar foto (PNG, JPG ou WEBP até 2 MB)"
+                : "Enviar foto (PNG, JPG ou WEBP até 2 MB)"
+            }
           >
             <Camera className="size-4" aria-hidden="true" />
           </Button>
@@ -144,7 +203,27 @@ export function PatientPhotoForm({
             value={removePhoto ? "true" : "false"}
           />
           <div className="flex flex-wrap justify-center gap-2">
-            {!preview ? (
+            {selectedPreview ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={discardSelection}
+              >
+                <X className="size-4" aria-hidden="true" />
+                Descartar
+              </Button>
+            ) : removePhoto ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setRemovePhoto(false)}
+              >
+                <ArrowCounterClockwise className="size-4" aria-hidden="true" />
+                Desfazer
+              </Button>
+            ) : !preview ? (
               <Button
                 type="button"
                 variant="secondary"
@@ -157,7 +236,7 @@ export function PatientPhotoForm({
             ) : (
               <Button
                 type="button"
-                variant="ghost"
+                variant="destructive-ghost"
                 size="sm"
                 onClick={() => setConfirmingRemoval(true)}
               >
@@ -172,9 +251,14 @@ export function PatientPhotoForm({
               {pending ? "Salvando..." : "Salvar foto"}
             </Button>
           ) : null}
-          <p className="max-w-48 text-center text-xs text-muted-foreground">
-            PNG, JPG ou WEBP até 2 MB.
-          </p>
+          {/* Só enquanto não há foto: é a orientação para o envio. Com foto,
+              a regra fica no título do botão da câmera e não ocupa o
+              cartão entre a foto e o nome. */}
+          {!preview && !removePhoto ? (
+            <p className="max-w-48 text-center text-xs text-muted-foreground">
+              PNG, JPG ou WEBP até 2 MB.
+            </p>
+          ) : null}
           <ConfirmDialog
             open={confirmingRemoval}
             onClose={() => setConfirmingRemoval(false)}

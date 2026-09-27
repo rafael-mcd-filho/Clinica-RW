@@ -32,7 +32,11 @@ export function PatientLifeStatusPanel({
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
-  const [date, setDate] = useState(deceasedAt ?? today);
+  // Começa vazio: com a data de hoje já preenchida, a ficha de um paciente
+  // vivo exibia hoje como "Data do óbito", e bastavam dois cliques para
+  // registrar o óbito numa data que ninguém escolheu. O botão continua
+  // desabilitado até a data ser informada.
+  const [date, setDate] = useState(deceasedAt ?? "");
   const [notes, setNotes] = useState(deathNotes ?? "");
   const [actionError, setActionError] = useState<string>();
 
