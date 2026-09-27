@@ -687,7 +687,10 @@ export function AttendanceInbox({
         // 23rem: largura mínima para as abas (três rótulos + o ícone de
         // fechados) caberem sem truncar em 12px.
         "grid h-full min-h-0 grid-cols-1 overflow-hidden overscroll-none bg-card lg:grid-cols-[23rem_minmax(0,1fr)]",
-        detailsOpen && "xl:grid-cols-[23rem_minmax(0,1fr)_24rem]",
+        // Dados do contato só viram terceira coluna a partir de 2xl: em xl,
+        // descontada a sidebar, a thread ficava com ~300px (nome cortado,
+        // bolhas de uma palavra por linha). Abaixo disso o painel é gaveta.
+        detailsOpen && "2xl:grid-cols-[23rem_minmax(0,1fr)_24rem]",
       )}
     >
       <ConversationListColumn
@@ -870,7 +873,12 @@ function ConversationListColumn({
                 title={tabLabels[id]}
                 className={cn(
                   "relative inline-flex h-9 cursor-pointer items-center justify-center gap-1 rounded-lg border text-control leading-none transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
-                  iconOnly ? "w-9 shrink-0" : "min-w-0 flex-1 px-2",
+                  // Teto de largura: com a lista ocupando a tela do celular a
+                  // pílula esticava e o contador do canto ia parar longe do
+                  // rótulo, quase em cima da aba vizinha.
+                  iconOnly
+                    ? "ml-auto w-9 shrink-0"
+                    : "min-w-0 max-w-32 flex-1 px-2",
                   active
                     ? "border-border-strong bg-card font-semibold text-foreground shadow-[var(--shadow-soft)]"
                     : "border-transparent font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -1120,7 +1128,7 @@ const ConversationRow = memo(function ConversationRow({
   const missingResolvedAt = resolved && !item.resolvedAt;
   const stamp = resolved
     ? formatResolvedAt(item.resolvedAt ?? item.lastMessageAt)
-    : formatTime(item.lastMessageAt);
+    : formatListStamp(item.lastMessageAt);
 
   return (
     <button
@@ -1437,7 +1445,7 @@ function ConversationThread({
       }}
     >
       {draggingFiles ? (
-        <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary-muted/80 text-body-sm font-semibold text-primary">
+        <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary-muted/80 text-body-sm font-semibold text-primary">
           Solte para anexar
         </div>
       ) : null}
@@ -1856,7 +1864,7 @@ const MessageBubble = memo(function MessageBubble({
       {canReply && outbound ? replyButton : null}
       <div
         className={cn(
-          "relative min-w-0 max-w-[86%] overflow-hidden rounded-lg px-3 pb-1.5 pt-2 text-body leading-5 shadow-sm sm:max-w-[72%] lg:max-w-[66%]",
+          "relative min-w-0 max-w-[86%] overflow-hidden rounded-lg px-3 pb-1.5 pt-2 text-body leading-5 shadow-[var(--shadow-soft)] sm:max-w-[72%] lg:max-w-[66%]",
           isNote
             ? "w-[min(92%,42rem)] border border-warning/40 bg-warning-muted px-4 py-3 text-warning-foreground shadow-[var(--shadow-md)]"
             : outbound
@@ -1913,6 +1921,7 @@ const MessageBubble = memo(function MessageBubble({
               controls
               preload="metadata"
               src={mediaEndpoint}
+              onLoadedMetadata={revealAudioDuration}
               className="min-w-0 max-w-full"
             />
           ) : message.mediaUrl ? (
@@ -1951,7 +1960,7 @@ const MessageBubble = memo(function MessageBubble({
           className="absolute right-1 top-1 h-6 w-6 rounded p-0 text-muted-foreground hover:bg-foreground/5"
           aria-label="Detalhes da mensagem"
         >
-          <MoreVertical className="size-3.5" />
+          <MoreVertical className="size-3.5" aria-hidden="true" />
         </Button>
         {/* O horário é uma marca de rodapé da bolha, não parte da leitura: em
             algarismos, a altura cheia dos dígitos já compete com o texto da
@@ -2635,7 +2644,7 @@ function MessageComposer({
         </div>
       ) : null}
       {showEmojis ? (
-        <div className="mb-2 rounded-lg border border-border bg-popover p-2 shadow-sm">
+        <div className="mb-2 rounded-lg border border-border bg-popover p-2 shadow-[var(--shadow-md)]">
           <Input
             value={emojiQuery}
             onChange={(event) => setEmojiQuery(event.target.value)}
@@ -2665,7 +2674,7 @@ function MessageComposer({
         </div>
       ) : null}
       {attachments.length ? (
-        <div className="mb-2 grid animate-fade-in gap-2 rounded-xl border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
+        <div className="mb-2 grid animate-fade-in gap-2 rounded-lg border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
           <ul className="flex flex-wrap gap-2">
             {attachments.map((file, index) => (
               <li
@@ -2746,22 +2755,22 @@ function MessageComposer({
         </div>
       ) : null}
       {recordedAudio ? (
-        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
           <audio
             controls
             preload="metadata"
             src={recordedAudio.previewUrl}
+            onLoadedMetadata={revealAudioDuration}
             className="h-10 min-w-0 flex-1"
           />
           <Button
             type="button"
-            variant="ghost"
+            variant="destructive-ghost"
             size="icon"
             disabled={sendingAttachment}
             onClick={() => setRecordedAudio(null)}
             aria-label="Descartar gravação"
             title="Descartar gravação"
-            className="text-destructive hover:bg-destructive-muted"
           >
             <Trash className="size-4" aria-hidden="true" />
           </Button>
@@ -2781,7 +2790,7 @@ function MessageComposer({
           className={cn(
             "mb-2 flex items-center justify-center gap-2 rounded-lg px-3 py-1.5 text-label font-medium",
             recording
-              ? "bg-destructive-muted text-destructive"
+              ? "bg-destructive-muted text-destructive-foreground"
               : "bg-muted text-muted-foreground",
           )}
         >
@@ -2802,7 +2811,7 @@ function MessageComposer({
       ) : null}
       <div
         className={cn(
-          "flex items-end gap-2 rounded-xl border p-1.5 focus-within:ring-2",
+          "flex items-end gap-2 rounded-lg border p-1.5 focus-within:ring-2",
           isNoteMode
             ? "border-warning/50 bg-warning-muted/40 focus-within:border-warning focus-within:ring-warning/15"
             : "border-border bg-card focus-within:border-primary focus-within:ring-primary/15",
@@ -3097,6 +3106,22 @@ function labelForType(type: MessageType): string {
   return labels[type] ?? "Mensagem";
 }
 
+// Áudio do WhatsApp (ogg/opus) e o gravado aqui (webm do MediaRecorder) não
+// trazem a duração no cabeçalho: o Chrome lê Infinity e o player mostra
+// 0:00 / 0:00. Pedir um ponto além do fim faz o navegador percorrer o arquivo
+// (que a rota de mídia já entrega inteiro) e achar a duração; depois volta ao
+// começo.
+function revealAudioDuration(event: React.SyntheticEvent<HTMLAudioElement>) {
+  const audio = event.currentTarget;
+  if (Number.isFinite(audio.duration)) return;
+  const rewind = () => {
+    audio.removeEventListener("timeupdate", rewind);
+    audio.currentTime = 0;
+  };
+  audio.addEventListener("timeupdate", rewind);
+  audio.currentTime = Number.MAX_SAFE_INTEGER;
+}
+
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   const local = digits.startsWith("55") ? digits.slice(2) : digits;
@@ -3159,12 +3184,41 @@ function formatTime(iso: string | null): string {
   return timeFormatter.format(new Date(iso));
 }
 
-// Cabe na coluna de 23rem (avatar + prévia + selo de não lidas) sem o texto
-// encostar na borda: acima disso o corte fica por conta do CSS, no meio da
-// palavra.
+const listWeekdayFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "short",
+});
+
+// Carimbo da fila, como no WhatsApp: só a hora valia para qualquer dia, e uma
+// conversa de ontem às 19:23 aparecia abaixo de uma de hoje às 09:43 como se
+// fosse mais nova. Hoje mostra a hora; ontem, "Ontem"; na última semana, o dia
+// da semana; antes disso, a data.
+function formatListStamp(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const today = new Date();
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  const daysAgo = Math.floor(
+    (startOfToday.getTime() - new Date(date).setHours(0, 0, 0, 0)) / 86_400_000,
+  );
+
+  if (daysAgo <= 0) return timeFormatter.format(date);
+  if (daysAgo === 1) return "Ontem";
+  if (daysAgo < 7) {
+    const weekday = listWeekdayFormatter.format(date).replace(".", "");
+    return weekday.charAt(0).toLocaleUpperCase("pt-BR") + weekday.slice(1);
+  }
+  return date.getFullYear() === today.getFullYear()
+    ? resolvedDateFormatter.format(date)
+    : resolvedYearFormatter.format(date);
+}
+
 /** Teto de arquivos por envio; acima disso o WhatsApp começa a recusar. */
 const MAX_ATTACHMENTS = 10;
 
+// Cabe na coluna de 23rem (avatar + prévia + selo de não lidas) sem o texto
+// encostar na borda: acima disso o corte fica por conta do CSS, no meio da
+// palavra.
 const previewCharLimit = 40;
 
 // Corta a prévia na última palavra inteira antes do limite. O `truncate` do

@@ -76,7 +76,7 @@ export default function Loading() {
           <Skeleton className="h-8 w-24" />
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-[#efeae2] px-8 py-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-surface-sunken px-8 py-5">
           <Skeleton className="mx-auto h-6 w-16 rounded-lg" />
           <Skeleton className="h-14 w-[38%] rounded-lg" />
           <Skeleton className="h-20 w-[52%] rounded-lg" />

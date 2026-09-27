@@ -189,11 +189,11 @@ export function ContactDetailsPanel({
         type="button"
         aria-label="Fechar detalhes do contato"
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-foreground/35 backdrop-blur-[1px] xl:hidden"
+        className="fixed inset-0 z-40 bg-foreground/35 backdrop-blur-[1px] 2xl:hidden"
       />
       <aside
         aria-label="Detalhes do contato"
-        className="fixed inset-y-0 right-0 z-50 flex min-h-0 w-[min(100%,30rem)] flex-col overflow-hidden border-l border-border bg-card shadow-[var(--shadow-lg)] xl:static xl:inset-auto xl:z-auto xl:w-auto xl:shadow-none"
+        className="fixed inset-y-0 right-0 z-50 flex min-h-0 w-[min(100%,30rem)] flex-col overflow-hidden border-l border-border bg-card shadow-[var(--shadow-lg)] 2xl:static 2xl:inset-auto 2xl:z-auto 2xl:w-auto 2xl:shadow-none"
       >
         <header className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
           <div className="flex min-w-0 items-center gap-3">
@@ -468,7 +468,7 @@ function ContactTab({
             asChild
             variant="ghost"
             size="icon-sm"
-            className="rounded-full border border-border text-[#128c7e]"
+            className="rounded-full border border-border text-success-foreground"
           >
             <a
               href={`https://wa.me/${whatsappPhone(data.contact.phone)}`}
