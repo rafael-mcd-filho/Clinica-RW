@@ -27,6 +27,7 @@ import {
   UsersThree as UsersRound,
   type Icon as LucideIcon,
 } from "@phosphor-icons/react";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { categoricalColors } from "@/lib/colors";
@@ -41,6 +42,12 @@ export type DashboardSlice = {
 export type DashboardPoint = {
   label: string;
   value: number;
+};
+
+/** Média por tipo de atendimento; `null` quando o tipo não teve amostra. */
+export type DashboardTimingPoint = {
+  label: string;
+  value: number | null;
 };
 
 export type BirthdayPatient = {
@@ -64,12 +71,11 @@ export type CompanyDashboardChartsData = {
   };
   insurances: {
     total: number;
-    slices: DashboardSlice[];
     breakdown: DashboardSlice[];
   };
   timing: {
     averageValue: number | null;
-    byType: DashboardPoint[];
+    byType: DashboardTimingPoint[];
   };
   cancellations: {
     noShows: number;
@@ -88,6 +94,8 @@ export type CompanyDashboardChartsData = {
   };
 };
 
+const birthdaysShown = 5;
+
 const chartTooltipStyle = {
   backgroundColor: "var(--card)",
   border: "1px solid var(--border)",
@@ -103,9 +111,7 @@ export function CompanyDashboardCharts({
   data: CompanyDashboardChartsData;
 }) {
   const isCommercial = data.view === "commercial";
-  const patientChartTitle = isCommercial
-    ? "Agendamentos por perfil do paciente"
-    : "Agendamentos por perfil do paciente";
+  const patientChartTitle = "Agendamentos por perfil do paciente";
   const patientSlices: DashboardSlice[] = [
     { label: "Novos", value: data.patients.newCount, color: "var(--primary)" },
     {
@@ -126,6 +132,7 @@ export function CompanyDashboardCharts({
                 : "Atividade de agendamentos"
             }
             data={data.periodAttendances}
+            seriesLabel="Agendamentos"
             heightClassName="h-72 lg:h-80"
             emptyIcon={CalendarDays}
           />
@@ -164,8 +171,10 @@ export function CompanyDashboardCharts({
         </div>
       </section>
 
+      {/* Quatro colunas só a partir de 2xl: entre xl e 2xl cada card ficava
+          com ~230px, cortando títulos e espremendo os números lado a lado. */}
       <section
-        className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4"
+        className="grid items-stretch gap-4 md:grid-cols-2 2xl:grid-cols-4"
         aria-label="Indicadores complementares"
       >
         <div className="min-w-0">
@@ -179,6 +188,8 @@ export function CompanyDashboardCharts({
             <CompactAreaLineCard
               title="Distribuição etária"
               data={data.ageDistribution}
+              seriesLabel="Pacientes"
+              formatTooltipLabel={(age) => `${age} anos`}
               emptyIcon={UsersRound}
             />
           ) : (
@@ -231,36 +242,31 @@ function PatientChartCard({
             emptyIcon={UsersRound}
             ariaLabel={sliceChartLabel(title, slices)}
           />
-          {total > 0 ? (
-            <div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center"
-              aria-hidden="true"
-            >
-              <span className="flex size-12 items-center justify-center rounded-full bg-primary-muted text-primary">
-                <UsersRound className="size-6" />
-              </span>
+          {total > 0 ? <DonutTotal total={total} label="Agendamentos" /> : null}
+        </div>
+        {/* Sem agendamentos, legenda e divisão por sexo seriam só zeros
+            embaixo do estado vazio. */}
+        {total > 0 ? (
+          <>
+            <Legend slices={slices} total={total} />
+            <div className="mt-4 grid grid-cols-2 divide-x divide-border border-t border-border pt-3">
+              <GenderMetric
+                label="Homens"
+                value={malePercent}
+                count={maleCount}
+                icon={GenderMale}
+                hasData={hasGenderData}
+              />
+              <GenderMetric
+                label="Mulheres"
+                value={femalePercent}
+                count={femaleCount}
+                icon={GenderFemale}
+                hasData={hasGenderData}
+              />
             </div>
-          ) : null}
-        </div>
-        <Legend slices={slices} total={total} layout="stacked" />
-        <div className="mt-4 grid grid-cols-2 divide-x divide-border border-t border-border pt-3">
-          <GenderMetric
-            label="Homens"
-            value={malePercent}
-            count={maleCount}
-            icon={GenderMale}
-            tone="bg-primary-muted text-primary"
-            hasData={hasGenderData}
-          />
-          <GenderMetric
-            label="Mulheres"
-            value={femalePercent}
-            count={femaleCount}
-            icon={GenderFemale}
-            tone="bg-warning-muted text-warning-foreground"
-            hasData={hasGenderData}
-          />
-        </div>
+          </>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -297,20 +303,9 @@ function DonutMetricCard({
             emptyIcon={emptyIcon}
             ariaLabel={sliceChartLabel(title, slices)}
           />
-          {total > 0 ? (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-display font-bold tabular-nums text-foreground">
-                  {total}
-                </p>
-                <p className="text-xs font-medium text-muted-foreground">
-                  {totalLabel}
-                </p>
-              </div>
-            </div>
-          ) : null}
+          {total > 0 ? <DonutTotal total={total} label={totalLabel} /> : null}
         </div>
-        <Legend slices={slices} total={total} layout="stacked" />
+        <Legend slices={slices} total={total} />
       </CardContent>
     </Card>
   );
@@ -376,7 +371,7 @@ function CancellationRatesCard({
       label: "Cancelamentos",
       value: data.cancellationRate,
       count: data.cancellations,
-      tone: "text-destructive bg-destructive-muted",
+      tone: "text-destructive-foreground bg-destructive-muted",
     },
   ];
 
@@ -408,7 +403,7 @@ function CancellationRatesCard({
                 {item.label}
               </p>
               <p className="text-xs text-muted-foreground">
-                {item.count} registros
+                {pluralize(item.count, "registro", "registros")}
               </p>
             </div>
           </div>
@@ -426,7 +421,7 @@ function TimingCard({
   view: DashboardView;
 }) {
   const isCommercial = view === "commercial";
-  const maxValue = Math.max(...data.byType.map((item) => item.value), 1);
+  const maxValue = Math.max(...data.byType.map((item) => item.value ?? 0), 1);
 
   return (
     <Card className="flex h-full min-w-0 flex-col">
@@ -437,7 +432,7 @@ function TimingCard({
       </CardHeader>
       <CardContent className="flex flex-1 flex-col p-4">
         <div className="flex items-center gap-3 rounded-md bg-primary-muted/55 p-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-card text-primary shadow-sm">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-card text-primary shadow-[var(--shadow-soft)]">
             <Clock3 className="size-4" aria-hidden="true" />
           </span>
           <div>
@@ -451,7 +446,7 @@ function TimingCard({
           Tipo de atendimento
         </h3>
         <div className="mt-3">
-          {data.byType.some((item) => item.value > 0) ? (
+          {data.byType.some((item) => item.value != null) ? (
             <div className="grid gap-3">
               {data.byType.map((item, index) => (
                 <div key={item.label} className="grid gap-1.5">
@@ -466,21 +461,27 @@ function TimingCard({
                   <div
                     className="h-2 overflow-hidden rounded-full bg-muted"
                     role="meter"
-                    aria-label={`${item.label}: ${formatTiming(item.value, view)}`}
+                    aria-label={`${item.label}: ${
+                      item.value == null
+                        ? "sem agendamentos no período"
+                        : formatTiming(item.value, view)
+                    }`}
                     aria-valuemin={0}
                     aria-valuemax={maxValue}
-                    aria-valuenow={item.value}
+                    aria-valuenow={item.value ?? 0}
                   >
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${Math.max(3, (item.value / maxValue) * 100)}%`,
-                        backgroundColor:
-                          index === 0
-                            ? "var(--primary)"
-                            : categoricalColors.teal,
-                      }}
-                    />
+                    {item.value != null ? (
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.max(3, (item.value / maxValue) * 100)}%`,
+                          backgroundColor:
+                            index === 0
+                              ? "var(--primary)"
+                              : categoricalColors.teal,
+                        }}
+                      />
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -567,11 +568,14 @@ function CommercialSummaryCard({
 function AreaLineCard({
   title,
   data,
+  seriesLabel,
   heightClassName,
   emptyIcon,
 }: {
   title: string;
   data: DashboardPoint[];
+  /** Nome da série no tooltip; sem ele o Recharts mostra a chave "value". */
+  seriesLabel: string;
   heightClassName: string;
   emptyIcon?: LucideIcon;
 }) {
@@ -652,6 +656,7 @@ function AreaLineCard({
                 />
                 <Area
                   dataKey="value"
+                  name={seriesLabel}
                   activeDot={{
                     fill: "var(--card)",
                     r: 4,
@@ -679,10 +684,14 @@ function AreaLineCard({
 function CompactAreaLineCard({
   title,
   data,
+  seriesLabel,
+  formatTooltipLabel,
   emptyIcon,
 }: {
   title: string;
   data: DashboardPoint[];
+  seriesLabel: string;
+  formatTooltipLabel?: (label: string) => string;
   emptyIcon?: LucideIcon;
 }) {
   const gradientId = `chart-${title
@@ -698,8 +707,8 @@ function CompactAreaLineCard({
     <Card className="flex h-full min-w-0 flex-col">
       <CardHeader className="flex items-center justify-between gap-3 px-4 py-3">
         <h2 className="font-semibold text-foreground">{title}</h2>
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {total} pacientes
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {pluralize(total, "paciente", "pacientes")}
         </span>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col p-4">
@@ -759,11 +768,17 @@ function CompactAreaLineCard({
                 <Tooltip
                   contentStyle={chartTooltipStyle}
                   cursor={{ stroke: "var(--border-strong)" }}
+                  labelFormatter={
+                    formatTooltipLabel
+                      ? (label) => formatTooltipLabel(String(label))
+                      : undefined
+                  }
                   labelStyle={{ color: "var(--foreground)", fontWeight: 600 }}
                   itemStyle={{ color: categoricalColors.teal }}
                 />
                 <Area
                   dataKey="value"
+                  name={seriesLabel}
                   activeDot={{
                     fill: "var(--card)",
                     r: 3,
@@ -801,14 +816,17 @@ function BirthdaysCard({ birthdays }: { birthdays: BirthdayPatient[] }) {
             Aniversariantes do dia
           </h2>
         </div>
-        <span className="flex min-w-6 items-center justify-center rounded-full bg-warning-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-warning-foreground">
+        <Badge
+          variant={birthdays.length ? "warning" : "neutral"}
+          className="tabular-nums"
+        >
           {birthdays.length}
-        </span>
+        </Badge>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col p-4">
         {birthdays.length ? (
           <div className="grid divide-y divide-border">
-            {birthdays.slice(0, 5).map((patient) => (
+            {birthdays.slice(0, birthdaysShown).map((patient) => (
               <div
                 key={patient.id}
                 className="flex min-w-0 items-center gap-3 py-2.5 first:pt-0 last:pb-0"
@@ -828,6 +846,11 @@ function BirthdaysCard({ birthdays }: { birthdays: BirthdayPatient[] }) {
                 </div>
               </div>
             ))}
+            {birthdays.length > birthdaysShown ? (
+              <p className="pt-2.5 text-xs text-muted-foreground">
+                e mais {birthdays.length - birthdaysShown}
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="flex min-h-40 flex-1 items-center justify-center">
@@ -922,26 +945,23 @@ function PieBlock({
   );
 }
 
+// Neutro de propósito: sexo não é estado, e o âmbar de warning sugeria alerta.
 function GenderMetric({
   label,
   value,
   count,
   icon: Icon,
-  tone,
   hasData,
 }: {
   label: string;
   value: number;
   count: number;
   icon: LucideIcon;
-  tone: string;
   hasData: boolean;
 }) {
   return (
     <div className="grid min-w-0 justify-items-center gap-1 px-2 text-center">
-      <span
-        className={`flex size-8 items-center justify-center rounded-full ${tone}`}
-      >
+      <span className="flex size-8 items-center justify-center rounded-full bg-muted text-secondary-foreground">
         <Icon className="size-4" aria-hidden="true" />
       </span>
       <div className="flex items-baseline gap-1">
@@ -966,10 +986,14 @@ function MetricBars({
 }) {
   return (
     <div className="grid gap-3" role="list" aria-label={ariaLabel}>
-      {items.map((item) => {
+      {items.map((item, index) => {
         const value = Math.max(0, Math.min(100, item.value));
         return (
-          <div key={item.label} className="grid gap-1.5" role="listitem">
+          <div
+            key={`${item.label}-${index}`}
+            className="grid gap-1.5"
+            role="listitem"
+          >
             <div className="flex items-center justify-between gap-3 text-xs">
               <span className="truncate font-medium text-secondary-foreground">
                 {item.label}
@@ -1001,14 +1025,25 @@ function MetricBars({
   );
 }
 
+function DonutTotal({ total, label }: { total: number; label: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <div className="text-center">
+        <p className="text-display font-bold tabular-nums text-foreground">
+          {total}
+        </p>
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      </div>
+    </div>
+  );
+}
+
 function Legend({
   slices,
   total,
-  layout,
 }: {
   slices: DashboardSlice[];
   total: number;
-  layout: "centered" | "stacked";
 }) {
   if (!slices.length) {
     return null;
@@ -1016,11 +1051,7 @@ function Legend({
 
   return (
     <div
-      className={
-        layout === "stacked"
-          ? "grid gap-2 text-xs text-secondary-foreground"
-          : "flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-secondary-foreground"
-      }
+      className="grid gap-2 text-xs text-secondary-foreground"
       role="list"
       aria-label="Legenda do gráfico"
     >
@@ -1083,9 +1114,15 @@ function percent(value: number, total: number) {
   return Math.round((value / total) * 100);
 }
 
+function pluralize(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function formatTiming(value: number | null, view: DashboardView) {
+  // Sem amostra mostra traço, como nos indicadores do topo: zero seria um
+  // dado inventado ("0min" de duração, "0 dias" de antecedência).
   if (value == null || !Number.isFinite(value)) {
-    return view === "commercial" ? "0 dias" : "0min";
+    return "—";
   }
 
   const rounded = Math.round(value);

@@ -26,6 +26,7 @@ import {
   type CompanyDashboardChartsData,
   type DashboardSlice,
 } from "./company-dashboard-charts";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SummaryBarChart } from "@/components/ui/summary-chart";
 import { getRequestContext } from "@/lib/auth/context";
@@ -111,6 +112,15 @@ const dashboardQueryPageSize = 500;
 const operationsListLimit = 50;
 const dashboardAppointmentColumns =
   "id, patient_id, procedure_id, health_insurance_id, status, start_at, end_at, created_at";
+// Agendamento sem convênio não se chama "Particular" no painel: clínicas
+// cadastram um convênio com esse nome, e as duas linhas saíam iguais.
+const noInsuranceLabel = "Sem convênio";
+// A linha sem convênio tem cor fixa; os convênios usam o resto da série para
+// que o segundo deles não saia com a mesma cor.
+const noInsuranceColor = categoricalColors.teal;
+const insuranceSeries = chartSeries.filter(
+  (color) => color !== noInsuranceColor,
+);
 
 type MetricTone = "primary" | "success" | "warning" | "destructive" | "neutral";
 const metricToneClass: Record<MetricTone, string> = {
@@ -128,6 +138,7 @@ function DashboardMetricCard({
   status,
   tone,
   trend,
+  periodScoped = true,
 }: {
   icon: LucideIcon;
   label: string;
@@ -135,9 +146,11 @@ function DashboardMetricCard({
   status: string;
   tone: MetricTone;
   trend?: MetricTrend;
+  /** O painel da plataforma não tem filtro de período: lá a nota não se aplica. */
+  periodScoped?: boolean;
 }) {
   return (
-    <div className="flex min-h-36 min-w-0 flex-col rounded-lg border border-border bg-card px-4 py-3.5 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:border-border-strong hover:shadow-[var(--shadow-hover)]">
+    <div className="flex min-h-36 min-w-0 flex-col rounded-lg border border-border bg-card px-4 py-3.5 shadow-[var(--shadow-soft)]">
       <div className="flex min-w-0 items-center gap-2.5">
         <div
           className={cn(
@@ -177,11 +190,11 @@ function DashboardMetricCard({
               {trend.label}
             </span>
           </span>
-        ) : (
+        ) : periodScoped ? (
           <span className="mt-2 text-xs text-muted-foreground">
             Indicador do período selecionado
           </span>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -307,7 +320,7 @@ export default async function DashboardPage({
       />
 
       {!context.actor ? (
-        <section className="rounded border border-amber-200 bg-amber-50 p-5 text-amber-900">
+        <section className="rounded-lg border border-warning-muted bg-warning-muted/40 p-5 text-warning-foreground">
           <div className="flex items-start gap-3">
             <ShieldAlert
               className="mt-0.5 size-5 shrink-0"
@@ -335,6 +348,7 @@ export default async function DashboardPage({
             value={card.value}
             status={card.status}
             tone={card.tone}
+            periodScoped={false}
           />
         ))}
       </section>
@@ -348,14 +362,14 @@ export default async function DashboardPage({
         ]}
       />
 
-      <section className="rounded-lg border border-border bg-card">
-        <div className="border-b border-border px-5 py-4">
+      <Card>
+        <CardHeader>
           <h2 className="text-heading-sm font-semibold">Próxima entrega</h2>
           <p className="text-sm text-muted-foreground">
             Cadastros e configurações para iniciar a operação das empresas.
           </p>
-        </div>
-        <div className="grid gap-3 p-5 md:grid-cols-3">
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-3">
           {[
             "Configurar unidades",
             "Cadastrar profissionais",
@@ -372,8 +386,8 @@ export default async function DashboardPage({
               <p className="text-sm font-medium">{item}</p>
             </div>
           ))}
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -432,10 +446,6 @@ function buildCompanyDashboardCharts({
     (appointment) =>
       insurances.get(appointment.health_insurance_id ?? "") ?? "Convenio",
   );
-  const insuranceStatusCounts = new Map<string, number>([
-    ["Particular", mixAppointments.length - insuranceAppointments.length],
-    ["Com convenio", insuranceAppointments.length],
-  ]);
   const noShows = appointments.filter(
     (appointment) => appointment.status === "no_show",
   ).length;
@@ -481,20 +491,19 @@ function buildCompanyDashboardCharts({
     },
     insurances: {
       total: mixAppointments.length,
-      slices: toSlices(insuranceStatusCounts, chartSeries),
       breakdown: [
         {
-          label: "Particular",
+          label: noInsuranceLabel,
           value: percent(
             mixAppointments.length - insuranceAppointments.length,
             Math.max(1, mixAppointments.length),
           ),
-          color: categoricalColors.teal,
+          color: noInsuranceColor,
         },
         ...toPercentageSlices(
           insuranceNameCounts,
           Math.max(1, mixAppointments.length),
-          chartSeries,
+          insuranceSeries,
         ),
       ],
     },
@@ -502,12 +511,12 @@ function buildCompanyDashboardCharts({
       averageValue: average(timingValues),
       byType: [
         {
-          label: "Particular",
-          value: Math.round(average(particularTiming) ?? 0),
+          label: noInsuranceLabel,
+          value: roundOrNull(average(particularTiming)),
         },
         {
           label: "Convênio",
-          value: Math.round(average(insuranceTiming) ?? 0),
+          value: roundOrNull(average(insuranceTiming)),
         },
       ],
     },
@@ -616,6 +625,12 @@ function average(values: number[]) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+// Sem amostra, o tipo fica sem valor em vez de virar zero: "0 dias" de
+// antecedência é um dado real (agendou para o mesmo dia), não ausência de dado.
+function roundOrNull(value: number | null | undefined) {
+  return value == null || !Number.isFinite(value) ? null : Math.round(value);
+}
+
 function formatAverageDays(value: number | null) {
   if (value == null || !Number.isFinite(value)) return "—";
   const rounded = Math.round(value);
@@ -703,10 +718,6 @@ function buildCompanyDashboardChartsFromAggregate(
   const insuranceTotal =
     aggregate.charts.insurance_status.with_insurance +
     aggregate.charts.insurance_status.without_insurance;
-  const insuranceStatusCounts = new Map<string, number>([
-    ["Particular", aggregate.charts.insurance_status.without_insurance],
-    ["Com convenio", aggregate.charts.insurance_status.with_insurance],
-  ]);
 
   return {
     view,
@@ -727,21 +738,21 @@ function buildCompanyDashboardChartsFromAggregate(
     },
     insurances: {
       total: insuranceTotal,
-      slices: toSlices(insuranceStatusCounts, chartSeries),
       breakdown: [
         {
-          label: "Particular",
+          label: noInsuranceLabel,
           value: percent(
             aggregate.charts.insurance_status.without_insurance,
             Math.max(1, insuranceTotal),
           ),
-          color: categoricalColors.teal,
+          color: noInsuranceColor,
         },
         ...aggregate.charts.insurance_breakdown.map((slice, index) => ({
           label: slice.label,
           value: percent(slice.value, Math.max(1, insuranceTotal)),
           color:
-            chartSeries[index % chartSeries.length] ?? categoricalColors.blue,
+            insuranceSeries[index % insuranceSeries.length] ??
+            categoricalColors.blue,
         })),
       ],
     },
@@ -749,12 +760,12 @@ function buildCompanyDashboardChartsFromAggregate(
       averageValue: aggregate.charts.timing.average_value,
       byType: [
         {
-          label: "Particular",
-          value: Math.round(aggregate.charts.timing.particular_value ?? 0),
+          label: noInsuranceLabel,
+          value: roundOrNull(aggregate.charts.timing.particular_value),
         },
         {
           label: "Convênio",
-          value: Math.round(aggregate.charts.timing.insurance_value ?? 0),
+          value: roundOrNull(aggregate.charts.timing.insurance_value),
         },
       ],
     },
@@ -1202,7 +1213,7 @@ async function CompanyDashboard({
             description="Os dados não foram substituídos por zeros. Tente atualizar a página em alguns instantes."
           />
         ) : (
-          <div className="grid gap-4 rounded-xl bg-surface-sunken/45 p-3 sm:p-4">
+          <div className="grid gap-4 rounded-lg bg-surface-sunken/45 p-3 sm:p-4">
             <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {cards.map((card) => (
                 <DashboardMetricCard
