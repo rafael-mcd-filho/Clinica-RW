@@ -761,11 +761,11 @@ function AgendaCalendarView({
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Periodo anterior"
+                aria-label="Período anterior"
                 disabled={navigationPending}
                 onClick={() => moveDate(-1)}
               >
-                <ChevronLeft className="size-4" />
+                <ChevronLeft className="size-4" aria-hidden="true" />
               </Button>
               <p className="min-w-0 truncate px-1 text-sm font-semibold first-letter:uppercase">
                 {rangeLabel}
@@ -774,11 +774,11 @@ function AgendaCalendarView({
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Proximo periodo"
+                aria-label="Próximo período"
                 disabled={navigationPending}
                 onClick={() => moveDate(1)}
               >
-                <ChevronRight className="size-4" />
+                <ChevronRight className="size-4" aria-hidden="true" />
               </Button>
               {navigationPending ? (
                 <RefreshCw
@@ -788,8 +788,13 @@ function AgendaCalendarView({
               ) : null}
             </div>
 
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-              <div className="relative min-w-0 flex-1 sm:max-w-64">
+            {/* Com base zero este grupo cabia "ao lado" da navegação mesmo sem
+                espaço: no celular a busca virava só a lupa, "Filtros" cobria o
+                período e a visão saía cortada. A base de 22rem faz o grupo
+                descer de linha quando não cabe, e a base da busca faz o mesmo
+                dentro dele. */}
+            <div className="flex min-w-0 flex-1 basis-[22rem] flex-wrap items-center justify-end gap-2">
+              <div className="relative min-w-0 flex-1 basis-32 sm:max-w-64">
                 <Search
                   className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                   aria-hidden="true"
@@ -834,7 +839,7 @@ function AgendaCalendarView({
                   navigateAgenda(date, nextView as AgendaView)
                 }
                 disabled={navigationPending}
-                aria-label="Visao da agenda"
+                aria-label="Visão da agenda"
                 className="w-36 shrink-0"
               >
                 <option value="day">Diária</option>
@@ -1351,17 +1356,44 @@ function WeekAgenda({
       weekTimelineStepMinutes) *
     weekTimelineRowHeight;
 
+  // Em notebook (~1366px) a semana não cabe inteira e o fim de semana fica
+  // atrás da rolagem lateral — inclusive "hoje", num sábado. Ao abrir ou
+  // trocar de data, a grade rola até o dia selecionado se ele estiver fora.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const column = scroller?.querySelector<HTMLElement>(
+      `[data-week-day="${date}"]`,
+    );
+    const gutter = scroller?.querySelector<HTMLElement>("[data-week-gutter]");
+    if (!scroller || !column) return;
+    const gutterWidth = gutter?.offsetWidth ?? 0;
+    const visibleStart = scroller.scrollLeft + gutterWidth;
+    const visibleEnd = scroller.scrollLeft + scroller.clientWidth;
+    const columnEnd = column.offsetLeft + column.offsetWidth;
+    if (column.offsetLeft < visibleStart || columnEnd > visibleEnd) {
+      scroller.scrollLeft = Math.max(0, columnEnd - scroller.clientWidth);
+    }
+  }, [date]);
+
   return (
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
+      {/* relative: é a referência do offsetLeft das colunas lido acima. */}
+      <div ref={scrollerRef} className="relative overflow-x-auto">
         <div className="min-w-[980px]">
           <div className="grid grid-cols-[4.5rem_repeat(7,minmax(7.5rem,1fr))] border-b border-border bg-card">
-            <div className="border-r border-border" />
+            {/* Coluna de horários presa à esquerda: rolando até o fim de
+                semana, as horas continuam à vista. */}
+            <div
+              data-week-gutter
+              className="sticky left-0 z-30 border-r border-border bg-card"
+            />
             {days.map((day) => {
               const dayKey = dateKey(day);
               return (
                 <div
                   key={dayKey}
+                  data-week-day={dayKey}
                   className={`border-r border-border px-3 py-3 text-center last:border-r-0 ${
                     dayKey === today ? "bg-primary-muted/60" : ""
                   }`}
@@ -1384,7 +1416,7 @@ function WeekAgenda({
             className="grid grid-cols-[4.5rem_repeat(7,minmax(7.5rem,1fr))]"
             style={{ height: totalHeight }}
           >
-            <div className="relative border-r border-border bg-card">
+            <div className="sticky left-0 z-30 border-r border-border bg-card">
               {slots
                 .filter((slot) => slot.minute < timelineRange.endMinute)
                 .map((slot) => (
@@ -1569,18 +1601,31 @@ function TimelineAppointmentItem({
   const colors = timelineScheduleColor(scheduleColor);
   const width = `calc(${100 / item.laneCount}% - 6px)`;
   const left = `calc(${(100 / item.laneCount) * item.lane}% + 3px)`;
+  // Com o filtro de status em "Todos", cancelados e faltas ficavam idênticos
+  // aos agendados, e o horário parecia ocupado. Continuam na grade (é
+  // histórico do dia), mas apagados e riscados, com o status no rótulo.
+  const inactive =
+    appointment.status === "cancelled" || appointment.status === "no_show";
+  const summary = `${formatTime(appointment.start_at, timeZone)} - ${formatTime(
+    appointment.end_at,
+    timeZone,
+  )} · ${patientName}${
+    inactive ? ` · ${statusLabel[appointment.status]}` : ""
+  }`;
 
   return (
     <div
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
+      aria-label={onSelect ? summary : undefined}
       onClick={onSelect}
       onKeyDown={(event) => handleAppointmentCardKeyDown(event, onSelect)}
-      className={`absolute z-10 overflow-hidden rounded-md px-2 py-1 text-xs shadow-[var(--shadow-soft)] ${
-        onSelect
-          ? "cursor-pointer transition-shadow duration-[var(--motion-fast)] hover:shadow-[var(--shadow-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          : ""
-      }`}
+      className={cn(
+        "absolute z-10 overflow-hidden rounded-md px-2 py-1 text-xs shadow-[var(--shadow-soft)]",
+        onSelect &&
+          "cursor-pointer transition-shadow duration-[var(--motion-fast)] hover:shadow-[var(--shadow-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        inactive && "opacity-60",
+      )}
       style={{
         top: item.top,
         height: item.height,
@@ -1590,12 +1635,14 @@ function TimelineAppointmentItem({
         borderLeft: `3px solid ${scheduleColor}`,
         color: colors.text,
       }}
-      title={`${formatTime(appointment.start_at, timeZone)} - ${formatTime(
-        appointment.end_at,
-        timeZone,
-      )} · ${patientName}`}
+      title={summary}
     >
-      <p className="truncate font-semibold leading-tight" title={patientName}>
+      <p
+        className={cn(
+          "truncate font-semibold leading-tight",
+          inactive && "line-through",
+        )}
+      >
         {patientName}
       </p>
       {item.height >= 52 ? (
@@ -1613,12 +1660,14 @@ function TimelineAppointmentItem({
           {appointment.status === "confirmed" ||
           appointment.status === "attended" ? (
             <Check className="size-3 shrink-0 opacity-70" aria-hidden="true" />
+          ) : inactive ? (
+            <X className="size-3 shrink-0 opacity-70" aria-hidden="true" />
           ) : null}
         </div>
       ) : null}
       {canEdit && item.height >= 96 ? (
         <div
-          className="mt-2 rounded bg-white/60 p-1"
+          className="mt-2 rounded bg-card/60 p-1"
           onClick={(event) => event.stopPropagation()}
         >
           <StatusActions
@@ -1788,7 +1837,11 @@ function MonthAgenda({
             ? `Agenda de ${formatFullDay(detailsDay)}`
             : "Agenda do dia"
         }
-        description={`${detailsAppointments.length} agendamentos e ${detailsBlocks.length} bloqueios.`}
+        description={`${detailsAppointments.length} ${
+          detailsAppointments.length === 1 ? "agendamento" : "agendamentos"
+        } e ${detailsBlocks.length} ${
+          detailsBlocks.length === 1 ? "bloqueio" : "bloqueios"
+        }.`}
         className="max-w-2xl"
       >
         <div className="grid gap-3">
@@ -1994,7 +2047,7 @@ function AppointmentDetailsModal({
                   </p>
                 ) : null}
                 <p className="mt-1 font-mono text-xs font-semibold uppercase text-primary">
-                  Prontuario #{patient?.id.slice(0, 8).toUpperCase() ?? "---"}
+                  Prontuário #{patient?.id.slice(0, 8).toUpperCase() ?? "---"}
                 </p>
               </div>
             </div>
@@ -2016,7 +2069,7 @@ function AppointmentDetailsModal({
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryItem
               label="CPF"
-              value={patient?.cpf ? formatCPF(patient.cpf) : "Nao informado"}
+              value={patient?.cpf ? formatCPF(patient.cpf) : "Não informado"}
             />
             <SummaryItem
               label="Telefone"
@@ -2036,7 +2089,7 @@ function AppointmentDetailsModal({
                     {formatPhoneBR(patient.whatsapp)}
                   </a>
                 ) : (
-                  "Nao informado"
+                  "Não informado"
                 )
               }
               icon={Phone}
@@ -2054,7 +2107,7 @@ function AppointmentDetailsModal({
                     {formatPhoneBR(patient.whatsapp)}
                   </a>
                 ) : (
-                  "Nao informado"
+                  "Não informado"
                 )
               }
               icon={Phone}
@@ -2067,10 +2120,10 @@ function AppointmentDetailsModal({
                     className="hover:text-primary hover:underline"
                     href={`mailto:${patient.email}`}
                   >
-                    {patient.email}
+                    <EmailText email={patient.email} />
                   </a>
                 ) : (
-                  "Nao informado"
+                  "Não informado"
                 )
               }
               icon={Mail}
@@ -2102,23 +2155,23 @@ function AppointmentDetailsModal({
             />
             <SummaryItem
               label="Profissional"
-              value={professional?.name ?? "Nao informado"}
+              value={professional?.name ?? "Não informado"}
             />
             <SummaryItem label="Agenda" value={schedule?.name ?? "Agenda"} />
             <SummaryItem
               label="Unidade"
-              value={unit?.name ?? "Nao informada"}
+              value={unit?.name ?? "Não informada"}
             />
-            <SummaryItem label="Sala" value={room?.name ?? "Nao informada"} />
+            <SummaryItem label="Sala" value={room?.name ?? "Não informada"} />
             <SummaryItem
-              label="Convenio"
-              value={insurance?.name ?? "Particular"}
+              label="Convênio"
+              value={insurance?.name ?? "Sem convênio"}
             />
             <SummaryItem
               label="Valor"
               value={
                 appointment.price === null || appointment.price === undefined
-                  ? "Nao informado"
+                  ? "Não informado"
                   : formatMoney(appointment.price)
               }
               hint={appointmentPriceHint(appointment)}
@@ -2145,7 +2198,7 @@ function AppointmentDetailsModal({
           {appointment.notes ? (
             <div className="rounded-md border border-dashed border-border bg-background px-3 py-2">
               <p className="text-xs font-semibold uppercase text-muted-foreground">
-                Observacoes
+                Observações
               </p>
               <p className="mt-1 whitespace-pre-wrap text-sm">
                 {appointment.notes}
@@ -2168,7 +2221,7 @@ function AppointmentDetailsModal({
               <Button asChild variant="secondary">
                 <Link href={buildAgendaEncounterHref(encounter.id, returnTo)}>
                   <FileText className="size-4" aria-hidden="true" />
-                  Abrir prontuario
+                  Abrir prontuário
                 </Link>
               </Button>
             ) : null}
@@ -2180,6 +2233,7 @@ function AppointmentDetailsModal({
                 status={appointment.status}
                 startAt={appointment.start_at}
                 hideInProgressAction={canStartClinicalEncounter}
+                fullLabels
               />
             ) : null}
             {canStartClinicalEncounter ? (
@@ -2224,7 +2278,7 @@ function PaymentMethodForm({
           defaultValue={paymentMethodId ?? ""}
           allowEmptyOption
         >
-          <option value="">Nao selecionada</option>
+          <option value="">Não selecionada</option>
           {paymentMethods.map((method) => (
             <option key={method.id} value={method.id}>
               {method.name}
@@ -2232,7 +2286,7 @@ function PaymentMethodForm({
           ))}
         </Select>
       </label>
-      <Button type="submit" variant="secondary" disabled={pending}>
+      <Button type="submit" variant="secondary" size="lg" disabled={pending}>
         {pending ? "Salvando..." : "Salvar"}
       </Button>
     </form>
@@ -2289,6 +2343,21 @@ function SummaryItem({
         </p>
       ) : null}
     </div>
+  );
+}
+
+// Numa coluna estreita o e-mail quebrava no meio do domínio ("exam|ple.com");
+// o <wbr> dá ao navegador um ponto de quebra melhor, logo depois do @, sem
+// inserir caractere nenhum no texto copiado.
+function EmailText({ email }: { email: string }) {
+  const at = email.lastIndexOf("@");
+  if (at === -1) return email;
+  return (
+    <>
+      {email.slice(0, at + 1)}
+      <wbr />
+      {email.slice(at + 1)}
+    </>
   );
 }
 
@@ -2378,7 +2447,7 @@ function AppointmentPriceForm({
           placeholder={tableLabel ?? "Ex.: valor combinado."}
         />
       </label>
-      <Button type="submit" variant="secondary" disabled={pending}>
+      <Button type="submit" variant="secondary" size="lg" disabled={pending}>
         {pending ? "Salvando..." : "Salvar"}
       </Button>
     </form>
@@ -2430,7 +2499,7 @@ function BlockCard({
       </div>
       {!compact ? (
         <p className="mt-1 text-xs text-muted-foreground">
-          {block.reason || schedule?.name || "Horario bloqueado"}
+          {block.reason || schedule?.name || "Horário bloqueado"}
         </p>
       ) : null}
     </div>
@@ -2858,28 +2927,35 @@ function StatusActions({
   status,
   startAt,
   hideInProgressAction = false,
+  fullLabels = false,
 }: {
   appointmentId: string;
   status: string;
   startAt: string;
   hideInProgressAction?: boolean;
+  /** No rodapé do modal, "Cancelar" sozinho lê como "fechar a janela" e
+      "Faltou" descreve em vez de agir: lá os botões dizem o que fazem. Nos
+      cards da grade não há espaço. */
+  fullLabels?: boolean;
 }) {
   if (["attended", "no_show", "cancelled"].includes(status)) return null;
+  const cancelLabel = fullLabels ? "Cancelar agendamento" : "Cancelar";
+  const noShowLabel = fullLabels ? "Registrar falta" : "Faltou";
   const actions =
     status === "scheduled"
       ? [
           ["confirmed", "Confirmar", Check],
-          ["cancelled", "Cancelar", X],
+          ["cancelled", cancelLabel, X],
         ]
       : status === "confirmed"
         ? [
             ["waiting", "Check-in", UserCheck],
-            ["cancelled", "Cancelar", X],
+            ["cancelled", cancelLabel, X],
           ]
         : status === "waiting"
           ? [
               ["in_progress", "Iniciar", Clock3],
-              ["no_show", "Faltou", X],
+              ["no_show", noShowLabel, X],
             ]
           : [["attended", "Finalizar", Check]];
   const visibleActions = hideInProgressAction
@@ -2978,11 +3054,11 @@ function StatusActionForm({
         <Button
           type="button"
           size="sm"
-          variant={destructive ? "ghost" : "primary"}
+          variant={destructive ? "destructive-ghost" : "primary"}
           disabled={pending}
           onClick={() => setConfirming(true)}
         >
-          {Icon ? <Icon className="size-3.5" /> : null}
+          {Icon ? <Icon className="size-3.5" aria-hidden="true" /> : null}
           {label}
         </Button>
         <ConfirmDialog
