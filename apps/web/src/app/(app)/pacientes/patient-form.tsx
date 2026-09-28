@@ -1,6 +1,12 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useActionState,
+  useEffect,
+  useId,
+} from "react";
 import { FloppyDisk as Save, UserPlus } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
@@ -35,7 +41,11 @@ export type PatientFormValues = {
   allow_sms: boolean;
   source: string | null;
   address: AddressValues | null;
+  health_insurance_id?: string | null;
+  health_insurance_card?: string | null;
 };
+
+export type PatientInsuranceOption = { id: string; name: string };
 
 const patientSourceOptions: readonly string[] = [
   "Anúncio",
@@ -51,9 +61,12 @@ const initialState: PatientActionState = {};
 export function PatientForm({
   patient,
   canSeeSensitive,
+  insurances,
 }: {
   patient?: PatientFormValues;
   canSeeSensitive: boolean;
+  /** Convênios da clínica. Sem a lista (banco sem o campo), o bloco some. */
+  insurances?: PatientInsuranceOption[];
 }) {
   const editing = Boolean(patient);
   const action = patient ? updatePatient.bind(null, patient.id) : createPatient;
@@ -151,6 +164,35 @@ export function PatientForm({
               ) : null}
             </Select>
           </Field>
+          {insurances ? (
+            <>
+              <Field label="Convênio">
+                <Select
+                  name="health_insurance_id"
+                  defaultValue={patient?.health_insurance_id ?? ""}
+                  allowEmptyOption
+                >
+                  <option value="">Particular / sem convênio</option>
+                  {insurances.map((insurance) => (
+                    <option key={insurance.id} value={insurance.id}>
+                      {insurance.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field
+                label="Nº da carteirinha"
+                error={fieldErrors.health_insurance_card}
+              >
+                <Input
+                  name="health_insurance_card"
+                  maxLength={60}
+                  defaultValue={patient?.health_insurance_card ?? ""}
+                  inputMode="numeric"
+                />
+              </Field>
+            </>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -282,17 +324,46 @@ function Field({
   error?: string;
   children: React.ReactNode;
 }) {
+  const generatedId = useId().replaceAll(":", "");
+  const child = isValidElement<{
+    id?: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean | "true" | "false";
+  }>(children)
+    ? children
+    : null;
+  const controlId = child?.props.id ?? `patient-field-${generatedId}`;
+  const errorId = `${controlId}-error`;
+  const describedBy = [
+    child?.props["aria-describedby"],
+    error ? errorId : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const control = child
+    ? cloneElement(child, {
+        id: controlId,
+        "aria-describedby": describedBy || undefined,
+        "aria-invalid": error ? true : child.props["aria-invalid"],
+      })
+    : children;
+
   return (
     <label
-      className={`grid gap-2 text-sm font-medium ${wide ? "lg:col-span-2" : ""}`}
+      htmlFor={controlId}
+      className={`grid gap-2 text-label font-medium ${wide ? "lg:col-span-2" : ""}`}
     >
       <span>
         {label}
         {required ? <RequiredMark /> : null}
       </span>
-      {children}
+      {control}
       {error ? (
-        <span className="text-body-sm font-normal text-destructive">
+        <span
+          id={errorId}
+          role="alert"
+          className="text-body-sm font-normal text-destructive"
+        >
           {error}
         </span>
       ) : null}

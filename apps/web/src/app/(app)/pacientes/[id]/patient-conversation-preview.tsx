@@ -6,7 +6,9 @@ import {
   ArrowRight,
   ArrowSquareOut,
   ChatCentered as MessageSquare,
+  WhatsappLogo,
 } from "@phosphor-icons/react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -51,10 +53,25 @@ export function PatientConversationPreview({
   conversationId,
   organizationId,
   contactName,
+  row,
 }: {
   conversationId: string;
   organizationId: string;
   contactName: string;
+  /** Com os dados da linha, a linha inteira abre a conversa (Resumo). */
+  row?: {
+    initials: string | null;
+    statusLabel: string;
+    statusVariant:
+      | "neutral"
+      | "primary"
+      | "success"
+      | "warning"
+      | "destructive";
+    preview: string;
+    dateLabel: string | null;
+    timeLabel: string | null;
+  };
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -102,14 +119,58 @@ export function PatientConversationPreview({
 
   return (
     <>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        onClick={() => setOpen(true)}
-      >
-        Abrir conversa
-      </Button>
+      {row ? (
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => setOpen(true)}
+          aria-label={`Conversa com ${contactName}, ${row.statusLabel}: ${row.preview}`}
+          className="flex w-full min-w-0 items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+        >
+          <span
+            className={cn(
+              "flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+              row.initials
+                ? "bg-primary-muted text-primary"
+                : "bg-success-muted text-success-foreground",
+            )}
+            aria-hidden="true"
+          >
+            {row.initials ?? <WhatsappLogo className="size-5" weight="fill" />}
+          </span>
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-semibold text-foreground">
+                {contactName}
+              </span>
+              <Badge
+                variant={row.statusVariant}
+                className="h-5 rounded-full px-1.5"
+              >
+                {row.statusLabel}
+              </Badge>
+            </span>
+            <span className="truncate text-caption text-muted-foreground">
+              {row.preview}
+            </span>
+          </span>
+          {row.dateLabel ? (
+            <span className="grid shrink-0 text-right text-caption tabular-nums text-muted-foreground">
+              <span>{row.dateLabel}</span>
+              <span>{row.timeLabel}</span>
+            </span>
+          ) : null}
+        </button>
+      ) : (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => setOpen(true)}
+        >
+          Abrir conversa
+        </Button>
+      )}
 
       <Modal
         open={open}
@@ -119,18 +180,22 @@ export function PatientConversationPreview({
         description={`Até as ${PREVIEW_LIMIT} mensagens mais recentes, somente leitura.`}
         className="max-w-2xl"
         footer={
-          <>
-            <Button asChild variant="secondary">
+          <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button asChild variant="secondary" className="w-full sm:w-auto">
               <a href={href} target="_blank" rel="noopener noreferrer">
                 <ArrowSquareOut className="size-4" aria-hidden="true" />
                 Abrir em nova aba
               </a>
             </Button>
-            <Button type="button" onClick={() => router.push(href)}>
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              onClick={() => router.push(href)}
+            >
               <ArrowRight className="size-4" aria-hidden="true" />
               Abrir no atendimento
             </Button>
-          </>
+          </div>
         }
       >
         <div

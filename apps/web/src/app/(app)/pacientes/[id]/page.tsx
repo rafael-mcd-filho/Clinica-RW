@@ -1,36 +1,67 @@
+import type { ConsentEventSummary } from "@/lib/clinical/consent";
+import { consentStatus } from "@/lib/clinical/consent";
+import { documentTypeLabels } from "@/lib/clinical/document-types";
+import {
+  describePrescriptionItem,
+  parsePrescriptionItems,
+} from "@/lib/clinical/prescription-items";
+import { FinancialRecordTrigger } from "@/components/finance/financial-record-details";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowRight,
+  CalendarBlank,
+  CalendarCheck,
   CalendarDots as CalendarDays,
+  CaretRight,
+  ChatCenteredText,
   CheckCircle as CircleCheck,
   ChatCentered as MessageSquare,
+  ClipboardText,
   Clock as Clock3,
-  ClockCounterClockwise as History,
   CreditCard,
-  PencilSimpleLine as Edit3,
-  FileText,
-  Heartbeat as HeartPulse,
-  Lifebuoy,
   EnvelopeSimple as Mail,
+  FileText,
+  GenderIntersex,
+  Heartbeat as HeartPulse,
+  IdentificationCard,
+  Lifebuoy,
   MapPin,
+  PencilSimpleLine,
   Phone,
+  Pill,
+  Prescription,
   ShieldWarning as ShieldAlert,
-  Stethoscope,
-  Tag,
-  UserCircle as UserRound,
+  Target,
+  UserFocus,
+  Wallet,
   WarningCircle,
 } from "@phosphor-icons/react/dist/ssr";
-import {
-  ClinicalQuickEditButton,
-  type ClinicalSummary,
-  type TagRow,
-} from "./patient-detail-panels";
+import type { ClinicalSummary, TagRow } from "./patient-detail-panels";
 import { PatientAppointmentActions } from "./patient-appointment-actions";
+import { PatientClinicalList } from "./patient-clinical-list";
+import { PatientContactActions } from "./patient-contact-actions";
 import { PatientConversationPreview } from "./patient-conversation-preview";
+import {
+  PatientDiagnosesCard,
+  type DiagnosisSuggestion,
+  type PatientDiagnosisView,
+} from "./patient-diagnoses-card";
+import {
+  PatientDocumentsCard,
+  type PatientDocumentItem,
+} from "./patient-documents-card";
+import { PatientHeaderActions } from "./patient-header-actions";
+import { PatientNotesCard } from "./patient-notes-card";
+import { OverviewCard, ViewAllTab } from "./patient-overview-card";
 import { PatientPhotoForm } from "./patient-photo-form";
+import { PatientScheduleButton } from "./patient-schedule-button";
 import { PatientSidebarDetails } from "./patient-sidebar-details";
+import type {
+  EncounterAppointmentOption,
+  EncounterProfessionalOption,
+  EncounterTemplateOption,
+} from "./patient-start-encounter";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
@@ -39,8 +70,13 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabSelectionButton } from "@/components/ui/tabs";
 import { normalizeAgendaTimeZone } from "@/lib/agenda/range";
 import { requireCompanyPermission } from "@/lib/authz/guards";
-import { getPatientCompleteness } from "@/lib/patients/completeness";
+import { stripRichTextMarkers } from "@/lib/clinical/rich-text-format";
+import {
+  attachmentCategoryLabels,
+  listPatientAttachments,
+} from "@/lib/storage/clinical-attachments";
 import { createPatientPhotoSignedUrl } from "@/lib/storage/patient-photos";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cn, initialsFromName } from "@/lib/utils";
 import { formatCPF, formatPhoneBR } from "@/lib/validation/br";
@@ -102,7 +138,18 @@ type DiagnosisRow = {
   is_primary: boolean;
 };
 
-type ProfessionalRow = { id: string; name: string };
+type ProfessionalRow = { id: string; name: string; user_id?: string | null };
+
+type ClinicalTemplateRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+  clinical_template_versions: Array<{
+    id: string;
+    version_number: number;
+  }>;
+};
 
 type AppointmentRow = {
   id: string;
@@ -115,10 +162,20 @@ type AppointmentRow = {
 };
 
 type PatientDocumentRow = {
+  consent_events: ConsentEventSummary[];
   id: string;
-  document_type: string;
+  document_type: keyof typeof documentTypeLabels;
   title: string;
   issued_at: string;
+  encounter_id: string | null;
+};
+
+type PrescriptionRow = {
+  id: string;
+  title: string;
+  body: string;
+  issued_at: string;
+  professional_id: string;
 };
 
 type PatientReceivableRow = {
@@ -160,13 +217,22 @@ type PatientCommunicationRow = {
 };
 
 type PatientSection =
-  "overview" | "history" | "documents" | "finance" | "messages";
+  | "overview"
+  | "prontuario"
+  | "agenda"
+  | "documents"
+  | "finance"
+  | "messages"
+  | "prescriptions";
 
-const documentTypeLabels: Record<string, string> = {
-  prescription: "Prescrição",
-  exam_request: "Solicitação de exame",
-  medical_certificate: "Atestado",
-  attendance_declaration: "Declaração de comparecimento",
+/** Linha de prescrição do Resumo: um medicamento de um documento emitido. */
+type PrescriptionLine = {
+  key: string;
+  documentId: string;
+  name: string;
+  detail: string;
+  continuous: boolean;
+  dateLabel: string;
 };
 
 export default async function PatientDetailsPage({
@@ -178,21 +244,23 @@ export default async function PatientDetailsPage({
 }) {
   const context = await requireCompanyPermission(["paciente.ver"]);
   const { id } = await params;
-  const canSeeSensitive = context.permissionCodes.has(
-    "paciente.ver_dados_sensiveis",
-  );
+  const codes = context.permissionCodes;
+  const canSeeSensitive = codes.has("paciente.ver_dados_sensiveis");
   const canSeeClinicalRecords =
-    context.permissionCodes.has("clinico.ver_prontuario") ||
-    context.permissionCodes.has("clinico.ver_prontuario_proprios");
+    codes.has("clinico.ver_prontuario") ||
+    codes.has("clinico.ver_prontuario_proprios");
+  const canWriteClinical =
+    canSeeClinicalRecords && codes.has("clinico.preencher_prontuario");
+  const canSeeAllClinicalRecords = codes.has("clinico.ver_prontuario");
   const canSeeFinance =
-    context.permissionCodes.has("financeiro.ver_geral") ||
-    context.permissionCodes.has("financeiro.receber_pagamento");
-  const canSeeAgenda = context.permissionCodes.has("agenda.ver");
-  const canEditAgenda = context.permissionCodes.has(
-    "agenda.editar_agendamento",
-  );
-  const canSeeMessages = context.permissionCodes.has("atendimento.ver");
-  const canEdit = context.permissionCodes.has("paciente.editar");
+    codes.has("financeiro.ver_geral") ||
+    codes.has("financeiro.receber_pagamento");
+  const canSeeAgenda = codes.has("agenda.ver");
+  const canEditAgenda = codes.has("agenda.editar_agendamento");
+  const canSchedule = codes.has("agenda.criar_agendamento");
+  const canSeeMessages = codes.has("atendimento.ver");
+  const canEdit = codes.has("paciente.editar");
+  const canArchive = codes.has("paciente.excluir");
   const rawSection = (await searchParams)?.section;
   const requestedSection = normalizePatientSection(
     typeof rawSection === "string" ? rawSection : undefined,
@@ -222,45 +290,12 @@ export default async function PatientDetailsPage({
   if (!patientResult.data) notFound();
   const patient = patientResult.data;
 
-  const documentsQuery = supabase
-    .from("clinical_documents")
-    .select("id, document_type, title, issued_at", { count: "exact" })
-    .eq("patient_id", id)
-    .eq("organization_id", organizationId)
-    .order("issued_at", { ascending: false })
-    .limit(100);
-
-  const receivablesQuery = supabase
-    .from("accounts_receivable")
-    .select("id, description, amount, paid_amount, due_date, status", {
-      count: "exact",
-    })
-    .eq("patient_id", id)
-    .eq("organization_id", organizationId)
-    .order("due_date", { ascending: false })
-    .limit(100);
-
-  const encountersQuery = supabase
-    .from("encounters")
-    .select(
-      "id, professional_id, appointment_id, status, started_at, finalized_at",
-      { count: "exact" },
-    )
-    .eq("patient_id", id)
-    .eq("organization_id", organizationId)
-    .order("started_at", { ascending: false })
-    .limit(100);
-
-  const patientAppointmentsQuery = supabase
-    .from("appointments")
-    .select(
-      "id, professional_id, start_at, end_at, status, procedures(name), health_insurances(name)",
-      { count: "exact" },
-    )
-    .eq("patient_id", id)
-    .eq("organization_id", organizationId)
-    .order("start_at", { ascending: false })
-    .limit(100);
+  // Todas as consultas da ficha filtram pelo paciente e pela empresa.
+  type Filterable = { eq(column: string, value: string): Filterable };
+  const byPatient = <T,>(query: T): T =>
+    (query as unknown as Filterable)
+      .eq("patient_id", id)
+      .eq("organization_id", organizationId) as unknown as T;
 
   const [
     addressResult,
@@ -273,26 +308,31 @@ export default async function PatientDetailsPage({
     patientAppointmentsResult,
     whatsappContactsResult,
     settingsResult,
+    insuranceResult,
+    notesResult,
+    attendedCountResult,
+    upcomingResult,
+    openReceivablesResult,
+    prescriptionsResult,
+    patientDiagnosesResult,
   ] = await Promise.all([
     canSeeSensitive
-      ? supabase
-          .from("patient_addresses")
-          .select(
-            "postal_code, address_line, address_number, address_complement, district, city, state",
-          )
-          .eq("patient_id", id)
-          .eq("organization_id", organizationId)
-          .maybeSingle<AddressRow>()
+      ? byPatient(
+          supabase
+            .from("patient_addresses")
+            .select(
+              "postal_code, address_line, address_number, address_complement, district, city, state",
+            ),
+        ).maybeSingle<AddressRow>()
       : Promise.resolve({ data: null }),
     canSeeSensitive
-      ? supabase
-          .from("patient_clinical_summaries")
-          .select(
-            "allergies, comorbidities, medications, medical_history, family_history, habits, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship",
-          )
-          .eq("patient_id", id)
-          .eq("organization_id", organizationId)
-          .maybeSingle<ClinicalSummary>()
+      ? byPatient(
+          supabase
+            .from("patient_clinical_summaries")
+            .select(
+              "allergies, comorbidities, medications, medical_history, family_history, habits, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship",
+            ),
+        ).maybeSingle<ClinicalSummary>()
       : Promise.resolve({ data: null }),
     supabase
       .from("tags")
@@ -300,24 +340,59 @@ export default async function PatientDetailsPage({
       .eq("organization_id", organizationId)
       .order("name")
       .returns<TagRow[]>(),
-    supabase
-      .from("patient_tags")
-      .select("tag_id")
-      .eq("patient_id", id)
-      .eq("organization_id", organizationId)
+    byPatient(supabase.from("patient_tags").select("tag_id"))
       .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
       .returns<PatientTagRow[]>(),
     canSeeClinicalRecords
-      ? documentsQuery.returns<PatientDocumentRow[]>()
+      ? byPatient(
+          supabase
+            .from("clinical_documents")
+            .select(
+              "id, document_type, title, issued_at, encounter_id, consent_events:clinical_document_consent_events(event_type, created_at)",
+              { count: "exact" },
+            ),
+        )
+          .order("issued_at", { ascending: false })
+          .limit(100)
+          .returns<PatientDocumentRow[]>()
       : Promise.resolve({ data: [] as PatientDocumentRow[], count: 0 }),
     canSeeFinance
-      ? receivablesQuery.returns<PatientReceivableRow[]>()
+      ? byPatient(
+          supabase
+            .from("accounts_receivable")
+            .select("id, description, amount, paid_amount, due_date, status", {
+              count: "exact",
+            }),
+        )
+          .order("due_date", { ascending: false })
+          .limit(100)
+          .returns<PatientReceivableRow[]>()
       : Promise.resolve({ data: [] as PatientReceivableRow[], count: 0 }),
     canSeeClinicalRecords
-      ? encountersQuery.returns<EncounterRow[]>()
+      ? byPatient(
+          supabase
+            .from("encounters")
+            .select(
+              "id, professional_id, appointment_id, status, started_at, finalized_at",
+              { count: "exact" },
+            ),
+        )
+          .order("started_at", { ascending: false })
+          .limit(100)
+          .returns<EncounterRow[]>()
       : Promise.resolve({ data: [] as EncounterRow[], count: 0 }),
     canSeeAgenda
-      ? patientAppointmentsQuery.returns<AppointmentRow[]>()
+      ? byPatient(
+          supabase
+            .from("appointments")
+            .select(
+              "id, professional_id, start_at, end_at, status, procedures(name), health_insurances(name)",
+              { count: "exact" },
+            ),
+        )
+          .order("start_at", { ascending: false })
+          .limit(100)
+          .returns<AppointmentRow[]>()
       : Promise.resolve({ data: [] as AppointmentRow[], count: 0 }),
     canSeeMessages
       ? supabase
@@ -333,6 +408,82 @@ export default async function PatientDetailsPage({
       .select("timezone")
       .eq("organization_id", organizationId)
       .maybeSingle<{ timezone: string | null }>(),
+    // Colunas novas (migração da ficha): consultas à parte, para a ficha
+    // continuar abrindo num banco que ainda não as tem.
+    supabase
+      .from("patients")
+      .select("health_insurance_id, health_insurance_card")
+      .eq("id", id)
+      .eq("organization_id", organizationId)
+      .maybeSingle<{
+        health_insurance_id: string | null;
+        health_insurance_card: string | null;
+      }>(),
+    canSeeSensitive
+      ? byPatient(
+          supabase.from("patient_clinical_summaries").select("general_notes"),
+        ).maybeSingle<{ general_notes: string | null }>()
+      : Promise.resolve({ data: null, error: null }),
+    canSeeAgenda
+      ? byPatient(
+          supabase
+            .from("appointments")
+            .select("id", { count: "exact", head: true }),
+        ).eq("status", "attended")
+      : Promise.resolve({ count: 0 }),
+    canSeeAgenda
+      ? byPatient(
+          supabase
+            .from("appointments")
+            .select(
+              "id, professional_id, start_at, end_at, status, procedures(name), health_insurances(name)",
+              { count: "exact" },
+            ),
+        )
+          .in("status", ["scheduled", "confirmed"])
+          .gte("start_at", nowIso)
+          .order("start_at", { ascending: true })
+          .limit(1)
+          .returns<AppointmentRow[]>()
+      : Promise.resolve({ data: [] as AppointmentRow[], count: 0 }),
+    canSeeFinance
+      ? byPatient(
+          supabase
+            .from("accounts_receivable")
+            .select("id", { count: "exact", head: true }),
+        ).in("status", ["open", "partial"])
+      : Promise.resolve({ count: 0 }),
+    canSeeClinicalRecords
+      ? byPatient(
+          supabase
+            .from("clinical_documents")
+            .select("id, title, body, issued_at, professional_id"),
+        )
+          .eq("document_type", "prescription")
+          .order("issued_at", { ascending: false })
+          .limit(30)
+          .returns<PrescriptionRow[]>()
+      : Promise.resolve({ data: [] as PrescriptionRow[] }),
+    // Diagnósticos da ficha: tabela só do servidor (a permissão de
+    // prontuário foi conferida acima).
+    canSeeClinicalRecords
+      ? createSupabaseAdminClient()
+          .from("patient_diagnoses")
+          .select("id, cid_code, description, is_primary")
+          .eq("organization_id", organizationId)
+          .eq("patient_id", id)
+          .is("removed_at", null)
+          .order("is_primary", { ascending: false })
+          .order("created_at", { ascending: true })
+          .returns<
+            Array<{
+              id: string;
+              cid_code: string;
+              description: string | null;
+              is_primary: boolean;
+            }>
+          >()
+      : Promise.resolve({ data: [], error: null }),
   ]);
   // Horários da ficha saem no fuso da clínica, como na agenda. Sem isso o
   // servidor formatava no fuso dele (em produção costuma ser UTC, e "14:00"
@@ -342,7 +493,13 @@ export default async function PatientDetailsPage({
 
   const encounters = encountersResult.data ?? [];
   const patientAppointments = patientAppointmentsResult.data ?? [];
+  const prescriptions = prescriptionsResult.data ?? [];
   const encounterIds = encounters.map((encounter) => encounter.id);
+  // Exames anexados nos atendimentos que a pessoa enxerga (a lista acima já
+  // passou pelas regras de acesso do prontuário) e os enviados na ficha.
+  const patientAttachments = canSeeClinicalRecords
+    ? await listPatientAttachments(organizationId, id, encounterIds)
+    : [];
   const professionalIds = [
     ...new Set(
       [
@@ -350,6 +507,10 @@ export default async function PatientDetailsPage({
         ...patientAppointments.map(
           (appointment) => appointment.professional_id,
         ),
+        ...(upcomingResult.data ?? []).map(
+          (appointment) => appointment.professional_id,
+        ),
+        ...prescriptions.map((prescription) => prescription.professional_id),
       ].filter(Boolean),
     ),
   ];
@@ -360,6 +521,7 @@ export default async function PatientDetailsPage({
         .filter((value): value is string => Boolean(value)),
     ),
   ];
+  const insuranceId = insuranceResult.data?.health_insurance_id ?? null;
 
   const [
     entriesResult,
@@ -367,6 +529,9 @@ export default async function PatientDetailsPage({
     professionalsResult,
     encounterAppointmentsResult,
     conversationsResult,
+    encounterProfessionalsResult,
+    clinicalTemplatesResult,
+    insuranceNameResult,
   ] = await Promise.all([
     encounterIds.length
       ? supabase
@@ -417,13 +582,45 @@ export default async function PatientDetailsPage({
           .order("last_message_at", { ascending: false, nullsFirst: false })
           .returns<WhatsAppConversationRow[]>()
       : Promise.resolve({ data: [] as WhatsAppConversationRow[] }),
+    canWriteClinical
+      ? supabase
+          .from("professionals")
+          .select("id, name, user_id")
+          .eq("organization_id", organizationId)
+          .eq("active", true)
+          .order("name")
+          .returns<ProfessionalRow[]>()
+      : Promise.resolve({ data: [] as ProfessionalRow[] }),
+    canWriteClinical
+      ? supabase
+          .from("clinical_templates")
+          .select(
+            "id, name, description, is_default, clinical_template_versions(id, version_number)",
+          )
+          .eq("organization_id", organizationId)
+          .eq("status", "active")
+          .order("is_default", { ascending: false })
+          .order("name")
+          .order("version_number", {
+            referencedTable: "clinical_template_versions",
+            ascending: false,
+          })
+          .returns<ClinicalTemplateRow[]>()
+      : Promise.resolve({ data: [] as ClinicalTemplateRow[] }),
+    insuranceId
+      ? supabase
+          .from("health_insurances")
+          .select("name")
+          .eq("organization_id", organizationId)
+          .eq("id", insuranceId)
+          .maybeSingle<{ name: string }>()
+      : Promise.resolve({ data: null }),
   ]);
 
   const conversations = conversationsResult.data ?? [];
   // Comunicações disparadas para o paciente (lembretes e automações). O
   // conteúdo da conversa em si fica no atendimento — aqui interessa o que a
-  // clínica mandou por conta própria. Enquanto a migration da RPC não
-  // estiver aplicada a seção só não aparece.
+  // clínica mandou por conta própria.
   const communicationsResult = canSeeMessages
     ? await supabase.rpc("get_patient_communications", {
         p_patient_id: patient.id,
@@ -457,29 +654,62 @@ export default async function PatientDetailsPage({
   const appointmentById = new Map(
     (encounterAppointmentsResult.data ?? []).map((item) => [item.id, item]),
   );
+  const encounterByAppointmentId = new Map(
+    encounters.flatMap((encounter) =>
+      encounter.appointment_id
+        ? ([[encounter.appointment_id, encounter]] as const)
+        : [],
+    ),
+  );
+  const encounterProfessionals: EncounterProfessionalOption[] = (
+    encounterProfessionalsResult.data ?? []
+  )
+    .filter(
+      (professional) =>
+        canSeeAllClinicalRecords ||
+        professional.user_id === context.effectiveUser?.id,
+    )
+    .map((professional) => ({
+      id: professional.id,
+      name: professional.name,
+    }));
+  const encounterTemplates: EncounterTemplateOption[] = (
+    clinicalTemplatesResult.data ?? []
+  ).flatMap((template) => {
+    const latestVersion = template.clinical_template_versions[0];
+    return latestVersion
+      ? [
+          {
+            id: template.id,
+            name: template.name,
+            description: template.description,
+            isDefault: template.is_default,
+            versionId: latestVersion.id,
+            versionNumber: latestVersion.version_number,
+          },
+        ]
+      : [];
+  });
+  const encounterAppointments: EncounterAppointmentOption[] =
+    patientAppointments
+      .filter(
+        (appointment) =>
+          ["confirmed", "waiting", "in_progress"].includes(
+            appointment.status,
+          ) && !encounterByAppointmentId.has(appointment.id),
+      )
+      .map((appointment) => ({
+        id: appointment.id,
+        professionalId: appointment.professional_id,
+        label: `${formatDateTimeRange(
+          appointment.start_at,
+          appointment.end_at,
+          timeZone,
+        )} · ${appointment.procedures?.name ?? "Atendimento"}`,
+      }));
   const contactById = new Map(
     (whatsappContactsResult.data ?? []).map((contact) => [contact.id, contact]),
   );
-  const completeness = getPatientCompleteness({
-    fullName: patient.full_name,
-    birthDate: patient.birth_date,
-    sexAtBirth: patient.sex_at_birth,
-    cpf: patient.cpf,
-    rg: patient.rg,
-    source: patient.source,
-    email: patient.email,
-    phone: patient.phone,
-    whatsapp: patient.whatsapp,
-    preferredContact: patient.preferred_contact,
-    allowWhatsapp: patient.allow_whatsapp,
-    allowEmail: patient.allow_email,
-    postalCode: addressResult.data?.postal_code,
-    addressLine: addressResult.data?.address_line,
-    addressNumber: addressResult.data?.address_number,
-    district: addressResult.data?.district,
-    city: addressResult.data?.city,
-    state: addressResult.data?.state,
-  });
   const openBalance = (receivablesResult.data ?? [])
     .filter((item) => ["open", "partial"].includes(item.status))
     .reduce(
@@ -489,7 +719,7 @@ export default async function PatientDetailsPage({
     );
   // "Hoje" no fuso da clínica: é o que separa um lançamento em aberto de um
   // vencido, que antes apareciam iguais ("Aberto").
-  const today = localDateKey(new Date().toISOString(), timeZone);
+  const today = localDateKey(nowIso, timeZone);
   const overdueBalance = (receivablesResult.data ?? [])
     .filter((item) => isReceivableOverdue(item, today))
     .reduce(
@@ -501,300 +731,980 @@ export default async function PatientDetailsPage({
     ? splitSummary(clinicalResult.data?.allergies)
     : [];
 
-  return (
-    <div className="grid gap-6">
-      <section className="grid min-w-0 gap-2">
-        <h1 className="sr-only">{displayName}</h1>
-        <Breadcrumb
-          items={[
-            { label: "Pacientes", href: "/pacientes" },
-            { label: displayName },
-          ]}
-        />
-        <div className="flex min-w-0 items-center gap-3">
-          <Button asChild variant="secondary" size="icon">
-            <Link href="/pacientes" aria-label="Voltar para pacientes">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-            </Link>
-          </Button>
-          <Badge
-            variant={
-              patient.deceased_at
-                ? "destructive"
-                : patient.deleted_at
-                  ? "neutral"
-                  : patient.status === "active"
-                    ? "success"
-                    : "neutral"
-            }
-          >
-            {patient.deceased_at
-              ? "Óbito"
-              : patient.deleted_at
-                ? "Arquivado"
-                : patient.status === "active"
-                  ? "Ativo"
-                  : "Inativo"}
-          </Badge>
+  // Números da faixa "Visão geral".
+  const attendedTotal = canSeeAgenda
+    ? (attendedCountResult.count ?? 0)
+    : encounters.filter((encounter) => encounter.status === "finalized").length;
+  const draftEncounters = encounters.filter(
+    (encounter) => encounter.status === "draft",
+  ).length;
+  const openReceivables = openReceivablesResult.count ?? 0;
+  const pendingTotal = openReceivables + draftEncounters;
+  const upcomingTotal = upcomingResult.count ?? 0;
+  const nextAppointment = upcomingResult.data?.[0] ?? null;
+
+  // Último atendimento: o último agendamento atendido; sem agenda, o último
+  // registro clínico finalizado.
+  const lastAttended = patientAppointments.find(
+    (appointment) => appointment.status === "attended",
+  );
+  const lastFinalizedEncounter = encounters.find(
+    (encounter) => encounter.status === "finalized",
+  );
+  const lastVisit = lastAttended
+    ? {
+        date: lastAttended.start_at,
+        title: lastAttended.procedures?.name ?? "Atendimento",
+        professional: professionalName.get(lastAttended.professional_id),
+        href: encounterByAppointmentId.get(lastAttended.id)
+          ? `/prontuario/${encounterByAppointmentId.get(lastAttended.id)!.id}?from=paciente`
+          : null,
+      }
+    : lastFinalizedEncounter
+      ? {
+          date: lastFinalizedEncounter.started_at,
+          title:
+            entryByEncounter.get(lastFinalizedEncounter.id)?.template_snapshot
+              .name ?? "Atendimento clínico",
+          professional: professionalName.get(
+            lastFinalizedEncounter.professional_id,
+          ),
+          href: `/prontuario/${lastFinalizedEncounter.id}?from=paciente`,
+        }
+      : null;
+
+  // Histórico: o que já aconteceu (o próximo fica no cartão ao lado).
+  const pastAppointments = patientAppointments.filter(
+    (appointment) => appointment.start_at <= nowIso,
+  );
+
+  // Convênio: o do cadastro; sem ele, o do último agendamento com convênio.
+  const insuranceName =
+    insuranceNameResult.data?.name ??
+    patientAppointments.find((appointment) => appointment.health_insurances)
+      ?.health_insurances?.name ??
+    null;
+
+  const diagnosesAvailable = !patientDiagnosesResult.error;
+  const patientDiagnoses: PatientDiagnosisView[] = (
+    patientDiagnosesResult.data ?? []
+  ).map((row) => ({
+    id: row.id,
+    cidCode: row.cid_code,
+    description: row.description,
+    isPrimary: row.is_primary,
+  }));
+  // CIDs lançados nos atendimentos, do mais recente, sem repetir.
+  const diagnosisSuggestions: DiagnosisSuggestion[] = [];
+  for (const encounter of encounters) {
+    for (const diagnosis of diagnosesResult.data ?? []) {
+      if (
+        diagnosis.encounter_id === encounter.id &&
+        !diagnosisSuggestions.some(
+          (item) => item.cidCode === diagnosis.cid_code,
+        )
+      ) {
+        diagnosisSuggestions.push({
+          cidCode: diagnosis.cid_code,
+          description: diagnosis.description,
+        });
+      }
+    }
+  }
+
+  const prescriptionLines: PrescriptionLine[] = prescriptions.flatMap(
+    (prescription) => {
+      const dateLabel = formatNumericDate(prescription.issued_at, timeZone);
+      const items = parsePrescriptionItems(prescription.body);
+      if (!items.length) {
+        return [
+          {
+            key: prescription.id,
+            documentId: prescription.id,
+            name: prescription.title,
+            detail: summarizeNotes(prescription.body) ?? "",
+            continuous: false,
+            dateLabel,
+          },
+        ];
+      }
+      return items.map((item, index) => ({
+        key: `${prescription.id}-${index}`,
+        documentId: prescription.id,
+        name: item.name,
+        detail: describePrescriptionItem(item),
+        continuous: item.continuous,
+        dateLabel,
+      }));
+    },
+  );
+
+  const documentItems: PatientDocumentItem[] = [
+    ...(documentsResult.data ?? []).map<PatientDocumentItem>((document) => {
+      const consent =
+        document.document_type === "informed_consent"
+          ? consentStatus(document.consent_events ?? [])
+          : null;
+      return {
+        id: document.id,
+        kind: "document",
+        name: document.title,
+        typeLabel: consent
+          ? (consentShortLabel[consent] ?? "Termo")
+          : (documentShortLabel[document.document_type] ??
+            documentTypeLabels[document.document_type] ??
+            "Documento"),
+        typeTone:
+          document.document_type === "clinical_report"
+            ? "success"
+            : document.document_type === "informed_consent"
+              ? consent === "signed"
+                ? "success"
+                : "warning"
+              : document.document_type === "prescription" ||
+                  document.document_type === "exam_request"
+                ? "primary"
+                : "neutral",
+        category:
+          document.document_type === "exam_request"
+            ? "exam"
+            : document.document_type === "clinical_report"
+              ? "report"
+              : "other",
+        dateLabel: formatNumericDate(document.issued_at, timeZone),
+        sortKey: document.issued_at,
+        openHref: `/documentos/${document.id}/pdf`,
+        downloadHref: `/documentos/${document.id}/pdf?download=1`,
+        fileKind: "pdf",
+        removable: false,
+        consentDocumentId:
+          document.document_type === "informed_consent"
+            ? document.id
+            : undefined,
+        encounterHref: document.encounter_id
+          ? `/prontuario/${document.encounter_id}?from=paciente`
+          : null,
+      };
+    }),
+    ...patientAttachments.map<PatientDocumentItem>((attachment) => ({
+      id: attachment.id,
+      kind: "attachment",
+      name: attachment.fileName,
+      typeLabel: attachmentCategoryLabels[attachment.category],
+      typeTone:
+        attachment.category === "exam"
+          ? "primary"
+          : attachment.category === "report"
+            ? "success"
+            : "neutral",
+      category: attachment.category,
+      dateLabel: formatNumericDate(attachment.createdAt, timeZone),
+      sortKey: attachment.createdAt,
+      openHref: attachment.url,
+      downloadHref: attachment.url
+        ? `${attachment.url}&download=${encodeURIComponent(attachment.fileName)}`
+        : null,
+      fileKind:
+        attachment.contentType === "application/pdf"
+          ? "pdf"
+          : attachment.contentType.startsWith("image/")
+            ? "image"
+            : "other",
+      removable: canWriteClinical,
+      encounterHref: attachment.encounterId
+        ? `/prontuario/${attachment.encounterId}?from=paciente`
+        : null,
+    })),
+  ].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+  // Anexo na ficha e categorias só existem depois da migração da ficha.
+  const attachmentsUpgraded = !insuranceResult.error;
+
+  const latestConversation = conversations[0] ?? null;
+  const conversationHref =
+    canSeeMessages && latestConversation
+      ? `/atendimento?conversation=${latestConversation.id}`
+      : null;
+  const phoneDigits = patient.phone || patient.whatsapp || null;
+  const active =
+    patient.status === "active" && !patient.deleted_at && !patient.deceased_at;
+  const statusBadge = patient.deceased_at
+    ? { label: "Óbito", variant: "destructive" as const }
+    : patient.deleted_at
+      ? { label: "Arquivado", variant: "neutral" as const }
+      : patient.status === "active"
+        ? { label: "Ativo", variant: "success" as const }
+        : { label: "Inativo", variant: "neutral" as const };
+
+  const infoRows: Array<{
+    icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    value: string;
+    title?: string;
+  }> = [
+    {
+      icon: CalendarBlank,
+      label: "Nascimento",
+      value: patient.birth_date
+        ? `${formatDate(patient.birth_date)} (${patientAge(
+            patient.birth_date,
+            patient.deceased_at,
+          )})`
+        : "Não informado",
+    },
+    {
+      icon: GenderIntersex,
+      label: "Sexo",
+      value: sexLabel(patient.sex_at_birth),
+    },
+    {
+      icon: Phone,
+      label: "Telefone",
+      value: phoneDigits ? formatPhoneBR(phoneDigits) : "Não informado",
+    },
+    { icon: Mail, label: "E-mail", value: patient.email || "Não informado" },
+    ...(canSeeSensitive
+      ? [
+          {
+            icon: MapPin,
+            label: "Endereço",
+            value: formatCityState(addressResult.data),
+            title: formatAddress(addressResult.data),
+          },
+        ]
+      : []),
+    {
+      icon: IdentificationCard,
+      label: "Convênio",
+      value: insuranceName ?? "Não informado",
+      title: insuranceResult.data?.health_insurance_card
+        ? `Carteirinha ${insuranceResult.data.health_insurance_card}`
+        : undefined,
+    },
+    ...(canSeeSensitive
+      ? [
+          {
+            icon: Lifebuoy,
+            label: "Contato de emergência",
+            value: formatEmergencyContact(clinicalResult.data),
+          },
+        ]
+      : []),
+  ];
+
+  const overviewContent = (
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-border bg-card p-2.5 shadow-[var(--shadow-soft)]">
+        <div className="flex flex-col gap-4 rounded-md bg-primary-muted/70 px-4 py-3.5 @3xl:flex-row @3xl:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <span
+              className="flex size-12 shrink-0 items-center justify-center rounded-full bg-card/80 text-primary"
+              aria-hidden="true"
+            >
+              <UserFocus className="size-6" weight="duotone" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-heading-sm font-semibold text-primary-hover">
+                Visão geral do paciente
+              </h2>
+              <p className="mt-0.5 text-body-sm text-secondary-foreground">
+                Informações principais, últimos atendimentos e pendências em um
+                só lugar.
+              </p>
+            </div>
+          </div>
+          <dl className="grid grid-cols-3 gap-2 @3xl:w-[22rem] @3xl:shrink-0">
+            <OverviewStat
+              value={attendedTotal}
+              label={attendedTotal === 1 ? "Atendimento" : "Atendimentos"}
+              tone="neutral"
+            />
+            <OverviewStat
+              value={pendingTotal}
+              label={pendingTotal === 1 ? "Pendência" : "Pendências"}
+              tone={pendingTotal ? "danger" : "neutral"}
+              title={[
+                canSeeFinance
+                  ? `${openReceivables} lançamento${openReceivables === 1 ? "" : "s"} em aberto`
+                  : null,
+                canSeeClinicalRecords
+                  ? `${draftEncounters} prontuário${draftEncounters === 1 ? "" : "s"} em rascunho`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            />
+            <OverviewStat
+              value={upcomingTotal}
+              label={upcomingTotal === 1 ? "Retorno" : "Retornos"}
+              tone="success"
+              title="Agendamentos futuros"
+            />
+          </dl>
         </div>
       </section>
 
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[19rem_minmax(0,1fr)]">
-        <aside className="grid min-w-0 self-start overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)] lg:sticky lg:top-24">
-          {/* Foto e nome empilhados em toda largura. Lado a lado (o antigo
-              layout abaixo de lg) o nome ficava espremido e cortado no
-              celular, com a ajuda da foto sobrando embaixo dos dois. */}
-          <div className="grid justify-items-center gap-3 bg-gradient-to-b from-primary-muted to-transparent px-4 pb-5 pt-6 lg:px-5">
+      <div
+        className={cn(
+          "grid gap-4 @xl:grid-cols-2",
+          canSeeFinance && "@4xl:grid-cols-3",
+        )}
+      >
+        <SummaryTile
+          icon={CalendarCheck}
+          label="Último atendimento"
+          tone="primary"
+        >
+          {lastVisit ? (
+            <>
+              <p className="font-semibold text-foreground">
+                {formatLongDate(lastVisit.date, timeZone)}
+              </p>
+              <p className="mt-1.5 text-body-sm text-muted-foreground">
+                {lastVisit.title}
+                {lastVisit.professional ? (
+                  <>
+                    <br />
+                    com {lastVisit.professional}
+                  </>
+                ) : null}
+              </p>
+            </>
+          ) : (
+            <p className="font-semibold text-foreground">Nenhum ainda</p>
+          )}
+          {lastVisit?.href ? (
+            <Link
+              href={lastVisit.href}
+              aria-label="Abrir o prontuário do último atendimento"
+              className="absolute inset-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            />
+          ) : null}
+          {lastVisit?.href ? (
+            <CaretRight
+              className="absolute right-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+          ) : null}
+        </SummaryTile>
+
+        <SummaryTile
+          icon={CalendarDays}
+          label="Próximo atendimento"
+          tone="primary"
+          action={
+            canSchedule && active ? (
+              <PatientScheduleButton
+                patientId={patient.id}
+                patientName={displayName}
+                label={nextAppointment ? "Agendar outro" : "Agendar retorno"}
+              />
+            ) : null
+          }
+        >
+          {nextAppointment ? (
+            <>
+              <p className="font-semibold text-foreground">
+                {formatLongDate(nextAppointment.start_at, timeZone)},{" "}
+                {formatTime(nextAppointment.start_at, timeZone)}
+              </p>
+              <p className="mt-1.5 text-body-sm text-muted-foreground">
+                {nextAppointment.procedures?.name ?? "Atendimento"}
+                {professionalName.get(nextAppointment.professional_id)
+                  ? ` com ${professionalName.get(nextAppointment.professional_id)}`
+                  : ""}
+              </p>
+            </>
+          ) : (
+            <p className="font-semibold text-foreground">
+              {canSeeAgenda ? "Não agendado" : "Sem acesso à agenda"}
+            </p>
+          )}
+        </SummaryTile>
+
+        {canSeeFinance ? (
+          <SummaryTile
+            className="@xl:col-span-2 @4xl:col-span-1"
+            icon={Wallet}
+            label="Status financeiro"
+            tone="warning"
+            action={
+              <Button asChild variant="secondary" size="sm">
+                <TabSelectionButton value="finance" scrollToTop>
+                  Ver lançamentos
+                </TabSelectionButton>
+              </Button>
+            }
+          >
+            <p className="font-semibold text-foreground">
+              {openBalance > 0 ? "Saldo em aberto" : "Sem saldo em aberto"}
+            </p>
+            <p
+              className={cn(
+                "mt-1 text-heading font-bold tabular-nums",
+                openBalance > 0
+                  ? "text-destructive-foreground"
+                  : "text-success-foreground",
+              )}
+            >
+              {formatCurrency(openBalance)}
+            </p>
+            {overdueBalance > 0 ? (
+              <p className="text-caption text-destructive-foreground">
+                {formatCurrency(overdueBalance)} vencido
+              </p>
+            ) : null}
+          </SummaryTile>
+        ) : null}
+      </div>
+
+      <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1.38fr)_minmax(0,1fr)] @4xl:items-start">
+        <div className="grid min-w-0 gap-4">
+          {canSeeAgenda || canSeeClinicalRecords ? (
+            <OverviewCard
+              icon={ClipboardText}
+              title="Histórico de atendimentos"
+              action={
+                <ViewAllTab tab={canSeeAgenda ? "agenda" : "prontuario"} />
+              }
+              bodyClassName="pt-0"
+            >
+              {canSeeAgenda ? (
+                pastAppointments.length ? (
+                  <ol className="grid">
+                    {pastAppointments
+                      .slice(0, 4)
+                      .map((appointment, index, list) => {
+                        const encounter = encounterByAppointmentId.get(
+                          appointment.id,
+                        );
+                        return (
+                          <TimelineItem
+                            key={appointment.id}
+                            first={index === 0}
+                            last={index === list.length - 1}
+                          >
+                            <PatientAppointmentActions
+                              variant="timeline"
+                              highlight={index === 0}
+                              dateLabel={formatShortDate(
+                                appointment.start_at,
+                                timeZone,
+                              )}
+                              timeLabel={formatTime(
+                                appointment.start_at,
+                                timeZone,
+                              )}
+                              id={appointment.id}
+                              procedureName={
+                                appointment.procedures?.name ?? "Atendimento"
+                              }
+                              status={appointment.status}
+                              statusLabel={timelineStatusLabel(
+                                appointment.status,
+                              )}
+                              statusVariant={appointmentStatusVariant(
+                                appointment.status,
+                              )}
+                              dateTimeLabel={formatDateTimeRange(
+                                appointment.start_at,
+                                appointment.end_at,
+                                timeZone,
+                              )}
+                              professionalName={
+                                professionalName.get(
+                                  appointment.professional_id,
+                                ) ?? "Profissional"
+                              }
+                              insuranceName={
+                                appointment.health_insurances?.name ?? null
+                              }
+                              agendaHref={`/agenda?date=${localDateKey(
+                                appointment.start_at,
+                                timeZone,
+                              )}`}
+                              canEditAgenda={canEditAgenda}
+                              canStartEncounter={canWriteClinical}
+                              patientId={patient.id}
+                              professionalId={appointment.professional_id}
+                              professionals={encounterProfessionals}
+                              templates={encounterTemplates}
+                              encounterStatus={encounter?.status}
+                              encounterHref={
+                                encounter
+                                  ? `/prontuario/${encounter.id}?from=paciente`
+                                  : undefined
+                              }
+                            />
+                          </TimelineItem>
+                        );
+                      })}
+                  </ol>
+                ) : (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    Nenhum atendimento registrado.
+                  </p>
+                )
+              ) : encounters.length ? (
+                <ol className="grid">
+                  {encounters.slice(0, 4).map((encounter, index, list) => (
+                    <TimelineItem
+                      key={encounter.id}
+                      first={index === 0}
+                      last={index === list.length - 1}
+                    >
+                      <Link
+                        href={`/prontuario/${encounter.id}?from=paciente`}
+                        className="group grid w-full grid-cols-[5.25rem_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-2 py-2.5 transition-colors duration-[var(--motion-fast)] hover:bg-muted/60"
+                      >
+                        <span className="grid">
+                          <span
+                            className={cn(
+                              "text-sm font-medium tabular-nums",
+                              index === 0 ? "text-primary" : "text-foreground",
+                            )}
+                          >
+                            {formatShortDate(encounter.started_at, timeZone)}
+                          </span>
+                          <span className="text-caption tabular-nums text-muted-foreground">
+                            {formatTime(encounter.started_at, timeZone)}
+                          </span>
+                        </span>
+                        <span className="grid min-w-0">
+                          <span className="truncate text-sm font-semibold">
+                            {entryByEncounter.get(encounter.id)
+                              ?.template_snapshot.name ?? "Atendimento clínico"}
+                          </span>
+                          <span className="truncate text-caption text-muted-foreground">
+                            {professionalName.get(encounter.professional_id) ??
+                              "Profissional"}
+                          </span>
+                        </span>
+                        <Badge
+                          variant={
+                            encounter.status === "finalized"
+                              ? "success"
+                              : "warning"
+                          }
+                          className="rounded-full"
+                        >
+                          {encounter.status === "finalized"
+                            ? "Finalizado"
+                            : "Rascunho"}
+                        </Badge>
+                        <CaretRight
+                          className="size-4 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                      </Link>
+                    </TimelineItem>
+                  ))}
+                </ol>
+              ) : (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Nenhum atendimento registrado.
+                </p>
+              )}
+            </OverviewCard>
+          ) : null}
+
+          {canSeeClinicalRecords ? (
+            <PatientDocumentsCard
+              patientId={patient.id}
+              items={documentItems}
+              limit={5}
+              canUpload={canWriteClinical}
+              uploadAvailable={attachmentsUpgraded}
+            />
+          ) : null}
+        </div>
+
+        <div className="grid min-w-0 gap-4">
+          {canSeeClinicalRecords ? (
+            <PatientDiagnosesCard
+              patientId={patient.id}
+              available={diagnosesAvailable}
+              canEdit={canWriteClinical}
+              diagnoses={patientDiagnoses}
+              suggestions={diagnosisSuggestions}
+            />
+          ) : null}
+
+          {canSeeClinicalRecords ? (
+            <OverviewCard
+              icon={Prescription}
+              title="Últimas prescrições"
+              action={
+                prescriptionLines.length ? (
+                  <ViewAllTab tab="prescriptions" label="Ver todas" />
+                ) : null
+              }
+            >
+              {prescriptionLines.length ? (
+                <ul className="divide-y divide-border rounded-md border border-border">
+                  {prescriptionLines.slice(0, 3).map((line) => (
+                    <li key={line.key}>
+                      <a
+                        href={`/documentos/${line.documentId}/pdf`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex min-w-0 items-center gap-3 px-3 py-2.5 transition-colors duration-[var(--motion-fast)] hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+                      >
+                        <span
+                          className={cn(
+                            "flex size-9 shrink-0 items-center justify-center rounded-full",
+                            line.continuous
+                              ? "bg-success-muted text-success-foreground"
+                              : "bg-primary-muted text-primary",
+                          )}
+                          aria-hidden="true"
+                        >
+                          <Pill className="size-[18px]" weight="fill" />
+                        </span>
+                        <span className="grid min-w-0 flex-1">
+                          <span className="truncate text-sm font-semibold text-foreground">
+                            {line.name}
+                          </span>
+                          {line.detail ? (
+                            <span className="truncate text-caption text-muted-foreground">
+                              {line.detail}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="shrink-0 text-caption tabular-nums text-muted-foreground">
+                          {line.dateLabel}
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-md border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+                  Nenhuma prescrição emitida.
+                </p>
+              )}
+            </OverviewCard>
+          ) : null}
+
+          {canSeeMessages ? (
+            <OverviewCard
+              icon={ChatCenteredText}
+              title="Mensagens"
+              action={
+                conversations.length ? (
+                  <ViewAllTab tab="messages" label="Ver todas" />
+                ) : null
+              }
+            >
+              {conversations.length ? (
+                <ul className="divide-y divide-border">
+                  {conversations.slice(0, 2).map((conversation) => {
+                    const contact = contactById.get(conversation.contact_id);
+                    const name =
+                      contact?.wa_name ||
+                      (contact?.phone
+                        ? formatPhoneBR(contact.phone)
+                        : "Contato do WhatsApp");
+                    return (
+                      <li key={conversation.id}>
+                        <PatientConversationPreview
+                          conversationId={conversation.id}
+                          organizationId={organizationId}
+                          contactName={name}
+                          row={{
+                            initials: contact?.wa_name
+                              ? initialsFromName(contact.wa_name)
+                              : null,
+                            statusLabel: conversationStatusLabel(
+                              conversation.status,
+                            ),
+                            statusVariant: conversationStatusVariant(
+                              conversation.status,
+                            ),
+                            preview:
+                              conversation.last_message_preview ||
+                              "Sem mensagens.",
+                            dateLabel: conversation.last_message_at
+                              ? formatNumericDate(
+                                  conversation.last_message_at,
+                                  timeZone,
+                                )
+                              : null,
+                            timeLabel: conversation.last_message_at
+                              ? formatTime(
+                                  conversation.last_message_at,
+                                  timeZone,
+                                )
+                              : null,
+                          }}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="rounded-md border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+                  Nenhuma conversa vinculada ao paciente.
+                </p>
+              )}
+            </OverviewCard>
+          ) : null}
+        </div>
+      </div>
+
+      {canSeeSensitive ? (
+        <PatientNotesCard
+          patientId={patient.id}
+          notes={notesResult.data?.general_notes ?? null}
+          available={!notesResult.error}
+          canEdit={canEdit}
+        />
+      ) : null}
+    </div>
+  );
+
+  return (
+    <div className="grid gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+          <Breadcrumb
+            items={[
+              { label: "Pacientes", href: "/pacientes" },
+              { label: displayName },
+            ]}
+          />
+          <Badge variant={statusBadge.variant} className="rounded-full px-2.5">
+            {statusBadge.label}
+          </Badge>
+        </div>
+        <PatientHeaderActions
+          patientId={patient.id}
+          patientName={displayName}
+          archived={Boolean(patient.deleted_at)}
+          deceased={Boolean(patient.deceased_at)}
+          canArchive={canArchive}
+          canEdit={canEdit}
+          canEditLifeStatus={canEdit && canSeeSensitive}
+          canSchedule={canSchedule && active}
+          canStartEncounter={canWriteClinical && active}
+          conversationHref={conversationHref}
+          encounterAppointments={encounterAppointments}
+          encounterProfessionals={encounterProfessionals}
+          encounterTemplates={encounterTemplates}
+        />
+      </header>
+
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start">
+        <aside className="min-w-0 overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)] lg:sticky lg:top-20">
+          <div className="grid justify-items-center gap-3 px-4 pb-4 pt-5 text-center">
             <PatientPhotoForm
               patientId={patient.id}
               photoUrl={photoUrl}
               initials={initialsFromName(displayName)}
               canEdit={canEdit}
-              completeness={canSeeSensitive ? completeness : null}
-              deceased={Boolean(patient.deceased_at)}
             />
-
-            <div className="min-w-0 max-w-full text-center">
-              {/* Quebra em vez de cortar: é o nome do paciente, a
-                  informação que confirma que a ficha é a certa. */}
-              <h2 className="text-balance break-words font-semibold">
+            <div className="grid min-w-0 max-w-full gap-1">
+              {/* Quebra em vez de cortar: é o nome que confirma que a ficha
+                  é a certa. */}
+              <h1 className="text-balance break-words text-heading font-semibold text-foreground">
                 {displayName}
-              </h2>
+              </h1>
               {patient.social_name ? (
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="text-caption text-muted-foreground">
                   Nome civil: {patient.full_name}
                 </p>
               ) : null}
+              <p className="text-body-sm text-secondary-foreground">
+                {[
+                  patient.birth_date
+                    ? `${patientAge(patient.birth_date, patient.deceased_at)} (${formatDate(patient.birth_date)})`
+                    : null,
+                  patient.sex_at_birth &&
+                  patient.sex_at_birth !== "not_informed"
+                    ? sexLabel(patient.sex_at_birth)
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "Idade e sexo não informados"}
+              </p>
+              {canSeeSensitive && patient.cpf ? (
+                <p className="text-body-sm tabular-nums text-secondary-foreground">
+                  CPF {formatCPF(patient.cpf)}
+                </p>
+              ) : null}
               {patient.deceased_at ? (
-                <p className="mt-2 text-xs font-semibold text-destructive-foreground">
+                <p className="text-caption font-semibold text-destructive-foreground">
                   Óbito em {formatDate(patient.deceased_at)}
                 </p>
               ) : null}
+              {selectedTags.length ? (
+                <div className="mt-1 flex flex-wrap justify-center gap-1.5">
+                  {selectedTags.map((tag) => (
+                    <span
+                      key={tag.id}
+                      className="rounded-full border px-1.5 py-0.5 text-caption font-medium leading-none"
+                      style={{
+                        borderColor: `${tag.color}55`,
+                        color: tag.color,
+                        backgroundColor: `${tag.color}0D`,
+                      }}
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
-            {/* Editar fica junto da identificação do paciente, no cartão da
-                foto, e não solto no topo da página. */}
+            <PatientContactActions
+              phone={phoneDigits}
+              phoneLabel={phoneDigits ? formatPhoneBR(phoneDigits) : null}
+              whatsapp={patient.whatsapp}
+              email={patient.email}
+              cpf={
+                canSeeSensitive && patient.cpf ? formatCPF(patient.cpf) : null
+              }
+              conversationHref={conversationHref}
+            />
+
             {canEdit ? (
-              <Button asChild className="w-full">
+              <Button asChild className="mt-1 w-full">
                 <Link href={`/pacientes/${patient.id}/editar`}>
-                  <Edit3 className="size-4" aria-hidden="true" />
+                  <PencilSimpleLine className="size-4" aria-hidden="true" />
                   Editar paciente
                 </Link>
               </Button>
             ) : null}
           </div>
 
-          <div className="grid min-w-0 gap-4 px-4 pb-5 sm:px-5">
-            <div className="h-px bg-border" />
-
-            <PatientSidebarDetails
-              alert={
-                allergyItems.length ? (
-                  <AllergyAlert items={allergyItems} />
-                ) : null
-              }
-            >
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                <SidebarInfo
-                  icon={CalendarDays}
-                  label="Nascimento"
-                  value={
-                    patient.birth_date
-                      ? `${formatDate(patient.birth_date)} (${patientAge(
-                          patient.birth_date,
-                          patient.deceased_at,
-                        )})`
-                      : "Não informado"
-                  }
-                />
-                <SidebarInfo
-                  icon={UserRound}
-                  label="Sexo"
-                  value={sexLabel(patient.sex_at_birth)}
-                />
-                {canSeeSensitive ? (
-                  <SidebarInfo
-                    icon={CreditCard}
-                    label="CPF"
-                    value={
-                      patient.cpf ? formatCPF(patient.cpf) : "Não informado"
-                    }
-                  />
-                ) : null}
-                <SidebarInfo
-                  icon={Phone}
-                  label="Telefone"
-                  value={
-                    patient.phone
-                      ? formatPhoneBR(patient.phone)
-                      : patient.whatsapp
-                        ? formatPhoneBR(patient.whatsapp)
-                        : "Não informado"
-                  }
-                />
-                <SidebarInfo
-                  icon={Mail}
-                  label="E-mail"
-                  value={patient.email || "Não informado"}
-                />
-                {canSeeSensitive ? (
-                  <SidebarInfo
-                    icon={MapPin}
-                    label="Endereço"
-                    value={formatAddress(addressResult.data)}
-                  />
-                ) : null}
-                {/* Era preenchido na edição e não aparecia em lugar nenhum da
-                  ficha — justo quando alguém precisa ligar para ele. */}
-                {canSeeSensitive ? (
-                  <SidebarInfo
-                    icon={Lifebuoy}
-                    label="Contato de emergência"
-                    value={formatEmergencyContact(clinicalResult.data)}
-                  />
-                ) : null}
-              </div>
-
-              {selectedTags.length ? (
-                <SidebarSection icon={Tag} title="Tags">
-                  <div className="flex flex-wrap gap-2">
-                    {selectedTags.map((tag) => (
-                      <span
-                        key={tag.id}
-                        className="rounded-full border px-1.5 py-0.5 text-caption font-medium leading-none"
-                        style={{
-                          borderColor: `${tag.color}55`,
-                          color: tag.color,
-                          backgroundColor: `${tag.color}0D`,
-                        }}
-                      >
-                        {tag.name}
-                      </span>
-                    ))}
-                  </div>
-                </SidebarSection>
-              ) : null}
-
+          <PatientSidebarDetails
+            alert={
+              allergyItems.length ? <AllergyAlert items={allergyItems} /> : null
+            }
+          >
+            <div className="border-t border-border">
               {canSeeSensitive ? (
-                <ClinicalSidebar
+                <PatientClinicalList
                   patientId={patient.id}
                   summary={clinicalResult.data}
                   canEdit={canEdit}
                 />
               ) : (
-                <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                <p className="m-4 rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
                   Dados clínicos permanentes protegidos.
-                </div>
+                </p>
               )}
-            </PatientSidebarDetails>
-          </div>
+            </div>
+            <dl className="grid gap-2.5 border-t border-border px-4 py-4">
+              {infoRows.map((row) => {
+                const Icon = row.icon;
+                return (
+                  <div
+                    key={row.label}
+                    className="grid grid-cols-[1rem_5.25rem_minmax(0,1fr)] items-start gap-x-2.5 text-body-sm"
+                  >
+                    <Icon
+                      className="mt-0.5 size-4 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <dt className="text-secondary-foreground">{row.label}</dt>
+                    <dd
+                      className="break-words text-foreground"
+                      title={row.title}
+                    >
+                      {row.value}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </PatientSidebarDetails>
         </aside>
 
-        <main id="conteudo-paciente" className="min-w-0 self-start">
+        <main id="conteudo-paciente" className="min-w-0">
           <Tabs
             ariaLabel="Módulos do paciente"
+            variant="card"
             defaultTab={section}
             urlParam="section"
-            contentClassName="grid gap-5"
+            contentClassName="grid gap-4 pt-4"
             items={[
               {
                 id: "overview",
                 label: "Resumo",
-                icon: <UserRound className="size-4" aria-hidden="true" />,
+                icon: <Target />,
                 urlValue: null,
-                content: (
-                  <>
-                    <ModuleHeading
-                      title="Visão geral do paciente"
-                      description="Agenda, registros clínicos, documentos, financeiro e comunicação reunidos em um só lugar."
-                    />
-
-                    {canSeeAgenda || canSeeClinicalRecords ? (
-                      <PatientHistoryModule
-                        appointments={patientAppointments}
-                        appointmentTotal={
-                          patientAppointmentsResult.count ??
-                          patientAppointments.length
-                        }
-                        encounters={encounters}
-                        encounterTotal={
-                          encountersResult.count ?? encounters.length
-                        }
-                        entryByEncounter={entryByEncounter}
-                        diagnosisByEncounter={diagnosisByEncounter}
-                        professionalName={professionalName}
-                        appointmentById={appointmentById}
-                        canSeeAgenda={canSeeAgenda}
-                        canEditAgenda={canEditAgenda}
-                        canSeeClinicalRecords={canSeeClinicalRecords}
-                        timeZone={timeZone}
-                        viewAll
-                      />
-                    ) : null}
-
-                    <section className="grid gap-4 xl:grid-cols-2">
-                      {canSeeClinicalRecords ? (
-                        <DocumentsPanel
-                          documents={documentsResult.data ?? []}
-                          total={documentsResult.count ?? 0}
-                          timeZone={timeZone}
-                          viewAll
-                        />
-                      ) : null}
-                      {canSeeFinance ? (
-                        <FinancePanel
-                          receivables={receivablesResult.data ?? []}
-                          total={receivablesResult.count ?? 0}
-                          openBalance={openBalance}
-                          overdueBalance={overdueBalance}
-                          partialBalance={
-                            (receivablesResult.count ?? 0) >
-                            (receivablesResult.data?.length ?? 0)
-                          }
-                          today={today}
-                          viewAll
-                        />
-                      ) : null}
-                    </section>
-
-                    {canSeeMessages ? (
-                      <MessagesPanel
-                        conversations={conversations}
-                        contactById={contactById}
-                        communications={[]}
-                        organizationId={organizationId}
-                        timeZone={timeZone}
-                        viewAll
-                      />
-                    ) : null}
-                  </>
-                ),
+                content: overviewContent,
               },
-              ...(canSeeAgenda || canSeeClinicalRecords
+              ...(canSeeClinicalRecords
                 ? [
                     {
-                      id: "history",
-                      label: "Histórico",
-                      icon: <History className="size-4" aria-hidden="true" />,
+                      id: "prontuario",
+                      label: "Prontuário",
+                      icon: <PencilSimpleLine />,
                       content: (
-                        <PatientHistoryModule
+                        <section className="grid gap-4">
+                          <ModuleHeading
+                            title="Prontuário"
+                            description={`${encountersResult.count ?? encounters.length} registro${
+                              (encountersResult.count ?? encounters.length) ===
+                              1
+                                ? ""
+                                : "s"
+                            } clínico${
+                              (encountersResult.count ?? encounters.length) ===
+                              1
+                                ? ""
+                                : "s"
+                            } preenchido${
+                              (encountersResult.count ?? encounters.length) ===
+                              1
+                                ? ""
+                                : "s"
+                            } pelos profissionais.`}
+                          />
+                          <EncounterTimeline
+                            encounters={encounters}
+                            entryByEncounter={entryByEncounter}
+                            diagnosisByEncounter={diagnosisByEncounter}
+                            professionalName={professionalName}
+                            appointmentById={appointmentById}
+                            timeZone={timeZone}
+                          />
+                        </section>
+                      ),
+                    },
+                  ]
+                : []),
+              ...(canSeeAgenda
+                ? [
+                    {
+                      id: "agenda",
+                      label: "Agenda",
+                      icon: <CalendarBlank />,
+                      content: (
+                        <AppointmentsPanel
                           appointments={patientAppointments}
-                          appointmentTotal={
+                          canEditAgenda={canEditAgenda}
+                          canStartClinicalEncounter={canWriteClinical}
+                          encounters={encounters}
+                          encounterProfessionals={encounterProfessionals}
+                          encounterTemplates={encounterTemplates}
+                          patientId={patient.id}
+                          professionalName={professionalName}
+                          total={
                             patientAppointmentsResult.count ??
                             patientAppointments.length
                           }
-                          encounters={encounters}
-                          encounterTotal={
-                            encountersResult.count ?? encounters.length
-                          }
-                          entryByEncounter={entryByEncounter}
-                          diagnosisByEncounter={diagnosisByEncounter}
-                          professionalName={professionalName}
-                          appointmentById={appointmentById}
-                          canSeeAgenda={canSeeAgenda}
-                          canEditAgenda={canEditAgenda}
-                          canSeeClinicalRecords={canSeeClinicalRecords}
                           timeZone={timeZone}
+                          action={
+                            canSchedule && active ? (
+                              <PatientScheduleButton
+                                patientId={patient.id}
+                                patientName={displayName}
+                                label="Agendar consulta"
+                              />
+                            ) : null
+                          }
                         />
                       ),
                     },
@@ -805,12 +1715,13 @@ export default async function PatientDetailsPage({
                     {
                       id: "documents",
                       label: "Documentos",
-                      icon: <FileText className="size-4" aria-hidden="true" />,
+                      icon: <FileText />,
                       content: (
-                        <DocumentsPanel
-                          documents={documentsResult.data ?? []}
-                          total={documentsResult.count ?? 0}
-                          timeZone={timeZone}
+                        <PatientDocumentsCard
+                          patientId={patient.id}
+                          items={documentItems}
+                          canUpload={canWriteClinical}
+                          uploadAvailable={attachmentsUpgraded}
                         />
                       ),
                     },
@@ -821,9 +1732,7 @@ export default async function PatientDetailsPage({
                     {
                       id: "finance",
                       label: "Financeiro",
-                      icon: (
-                        <CreditCard className="size-4" aria-hidden="true" />
-                      ),
+                      icon: <CreditCard />,
                       content: (
                         <FinancePanel
                           receivables={receivablesResult.data ?? []}
@@ -845,9 +1754,7 @@ export default async function PatientDetailsPage({
                     {
                       id: "messages",
                       label: "Mensagens",
-                      icon: (
-                        <MessageSquare className="size-4" aria-hidden="true" />
-                      ),
+                      icon: <ChatCenteredText />,
                       content: (
                         <MessagesPanel
                           conversations={conversations}
@@ -860,12 +1767,362 @@ export default async function PatientDetailsPage({
                     },
                   ]
                 : []),
+              ...(canSeeClinicalRecords
+                ? [
+                    {
+                      id: "prescriptions",
+                      label: "Prescrições",
+                      icon: <Prescription />,
+                      content: (
+                        <PrescriptionsPanel
+                          prescriptions={prescriptions}
+                          professionalName={professionalName}
+                          timeZone={timeZone}
+                        />
+                      ),
+                    },
+                  ]
+                : []),
             ]}
           />
         </main>
       </div>
     </div>
   );
+}
+
+const documentShortLabel: Partial<
+  Record<keyof typeof documentTypeLabels, string>
+> = {
+  exam_request: "Pedido de exame",
+  attendance_declaration: "Declaração",
+  patient_instructions: "Orientações",
+  clinical_report: "Laudo",
+};
+
+const consentShortLabel: Record<string, string> = {
+  pending: "Termo pendente",
+  signed: "Termo assinado",
+  cancelled: "Termo cancelado",
+  revoked: "Termo revogado",
+};
+
+function OverviewStat({
+  label,
+  title,
+  tone,
+  value,
+}: {
+  label: string;
+  title?: string;
+  tone: "neutral" | "danger" | "success";
+  value: number;
+}) {
+  return (
+    <div
+      title={title || undefined}
+      className={cn(
+        "grid min-w-0 content-center rounded-md px-3.5 py-2",
+        tone === "danger"
+          ? "bg-destructive-muted text-destructive-foreground"
+          : tone === "success"
+            ? "bg-success-muted text-success-foreground"
+            : "bg-card text-foreground",
+      )}
+    >
+      <dd className="order-1 text-heading font-bold leading-tight tabular-nums">
+        {value}
+      </dd>
+      <dt
+        className={cn(
+          "order-2 truncate text-caption",
+          tone === "neutral" ? "text-secondary-foreground" : "text-current",
+        )}
+      >
+        {label}
+      </dt>
+    </div>
+  );
+}
+
+function SummaryTile({
+  action,
+  children,
+  className,
+  icon: Icon,
+  label,
+  tone,
+}: {
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  icon: React.ComponentType<{ className?: string; weight?: "duotone" }>;
+  label: string;
+  tone: "primary" | "warning";
+}) {
+  return (
+    <section
+      className={cn(
+        "relative flex min-w-0 gap-3.5 rounded-lg border border-border bg-card p-4 pr-5 shadow-[var(--shadow-soft)] transition-shadow duration-[var(--motion-fast)] has-[a.absolute:hover]:shadow-[var(--shadow-hover)]",
+        className,
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-12 shrink-0 items-center justify-center rounded-full",
+          tone === "warning"
+            ? "bg-warning-muted text-warning-foreground"
+            : "bg-primary-muted text-primary",
+        )}
+        aria-hidden="true"
+      >
+        <Icon className="size-6" weight="duotone" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <h2 className="text-caption text-muted-foreground">{label}</h2>
+        <div className="mt-1 min-w-0">{children}</div>
+        {action ? (
+          <div className="mt-auto flex justify-end pt-3">{action}</div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/** Um ponto da linha do tempo: bolinha à esquerda e a linha que liga. */
+function TimelineItem({
+  children,
+  first,
+  last,
+}: {
+  children: React.ReactNode;
+  first: boolean;
+  last: boolean;
+}) {
+  return (
+    <li className="relative pl-6">
+      <span
+        className={cn(
+          "absolute left-[7px] w-px bg-border",
+          first ? "top-1/2" : "top-0",
+          last ? "bottom-1/2" : "bottom-0",
+        )}
+        aria-hidden="true"
+      />
+      <span
+        className={cn(
+          "absolute left-[3px] top-1/2 size-[9px] -translate-y-1/2 rounded-full",
+          first ? "bg-primary ring-4 ring-primary-muted" : "bg-border-strong",
+        )}
+        aria-hidden="true"
+      />
+      <div className={cn(!last && "border-b border-border")}>{children}</div>
+    </li>
+  );
+}
+
+function PrescriptionsPanel({
+  prescriptions,
+  professionalName,
+  timeZone,
+}: {
+  prescriptions: PrescriptionRow[];
+  professionalName: Map<string, string>;
+  timeZone: string;
+}) {
+  return (
+    <section className="grid gap-4">
+      <ModuleHeading
+        title="Prescrições"
+        description={
+          prescriptions.length
+            ? `${prescriptions.length} prescriç${prescriptions.length === 1 ? "ão emitida" : "ões emitidas"} nos atendimentos.`
+            : "Prescrições emitidas nos atendimentos do paciente."
+        }
+      />
+      {prescriptions.length ? (
+        <div className="grid gap-3">
+          {prescriptions.map((prescription) => {
+            const items = parsePrescriptionItems(prescription.body);
+            return (
+              <Card key={prescription.id}>
+                <CardHeader className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold">
+                      {prescription.title}
+                    </h3>
+                    <p className="text-caption text-muted-foreground">
+                      {formatNumericDate(prescription.issued_at, timeZone)} ·{" "}
+                      {professionalName.get(prescription.professional_id) ??
+                        "Profissional"}
+                    </p>
+                  </div>
+                  <Button asChild variant="secondary" size="sm">
+                    <a
+                      href={`/documentos/${prescription.id}/pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Abrir PDF
+                    </a>
+                  </Button>
+                </CardHeader>
+                <CardContent className="py-3">
+                  {items.length ? (
+                    <ul className="grid gap-2">
+                      {items.map((item, index) => (
+                        <li
+                          key={`${prescription.id}-${index}`}
+                          className="flex min-w-0 items-center gap-3"
+                        >
+                          <span
+                            className={cn(
+                              "flex size-8 shrink-0 items-center justify-center rounded-full",
+                              item.continuous
+                                ? "bg-success-muted text-success-foreground"
+                                : "bg-primary-muted text-primary",
+                            )}
+                            aria-hidden="true"
+                          >
+                            <Pill className="size-4" weight="fill" />
+                          </span>
+                          <span className="grid min-w-0">
+                            <span className="truncate text-sm font-semibold">
+                              {item.name}
+                            </span>
+                            {describePrescriptionItem(item) ? (
+                              <span className="truncate text-caption text-muted-foreground">
+                                {describePrescriptionItem(item)}
+                              </span>
+                            ) : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="whitespace-pre-line text-sm text-secondary-foreground">
+                      {stripRichTextMarkers(prescription.body)}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <Card>
+          <EmptyState
+            icon={Prescription}
+            title="Nenhuma prescrição emitida"
+            description="As prescrições são emitidas dentro do atendimento, na aba de documentos do prontuário."
+          />
+        </Card>
+      )}
+    </section>
+  );
+}
+
+function normalizePatientSection(value?: string): PatientSection {
+  // "history" era a aba antiga (agenda + prontuário juntos).
+  if (value === "history") return "prontuario";
+  return [
+    "prontuario",
+    "agenda",
+    "documents",
+    "finance",
+    "messages",
+    "prescriptions",
+  ].includes(value ?? "")
+    ? (value as PatientSection)
+    : "overview";
+}
+
+function isPatientSectionAllowed(
+  section: PatientSection,
+  permissions: {
+    canSeeAgenda: boolean;
+    canSeeClinicalRecords: boolean;
+    canSeeFinance: boolean;
+    canSeeMessages: boolean;
+  },
+) {
+  if (section === "agenda") return permissions.canSeeAgenda;
+  if (
+    section === "prontuario" ||
+    section === "documents" ||
+    section === "prescriptions"
+  ) {
+    return permissions.canSeeClinicalRecords;
+  }
+  if (section === "finance") return permissions.canSeeFinance;
+  if (section === "messages") return permissions.canSeeMessages;
+  return true;
+}
+
+/** Na linha do tempo "Atendido" aparece como "Concluído", como no Resumo. */
+function timelineStatusLabel(status: string) {
+  if (status === "attended") return "Concluído";
+  return appointmentStatusLabel(status);
+}
+
+function formatEmergencyContact(summary?: ClinicalSummary | null) {
+  const name = summary?.emergency_contact_name?.trim();
+  const relationship = summary?.emergency_contact_relationship?.trim();
+  const phone = summary?.emergency_contact_phone?.trim();
+  const person = name
+    ? relationship
+      ? `${name} (${relationship})`
+      : name
+    : relationship;
+  const parts = [person, phone ? formatPhoneBR(phone) : null].filter(Boolean);
+  return parts.length ? parts.join(" - ") : "Não informado";
+}
+
+function formatCityState(address?: AddressRow | null) {
+  if (!address) return "Não informado";
+  return (
+    [address.city, address.state?.toUpperCase()].filter(Boolean).join(" - ") ||
+    formatAddress(address)
+  );
+}
+
+/** "13 jul 2026". */
+function formatShortDate(value: string, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone,
+  }).formatToParts(new Date(value));
+  const part = (type: string) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("day")} ${part("month").replace(".", "")} ${part("year")}`;
+}
+
+/** "13 de julho de 2026". */
+function formatLongDate(value: string, timeZone: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "long",
+    timeZone,
+  }).format(new Date(value));
+}
+
+/** "13/07/2026". */
+function formatNumericDate(value: string, timeZone: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone,
+  }).format(new Date(value));
+}
+
+function formatTime(value: string, timeZone: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(value));
 }
 
 function ModuleHeading({
@@ -888,111 +2145,30 @@ function ModuleHeading({
   );
 }
 
-function PatientHistoryModule({
-  appointmentById,
-  appointmentTotal,
-  appointments,
-  canEditAgenda,
-  canSeeAgenda,
-  canSeeClinicalRecords,
-  diagnosisByEncounter,
-  encounterTotal,
-  encounters,
-  entryByEncounter,
-  professionalName,
-  timeZone,
-  viewAll = false,
-}: {
-  appointmentById: Map<string, AppointmentRow>;
-  appointmentTotal: number;
-  appointments: AppointmentRow[];
-  canEditAgenda: boolean;
-  canSeeAgenda: boolean;
-  canSeeClinicalRecords: boolean;
-  diagnosisByEncounter: Map<string, DiagnosisRow>;
-  encounterTotal: number;
-  encounters: EncounterRow[];
-  entryByEncounter: Map<string, EncounterEntryRow>;
-  professionalName: Map<string, string>;
-  timeZone: string;
-  viewAll?: boolean;
-}) {
-  const visibleAppointments = viewAll ? appointments.slice(0, 5) : appointments;
-  const visibleEncounters = viewAll ? encounters.slice(0, 5) : encounters;
-
-  return (
-    <section className="grid gap-4">
-      <ModuleHeading
-        title="Histórico de atendimentos"
-        description={`${appointmentTotal} agendamento${
-          appointmentTotal === 1 ? "" : "s"
-        } e ${encounterTotal} registro${
-          encounterTotal === 1 ? "" : "s"
-        } clínico${encounterTotal === 1 ? "" : "s"}.`}
-        action={
-          viewAll ? (
-            <Button asChild variant="secondary" size="sm">
-              <TabSelectionButton value="history">
-                Ver histórico
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </TabSelectionButton>
-            </Button>
-          ) : undefined
-        }
-      />
-
-      {canSeeAgenda ? (
-        <AppointmentsPanel
-          appointments={visibleAppointments}
-          canEditAgenda={canEditAgenda}
-          encounters={encounters}
-          professionalName={professionalName}
-          total={appointmentTotal}
-          timeZone={timeZone}
-        />
-      ) : null}
-
-      {canSeeClinicalRecords ? (
-        <section className="grid gap-3">
-          <div>
-            <h3 className="font-semibold">Registros clínicos</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Evoluções e prontuários preenchidos pelos profissionais.
-            </p>
-          </div>
-          <EncounterTimeline
-            encounters={visibleEncounters}
-            entryByEncounter={entryByEncounter}
-            diagnosisByEncounter={diagnosisByEncounter}
-            professionalName={professionalName}
-            appointmentById={appointmentById}
-            timeZone={timeZone}
-          />
-        </section>
-      ) : (
-        <ProtectedPanel
-          title="Histórico clínico protegido"
-          description="Seu perfil não possui permissão para visualizar prontuários."
-        />
-      )}
-    </section>
-  );
-}
-
 function AppointmentsPanel({
+  action,
   appointments,
   canEditAgenda,
+  canStartClinicalEncounter,
   encounters,
+  encounterProfessionals,
+  encounterTemplates,
+  patientId,
   professionalName,
   timeZone,
   total,
 }: {
   appointments: AppointmentRow[];
   canEditAgenda: boolean;
+  canStartClinicalEncounter: boolean;
   encounters: EncounterRow[];
+  encounterProfessionals: EncounterProfessionalOption[];
+  encounterTemplates: EncounterTemplateOption[];
+  patientId: string;
   professionalName: Map<string, string>;
   timeZone: string;
   total: number;
+  action?: React.ReactNode;
 }) {
   const encounterByAppointmentId = new Map(
     encounters.flatMap((encounter) =>
@@ -1004,15 +2180,18 @@ function AppointmentsPanel({
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <CalendarDays className="size-4 text-primary" aria-hidden="true" />
-          <h3 className="font-semibold">Agenda</h3>
-          <Badge variant="neutral">{total}</Badge>
+      <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-48 flex-1">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="size-4 text-primary" aria-hidden="true" />
+            <h2 className="font-semibold">Agenda</h2>
+            <Badge variant="neutral">{total}</Badge>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Compromissos agendados, concluídos, cancelados e faltas.
+          </p>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Compromissos agendados, concluídos, cancelados e faltas.
-        </p>
+        {action}
       </CardHeader>
       <CardContent className="grid gap-2">
         {appointments.map((appointment) => {
@@ -1041,6 +2220,12 @@ function AppointmentsPanel({
                 timeZone,
               )}`}
               canEditAgenda={canEditAgenda}
+              canStartEncounter={canStartClinicalEncounter}
+              patientId={patientId}
+              professionalId={appointment.professional_id}
+              professionals={encounterProfessionals}
+              templates={encounterTemplates}
+              encounterStatus={encounter?.status}
               encounterHref={
                 encounter
                   ? `/prontuario/${encounter.id}?from=paciente`
@@ -1182,318 +2367,6 @@ function EncounterTimeline({
   );
 }
 
-function ClinicalSidebar({
-  canEdit,
-  patientId,
-  summary,
-}: {
-  canEdit: boolean;
-  patientId: string;
-  summary: ClinicalSummary | null;
-}) {
-  function editAction(
-    field:
-      | "allergies"
-      | "comorbidities"
-      | "medications"
-      | "medical_history"
-      | "family_history"
-      | "habits",
-    label: string,
-    value: string | null | undefined,
-  ) {
-    return canEdit ? (
-      <ClinicalQuickEditButton
-        patientId={patientId}
-        field={field}
-        label={label}
-        value={value}
-      />
-    ) : undefined;
-  }
-
-  return (
-    <div className="grid gap-3">
-      <SidebarSection
-        icon={ShieldAlert}
-        title="Alergias"
-        tone="danger"
-        action={editAction("allergies", "Alergias", summary?.allergies)}
-      >
-        <BulletList
-          items={splitSummary(summary?.allergies)}
-          empty="Sem alergias registradas."
-        />
-      </SidebarSection>
-      <SidebarSection
-        icon={HeartPulse}
-        title="Comorbidades"
-        tone="warning"
-        action={editAction(
-          "comorbidities",
-          "Comorbidades",
-          summary?.comorbidities,
-        )}
-      >
-        <BulletList
-          items={splitSummary(summary?.comorbidities)}
-          empty="Nenhuma comorbidade registrada."
-        />
-      </SidebarSection>
-      <SidebarSection
-        icon={Stethoscope}
-        title="Medicações contínuas"
-        tone="primary"
-        action={editAction(
-          "medications",
-          "Medicações contínuas",
-          summary?.medications,
-        )}
-      >
-        <BulletList
-          items={splitSummary(summary?.medications)}
-          empty="Nenhuma medicação registrada."
-        />
-      </SidebarSection>
-      <SidebarSection
-        icon={FileText}
-        title="Antecedentes pessoais"
-        tone="neutral"
-        action={editAction(
-          "medical_history",
-          "Antecedentes pessoais",
-          summary?.medical_history,
-        )}
-      >
-        <BulletList
-          items={splitSummary(summary?.medical_history)}
-          empty="Sem antecedentes pessoais registrados."
-        />
-      </SidebarSection>
-      <SidebarSection
-        icon={FileText}
-        title="História familiar"
-        tone="neutral"
-        action={editAction(
-          "family_history",
-          "História familiar",
-          summary?.family_history,
-        )}
-      >
-        <BulletList
-          items={splitSummary(summary?.family_history)}
-          empty="Sem história familiar registrada."
-        />
-      </SidebarSection>
-      <SidebarSection
-        icon={UserRound}
-        title="Hábitos"
-        tone="success"
-        action={editAction("habits", "Hábitos", summary?.habits)}
-      >
-        <BulletList
-          items={splitSummary(summary?.habits)}
-          empty="Sem hábitos registrados."
-        />
-      </SidebarSection>
-    </div>
-  );
-}
-
-function SidebarInfo({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex gap-3">
-      <Icon
-        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <div className="min-w-0">
-        <p className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-0.5 break-words text-sm">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-const sectionTones = {
-  // Tom "-foreground": o vermelho base em 12px sobre o fundo rosado ficava
-  // abaixo do contraste mínimo, justo no título de Alergias.
-  danger: {
-    box: "border-destructive-muted bg-destructive-muted/40",
-    icon: "text-destructive-foreground",
-    title: "text-destructive-foreground",
-  },
-  warning: {
-    box: "border-warning-muted bg-warning-muted/40",
-    icon: "text-warning-foreground",
-    title: "text-warning-foreground",
-  },
-  primary: {
-    box: "border-primary-muted-hover bg-primary-muted/40",
-    icon: "text-primary",
-    title: "text-primary",
-  },
-  success: {
-    box: "border-success-muted bg-success-muted/40",
-    icon: "text-success-foreground",
-    title: "text-success-foreground",
-  },
-  neutral: {
-    box: "border-border bg-muted/40",
-    icon: "text-muted-foreground",
-    title: "text-muted-foreground",
-  },
-} as const;
-
-function SidebarSection({
-  icon: Icon,
-  title,
-  tone,
-  action,
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  tone?: keyof typeof sectionTones;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const style = tone ? sectionTones[tone] : null;
-
-  return (
-    <section
-      className={cn(
-        style ? `rounded-md border p-3 ${style.box}` : "grid gap-2",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Icon
-            className={cn(
-              "size-3.5 shrink-0",
-              style ? style.icon : "text-muted-foreground",
-            )}
-            aria-hidden="true"
-          />
-          <h3
-            className={cn(
-              "text-caption font-semibold uppercase tracking-wide",
-              style ? style.title : "text-muted-foreground",
-            )}
-          >
-            {title}
-          </h3>
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function BulletList({ items, empty }: { items: string[]; empty: string }) {
-  if (!items.length) {
-    return <p className="text-xs text-muted-foreground">{empty}</p>;
-  }
-
-  return (
-    <ul className="grid list-disc gap-1 pl-4 text-sm marker:text-current">
-      {items.map((item, index) => (
-        <li key={`${index}-${item}`}>{item}</li>
-      ))}
-    </ul>
-  );
-}
-
-function DocumentsPanel({
-  documents,
-  timeZone,
-  total,
-  viewAll = false,
-}: {
-  documents: PatientDocumentRow[];
-  timeZone: string;
-  total: number;
-  viewAll?: boolean;
-}) {
-  const visibleDocuments = viewAll ? documents.slice(0, 5) : documents;
-
-  return (
-    <Card className="min-w-0">
-      {/* flex de verdade: com só `flex-row` o "Ver todos" caía embaixo do
-          texto em vez de ficar à direita do título. O wrap com a largura
-          mínima do texto faz o botão descer de linha no celular, em vez de
-          espremer o texto em três linhas. */}
-      <CardHeader className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-        <div className="min-w-48 flex-1">
-          <h2 className="font-semibold">
-            {viewAll ? "Documentos recentes" : "Documentos"}
-          </h2>
-          {/* Sem documentos, o estado vazio logo abaixo já diz isso. */}
-          {total ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {total} documento{total === 1 ? "" : "s"} emitido
-              {total === 1 ? "" : "s"}.
-            </p>
-          ) : null}
-        </div>
-        {viewAll && total ? (
-          <Button asChild variant="ghost" size="sm" className="shrink-0">
-            <TabSelectionButton value="documents">
-              Ver todos
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </TabSelectionButton>
-          </Button>
-        ) : null}
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        {total > visibleDocuments.length ? (
-          <p className="text-xs text-muted-foreground">
-            Exibindo os {visibleDocuments.length} documentos mais recentes.
-          </p>
-        ) : null}
-        {visibleDocuments.map((document) => (
-          <div
-            key={document.id}
-            className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{document.title}</p>
-              <p className="text-xs text-muted-foreground">
-                {documentTypeLabels[document.document_type] ??
-                  document.document_type}{" "}
-                · {formatDateTime(document.issued_at, timeZone)}
-              </p>
-            </div>
-            <Button asChild variant="ghost" size="sm" className="shrink-0">
-              <Link
-                href={`/documentos/${document.id}/pdf`}
-                target="_blank"
-                aria-label={`Abrir ${document.title} em nova aba`}
-              >
-                Abrir
-              </Link>
-            </Button>
-          </div>
-        ))}
-        {!visibleDocuments.length ? (
-          <EmptyState icon={FileText} title="Nenhum documento emitido" />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
 function FinancePanel({
   openBalance,
   overdueBalance,
@@ -1559,23 +2432,26 @@ function FinancePanel({
           return (
             // min-w-0: sem ele o título em linha única esticava a linha além
             // do card e a página inteira ganhava rolagem lateral.
-            <div
+            <FinancialRecordTrigger
               key={receivable.id}
-              className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+              kind="receivable"
+              recordId={receivable.id}
+              label={receivable.description}
+              card
             >
-              <div className="min-w-0">
-                <p
-                  className="truncate text-sm font-medium"
+              <span className="min-w-0 flex-1">
+                <span
+                  className="block truncate text-sm font-medium"
                   title={receivable.description}
                 >
                   {receivable.description}
-                </p>
-                <p className="text-xs text-muted-foreground">
+                </span>
+                <span className="block text-xs text-muted-foreground">
                   Venc. {formatDate(receivable.due_date)} ·{" "}
                   {formatCurrency(receivable.paid_amount)} recebido de{" "}
                   {formatCurrency(receivable.amount)}
-                </p>
-              </div>
+                </span>
+              </span>
               {/* Vencido é o "Aberto" (ou "Parcial") que passou da data:
                   aparecia igual ao que ainda vai vencer. */}
               <Badge
@@ -1594,7 +2470,7 @@ function FinancePanel({
                 ) : null}
                 {overdue ? "Vencido" : receivableStatusLabel(receivable.status)}
               </Badge>
-            </div>
+            </FinancialRecordTrigger>
           );
         })}
         {!visibleReceivables.length ? (
@@ -1767,47 +2643,6 @@ function MessagesPanel({
   );
 }
 
-function ProtectedPanel({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="py-10 text-center">
-        <h2 className="font-semibold">{title}</h2>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function normalizePatientSection(value?: string): PatientSection {
-  return ["history", "documents", "finance", "messages"].includes(value ?? "")
-    ? (value as PatientSection)
-    : "overview";
-}
-
-function isPatientSectionAllowed(
-  section: PatientSection,
-  permissions: {
-    canSeeAgenda: boolean;
-    canSeeClinicalRecords: boolean;
-    canSeeFinance: boolean;
-    canSeeMessages: boolean;
-  },
-) {
-  if (section === "history") {
-    return permissions.canSeeAgenda || permissions.canSeeClinicalRecords;
-  }
-  if (section === "documents") return permissions.canSeeClinicalRecords;
-  if (section === "finance") return permissions.canSeeFinance;
-  if (section === "messages") return permissions.canSeeMessages;
-  return true;
-}
-
 function appointmentStatusLabel(status: string) {
   const labels: Record<string, string> = {
     scheduled: "Agendado",
@@ -1861,19 +2696,6 @@ function isReceivableOverdue(
     ["open", "partial"].includes(receivable.status) &&
     receivable.due_date < today
   );
-}
-
-function formatEmergencyContact(summary?: ClinicalSummary | null) {
-  const name = summary?.emergency_contact_name?.trim();
-  const relationship = summary?.emergency_contact_relationship?.trim();
-  const phone = summary?.emergency_contact_phone?.trim();
-  const person = name
-    ? relationship
-      ? `${name} (${relationship})`
-      : name
-    : relationship;
-  const parts = [person, phone ? formatPhoneBR(phone) : null].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "Não informado";
 }
 
 /** Alergias à vista no celular, com os dados do paciente recolhidos. */
@@ -1946,7 +2768,11 @@ function splitSummary(value?: string | null) {
 }
 
 function summarizeNotes(value?: string | null) {
-  const clean = value?.replace(/\s+/g, " ").trim();
+  // As notas guardam a formatação do editor (**negrito**, "- item"): no
+  // resumo de uma linha vale só o texto.
+  const clean = value
+    ? stripRichTextMarkers(value).replace(/\s+/g, " ").trim()
+    : "";
   if (!clean) return null;
   return clean.length > 140 ? `${clean.slice(0, 139).trimEnd()}…` : clean;
 }

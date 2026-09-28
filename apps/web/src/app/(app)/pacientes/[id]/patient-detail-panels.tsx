@@ -96,7 +96,7 @@ export function ClinicalQuickEditButton({
   );
 }
 
-function ClinicalQuickEditDialog({
+export function ClinicalQuickEditDialog({
   field,
   label,
   patientId,

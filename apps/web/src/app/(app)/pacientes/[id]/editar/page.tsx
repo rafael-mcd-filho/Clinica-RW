@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { loadPatientInsuranceOptions } from "../../insurance-options";
 
 type AddressRow = NonNullable<PatientFormValues["address"]>;
 type PatientTagRow = { tag_id: string };
@@ -72,6 +73,7 @@ export default async function EditPatientPage({
     patientTagsResult,
     deathNotesResult,
     timezoneResult,
+    insuranceOptions,
   ] = await Promise.all([
     canSeeSensitive
       ? supabase
@@ -126,6 +128,7 @@ export default async function EditPatientPage({
       .select("timezone")
       .eq("organization_id", organizationId)
       .maybeSingle<OrganizationTimeZoneRow>(),
+    loadPatientInsuranceOptions(supabase, organizationId, id),
   ]);
 
   const displayName = patient.social_name || patient.full_name;
@@ -139,6 +142,8 @@ export default async function EditPatientPage({
     cpf: patient.cpf ?? null,
     rg: patient.rg ?? null,
     address: addressResult.data,
+    health_insurance_id: insuranceOptions.current.id,
+    health_insurance_card: insuranceOptions.current.card,
   };
 
   return (
@@ -195,6 +200,7 @@ export default async function EditPatientPage({
               <PatientForm
                 patient={formPatient}
                 canSeeSensitive={canSeeSensitive}
+                insurances={insuranceOptions.options}
               />
             ) : (
               <FutureModulePanel
