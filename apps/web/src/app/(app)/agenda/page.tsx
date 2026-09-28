@@ -35,6 +35,7 @@ export default async function AgendaPage({
     paymentMethods,
     availability,
     insurancePrices,
+    clinicalTemplates,
   ] = await Promise.all([
     supabase
       .from("organization_settings")
@@ -102,6 +103,21 @@ export default async function AgendaPage({
         "procedure_id, price, price_tables!inner(health_insurance_id, active)",
       )
       .eq("organization_id", organizationId),
+    canSeeClinicalRecords
+      ? supabase
+          .from("clinical_templates")
+          .select(
+            "id, name, description, is_default, clinical_template_versions(id, version_number)",
+          )
+          .eq("organization_id", organizationId)
+          .eq("status", "active")
+          .order("is_default", { ascending: false })
+          .order("name")
+          .order("version_number", {
+            referencedTable: "clinical_template_versions",
+            ascending: false,
+          })
+      : Promise.resolve({ data: [] }),
   ]);
 
   const timeZone = normalizeAgendaTimeZone(organizationSettings?.timezone);
@@ -201,6 +217,24 @@ export default async function AgendaPage({
     // aplicada o mapa de calor apenas não aparece — o resto da agenda segue.
     dayCounts: isDayCountMap(dayCounts.data) ? dayCounts.data : {},
     encounters: encounters.data ?? [],
+    clinicalTemplates: (clinicalTemplates.data ?? []).flatMap((template) => {
+      const versions = Array.isArray(template.clinical_template_versions)
+        ? template.clinical_template_versions
+        : [];
+      const latestVersion = versions[0];
+      return latestVersion
+        ? [
+            {
+              id: template.id,
+              name: template.name,
+              description: template.description,
+              is_default: template.is_default,
+              version_id: latestVersion.id,
+              version_number: latestVersion.version_number,
+            },
+          ]
+        : [];
+    }),
     availability: availability.data ?? [],
     blocks: blocks.data ?? [],
     waitlist: [],
@@ -235,16 +269,14 @@ function firstParam(value: string | string[] | undefined) {
 /** Indexa o preço de convênio por `${convênio}:${procedimento}`, que é como o
     formulário de agendamento procura. Tabela inativa não entra. */
 function buildInsurancePriceMap(
-  rows:
-    | Array<{
-        procedure_id: string;
-        price: number | string;
-        price_tables:
-          | { health_insurance_id: string | null; active: boolean }
-          | Array<{ health_insurance_id: string | null; active: boolean }>
-          | null;
-      }>
-    | null,
+  rows: Array<{
+    procedure_id: string;
+    price: number | string;
+    price_tables:
+      | { health_insurance_id: string | null; active: boolean }
+      | Array<{ health_insurance_id: string | null; active: boolean }>
+      | null;
+  }> | null,
 ): Record<string, number> {
   const map: Record<string, number> = {};
   for (const row of rows ?? []) {

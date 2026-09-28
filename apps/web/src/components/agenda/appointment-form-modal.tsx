@@ -50,6 +50,7 @@ export function AppointmentFormModal({
   patient = null,
   title = "Novo agendamento",
   defaultScheduleId = "",
+  defaultStart,
   defaultProcedureId = "",
   defaultExtra = false,
   waitlistEntryId = null,
@@ -64,6 +65,7 @@ export function AppointmentFormModal({
   patient?: { id: string; name: string } | null;
   title?: string;
   defaultScheduleId?: string;
+  defaultStart?: { date: string; time: string };
   defaultProcedureId?: string;
   defaultExtra?: boolean;
   /** Entrada da fila de espera que este agendamento fecha. */
@@ -179,6 +181,7 @@ export function AppointmentFormModal({
           </Select>
         </label>
         <AppointmentTimeField
+          defaultStart={defaultStart}
           name="start_at"
           label="Data e hora"
           required
@@ -361,6 +364,7 @@ function formatCurrency(value: number) {
 }
 
 export function AppointmentTimeField({
+  defaultStart,
   name,
   label,
   durationMinutes,
@@ -370,6 +374,7 @@ export function AppointmentTimeField({
   required,
   className,
 }: {
+  defaultStart?: { date: string; time: string };
   name: string;
   label: string;
   durationMinutes: number;
@@ -379,7 +384,9 @@ export function AppointmentTimeField({
   required?: boolean;
   className?: string;
 }) {
-  const initial = defaultAppointmentDateTime(data.timeZone, data.selectedDate);
+  const initial =
+    defaultStart ??
+    defaultAppointmentDateTime(data.timeZone, data.selectedDate);
   const [date, setDate] = useState(initial.date);
   const [startTime, setStartTime] = useState(initial.time);
   const normalizedStart = normalizeTimeValue(startTime);

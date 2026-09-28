@@ -1,0 +1,50 @@
+.details {
+  isolation: isolate;
+}
+
+@media print {
+  :global(body):has(.details) {
+    visibility: hidden;
+  }
+
+  .details,
+  .details * {
+    visibility: visible;
+  }
+
+  .details {
+    position: fixed !important;
+    inset: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    animation: none !important;
+  }
+
+  .details > div {
+    overflow: visible !important;
+  }
+
+  .details footer,
+  .details button,
+  .details form,
+  .screenOnly {
+    display: none !important;
+  }
+
+  .details section {
+    break-inside: avoid;
+  }
+
+  .printOnly {
+    display: block !important;
+  }
+}
+
+.printOnly {
+  display: none;
+}

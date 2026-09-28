@@ -142,18 +142,22 @@ export function TodayAppointmentsRail({
         </Tooltip>
       ) : null}
 
-      {open && !pinned ? (
-        <button
-          type="button"
-          aria-label="Fechar atendimentos do dia"
-          className="fixed inset-0 z-30 bg-black/10 lg:bg-transparent"
-          onClick={() => onOpenChange(false)}
-        />
-      ) : null}
+      {/* Sempre montado e com o mesmo tempo da gaveta: antes o fundo
+          aparecia e sumia de uma vez enquanto o painel deslizava. */}
+      <button
+        type="button"
+        aria-label="Fechar atendimentos do dia"
+        className={cn(
+          "fixed inset-0 z-30 bg-black/10 transition-opacity duration-[var(--motion-drawer)] ease-[var(--ease-out)] lg:bg-transparent",
+          open && !pinned ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+        inert={!(open && !pinned)}
+        onClick={() => onOpenChange(false)}
+      />
 
       <aside
         className={cn(
-          "fixed inset-y-0 right-0 z-40 flex w-[21rem] max-w-[calc(100vw-1rem)] flex-col border-l border-border bg-card shadow-[var(--shadow-hover)] transition-transform duration-[var(--motion-drawer)] ease-[var(--ease-out)]",
+          "fixed inset-y-0 right-0 z-40 flex w-[21rem] max-w-[calc(100vw-1rem)] flex-col border-l border-border bg-card shadow-[var(--shadow-hover)] transition-transform duration-[var(--motion-drawer)] ease-[var(--ease-out)] motion-reduce:transition-none",
           open ? "translate-x-0" : "pointer-events-none translate-x-full",
         )}
         aria-label="Atendimentos do dia"
@@ -352,7 +356,7 @@ function TodayAppointmentRow({
             aria-hidden
           />
         ) : null}
-        <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        <ChevronRight className="size-4 text-muted-foreground transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out)] group-hover:translate-x-0.5" />
       </div>
     </Link>
   );
