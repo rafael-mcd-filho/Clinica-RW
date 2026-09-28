@@ -38,6 +38,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   saveClinicalTemplate,
@@ -54,12 +55,14 @@ import {
   DropdownMenu,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSubmitItem,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input, Select, Textarea } from "@/components/ui/field";
 import { FormError } from "@/components/ui/form-error";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import {
   clinicalFieldTypes,
   cloneClinicalTemplateSchema,
@@ -100,6 +103,13 @@ type TemplateDraft = {
 };
 
 const initialActionState: ModelActionState = {};
+
+// Reordenar seções e campos: 200ms na curva do projeto (--ease-out). O padrão
+// do dnd-kit era 250ms com `ease`, mais lento e mais mole que o resto do app.
+const sortableTransition = {
+  duration: 200,
+  easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+};
 
 const fieldTypeLabels: Record<ClinicalFieldType, string> = {
   text: "Texto curto",
@@ -186,24 +196,29 @@ export function TemplateBuilderForm({
     <div className="grid gap-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="font-semibold">Modelos para episódios clínicos</h2>
+          {/* Mesmo nome da aba: "episódios clínicos" era outro nome para a
+              mesma coisa. */}
+          <h2 className="font-semibold">Fichas de atendimento</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Organize as fichas utilizadas durante o atendimento. Alterações
-            estruturais sempre geram uma nova versão.
+            O que o profissional preenche durante o atendimento. Cada alteração
+            publica uma nova versão; atendimentos antigos seguem na versão da
+            época.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* shrink-0: o texto ao lado é quem quebra linha. Sem isso o grupo
+            encolhia e os dois botões ficavam empilhados e desalinhados. */}
+        <div className="flex shrink-0 flex-wrap gap-2">
           <Button
             type="button"
             variant="secondary"
             onClick={createSoapTemplate}
           >
-            <ClipboardList className="size-4" />
+            <ClipboardList className="size-4" aria-hidden="true" />
             Usar modelo SOAP
           </Button>
           <Button type="button" onClick={createTemplate}>
-            <FilePlus2 className="size-4" />
-            Criar modelo
+            <FilePlus2 className="size-4" aria-hidden="true" />
+            Criar ficha
           </Button>
         </div>
       </div>
@@ -223,8 +238,8 @@ export function TemplateBuilderForm({
         <Card>
           <EmptyState
             icon={ClipboardList}
-            title="Nenhum modelo clínico cadastrado"
-            description="Crie a primeira ficha estruturada para começar."
+            title="Nenhuma ficha cadastrada"
+            description="Comece pelo modelo SOAP, já dividido em Subjetivo, Objetivo, Avaliação e Plano, ou monte uma ficha do zero."
             actions={
               <div className="flex flex-wrap justify-center gap-2">
                 <Button
@@ -232,10 +247,12 @@ export function TemplateBuilderForm({
                   variant="secondary"
                   onClick={createSoapTemplate}
                 >
-                  <ClipboardList className="size-4" /> Usar modelo SOAP
+                  <ClipboardList className="size-4" aria-hidden="true" /> Usar
+                  modelo SOAP
                 </Button>
                 <Button type="button" onClick={createTemplate}>
-                  <Plus className="size-4" /> Criar modelo
+                  <FilePlus2 className="size-4" aria-hidden="true" /> Criar
+                  ficha
                 </Button>
               </div>
             }
@@ -255,11 +272,18 @@ function TemplateListItem({
   onEdit: () => void;
   onDuplicate: () => void;
 }) {
-  const [confirmingArchive, setConfirmingArchive] = useState(false);
   const [statusState, statusAction, statusPending] = useActionState(
     setClinicalTemplateStatus,
     initialActionState,
   );
+  // Guarda o resultado de quando o diálogo abriu: resultado novo sem erro
+  // fecha; com erro, mantém aberto com a mensagem. Com um booleano, um
+  // sucesso anterior impedia o diálogo de abrir de novo.
+  const [archiveOpenedAt, setArchiveOpenedAt] =
+    useState<ModelActionState | null>(null);
+  const archiveDialogOpen =
+    archiveOpenedAt !== null &&
+    (archiveOpenedAt === statusState || Boolean(statusState.error));
   const [defaultState, defaultAction, defaultPending] = useActionState(
     setDefaultClinicalTemplate,
     initialActionState,
@@ -336,11 +360,12 @@ function TemplateListItem({
                       name="template_id"
                       value={template.id}
                     />
-                    <DropdownSubmitItem
+                    <DropdownMenuSubmitItem
                       icon={Star}
                       disabled={defaultPending}
-                      label="Definir como padrão"
-                    />
+                    >
+                      Definir como padrão
+                    </DropdownMenuSubmitItem>
                   </form>
                 ) : null}
                 <DropdownMenuSeparator />
@@ -350,7 +375,7 @@ function TemplateListItem({
                     variant="destructive"
                     onSelect={() => {
                       close();
-                      setConfirmingArchive(true);
+                      setArchiveOpenedAt(statusState);
                     }}
                   >
                     Arquivar
@@ -367,11 +392,12 @@ function TemplateListItem({
                       value={template.id}
                     />
                     <input type="hidden" name="status" value="active" />
-                    <DropdownSubmitItem
+                    <DropdownMenuSubmitItem
                       icon={ArchiveRestore}
                       disabled={statusPending}
-                      label="Reativar"
-                    />
+                    >
+                      Reativar
+                    </DropdownMenuSubmitItem>
                   </form>
                 )}
               </>
@@ -380,8 +406,8 @@ function TemplateListItem({
         </div>
       </CardContent>
       <ConfirmDialog
-        open={confirmingArchive && !statusState.success}
-        onClose={() => setConfirmingArchive(false)}
+        open={archiveDialogOpen}
+        onClose={() => setArchiveOpenedAt(null)}
         title="Arquivar modelo clínico?"
         description={`${template.name} não poderá ser usado em novos atendimentos. Versões e prontuários existentes serão preservados.`}
         confirmLabel="Arquivar modelo"
@@ -398,34 +424,6 @@ function TemplateListItem({
   );
 }
 
-function DropdownSubmitItem({
-  icon: Icon,
-  label,
-  disabled,
-  destructive = false,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  disabled: boolean;
-  destructive?: boolean;
-}) {
-  return (
-    <button
-      type="submit"
-      role="menuitem"
-      disabled={disabled}
-      className={
-        destructive
-          ? "flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-sm font-medium text-destructive transition-colors hover:bg-destructive-muted disabled:opacity-50"
-          : "flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-      }
-    >
-      <Icon className="size-4 shrink-0" />
-      {label}
-    </button>
-  );
-}
-
 function TemplateEditor({
   initialDraft,
   onCancel,
@@ -435,12 +433,21 @@ function TemplateEditor({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const router = useRouter();
   const [draft, setDraft] = useState(initialDraft);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(
+    null,
+  );
   const [state, action, pending] = useActionState(
     saveClinicalTemplate,
     initialActionState,
   );
   const isEditing = Boolean(draft.templateId);
+  const dirty = useMemo(
+    () => JSON.stringify(draft) !== JSON.stringify(initialDraft),
+    [draft, initialDraft],
+  );
 
   useEffect(() => {
     if (state.success) {
@@ -453,112 +460,238 @@ function TemplateEditor({
     if (state.error) toast.error(state.error);
   }, [state]);
 
+  useEffect(() => {
+    if (!dirty) return;
+
+    function warnAboutPendingChanges(event: BeforeUnloadEvent) {
+      event.preventDefault();
+    }
+
+    window.addEventListener("beforeunload", warnAboutPendingChanges);
+    return () =>
+      window.removeEventListener("beforeunload", warnAboutPendingChanges);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!dirty) return;
+
+    function protectInternalNavigation(event: MouseEvent) {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (anchor.target && anchor.target !== "_self") return;
+
+      const destination = new URL(anchor.href, window.location.href);
+      if (
+        destination.origin !== window.location.origin ||
+        destination.href === window.location.href
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setPendingNavigation(
+        `${destination.pathname}${destination.search}${destination.hash}`,
+      );
+    }
+
+    document.addEventListener("click", protectInternalNavigation, true);
+    return () =>
+      document.removeEventListener("click", protectInternalNavigation, true);
+  }, [dirty]);
+
+  function requestCancel() {
+    if (dirty) {
+      setConfirmingCancel(true);
+      return;
+    }
+    onCancel();
+  }
+
   return (
-    <form action={action} className="grid gap-4">
-      <input type="hidden" name="template_id" value={draft.templateId} />
-      <input
-        type="hidden"
-        name="expected_version_number"
-        value={draft.expectedVersionNumber}
-      />
-      <input
-        type="hidden"
-        name="schema_json"
-        value={JSON.stringify(draft.schema)}
-      />
+    <>
+      <form action={action} className="grid gap-4">
+        <input type="hidden" name="template_id" value={draft.templateId} />
+        <input
+          type="hidden"
+          name="expected_version_number"
+          value={draft.expectedVersionNumber}
+        />
+        <input
+          type="hidden"
+          name="schema_json"
+          value={JSON.stringify(draft.schema)}
+        />
 
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold">
-              {isEditing ? "Editar modelo" : "Novo modelo"}
-            </h2>
-            <HelpTooltip label="Como funciona o versionamento">
-              Atendimentos antigos continuam vinculados à versão usada na época.
-              Ao salvar uma alteração, o sistema publica uma nova versão sem
-              modificar o histórico.
-            </HelpTooltip>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isEditing
-              ? `A próxima publicação será a versão ${draft.expectedVersionNumber + 1}.`
-              : "O modelo será criado na versão 1."}
-          </p>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onCancel}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={pending}>
-            <Save className="size-4" />
-            {pending
-              ? "Publicando..."
-              : isEditing
-                ? `Publicar versão ${draft.expectedVersionNumber + 1}`
-                : "Criar modelo"}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.72fr)]">
-        <div className="grid gap-4">
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold">Identificação</h3>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <label className="grid gap-2 text-sm font-medium">
-                Nome
-                <Input
-                  name="name"
-                  value={draft.name}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                  placeholder="Consulta dermatológica"
-                  required
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-medium">
-                Descrição
-                <Textarea
-                  name="description"
-                  value={draft.description}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))
-                  }
-                  placeholder="Explique quando este modelo deve ser utilizado."
-                />
-              </label>
-            </CardContent>
-          </Card>
-
-          <SchemaBuilder
-            schema={draft.schema}
-            onChange={(schema) =>
-              setDraft((current) => ({ ...current, schema }))
-            }
-          />
-          <FormError message={state.error} />
-        </div>
-
-        <div className="grid gap-3 xl:sticky xl:top-4">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
-            <h3 className="font-semibold">Prévia do atendimento</h3>
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold">
+                {isEditing ? "Editar ficha" : "Nova ficha"}
+              </h2>
+              <HelpTooltip label="Como funciona o versionamento">
+                Atendimentos antigos continuam vinculados à versão usada na
+                época. Ao salvar uma alteração, o sistema publica uma nova
+                versão sem modificar o histórico.
+              </HelpTooltip>
+            </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Usa os mesmos componentes exibidos ao profissional.
+              {isEditing
+                ? `A próxima publicação será a versão ${draft.expectedVersionNumber + 1}.`
+                : "A ficha será criada na versão 1."}
             </p>
           </div>
-          <ClinicalFormRenderer schema={draft.schema} mode="preview" />
+          <div className="flex flex-wrap justify-end gap-2">
+            <TemplateEditorActions
+              isEditing={isEditing}
+              nextVersion={draft.expectedVersionNumber + 1}
+              pending={pending}
+              onCancel={requestCancel}
+            />
+          </div>
         </div>
-      </div>
-    </form>
+
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.72fr)]">
+          <div className="grid gap-4">
+            <Card>
+              <CardHeader>
+                <h3 className="font-semibold">Identificação</h3>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <label className="grid gap-2 text-sm font-medium">
+                  Nome
+                  <Input
+                    name="name"
+                    value={draft.name}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    placeholder="Consulta dermatológica"
+                    required
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-medium">
+                  Descrição
+                  <Textarea
+                    name="description"
+                    value={draft.description}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                    placeholder="Explique quando este modelo deve ser utilizado."
+                  />
+                </label>
+              </CardContent>
+            </Card>
+
+            <SchemaBuilder
+              schema={draft.schema}
+              onChange={(schema) =>
+                setDraft((current) => ({ ...current, schema }))
+              }
+            />
+            <FormError message={state.error} />
+            {/* As mesmas ações no fim: numa ficha longa, publicar exigia rolar
+              tudo de volta até o topo. */}
+            <div className="flex flex-wrap justify-end gap-2">
+              <TemplateEditorActions
+                isEditing={isEditing}
+                nextVersion={draft.expectedVersionNumber + 1}
+                pending={pending}
+                onCancel={requestCancel}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-3 xl:sticky xl:top-4">
+            <div>
+              <h3 className="font-semibold">Prévia do atendimento</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Usa os mesmos componentes exibidos ao profissional.
+              </p>
+            </div>
+            <ClinicalFormRenderer schema={draft.schema} mode="preview" />
+          </div>
+        </div>
+      </form>
+      <ConfirmDialog
+        open={confirmingCancel}
+        onClose={() => setConfirmingCancel(false)}
+        title="Descartar alterações da ficha?"
+        description="As alterações feitas nesta versão ainda não foram publicadas."
+        confirmLabel="Descartar alterações"
+        destructive
+        onConfirm={() => {
+          setConfirmingCancel(false);
+          onCancel();
+        }}
+      />
+      <ConfirmDialog
+        open={Boolean(pendingNavigation)}
+        onClose={() => setPendingNavigation(null)}
+        title="Sair sem publicar a ficha?"
+        description="As alterações desta versão serão perdidas."
+        confirmLabel="Descartar e sair"
+        destructive
+        onConfirm={() => {
+          if (!pendingNavigation) return;
+          const destination = pendingNavigation;
+          setPendingNavigation(null);
+          router.push(destination);
+        }}
+      />
+    </>
+  );
+}
+
+function TemplateEditorActions({
+  isEditing,
+  nextVersion,
+  onCancel,
+  pending,
+}: {
+  isEditing: boolean;
+  nextVersion: number;
+  onCancel: () => void;
+  pending: boolean;
+}) {
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={pending}
+        onClick={onCancel}
+      >
+        Cancelar
+      </Button>
+      <Button type="submit" disabled={pending}>
+        <Save className="size-4" aria-hidden="true" />
+        {pending
+          ? "Publicando..."
+          : isEditing
+            ? `Publicar versão ${nextVersion}`
+            : "Criar ficha"}
+      </Button>
+    </>
   );
 }
 
@@ -678,14 +811,25 @@ function SortableSectionEditor({
   onChange: (section: ClinicalSection) => void;
   onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id: section.id });
+  const {
+    attributes,
+    isDragging,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: section.id, transition: sortableTransition });
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="rounded-lg border border-border bg-muted/20 p-3"
+      // Arrastando, a seção sobe com sombra e fundo opaco: com o fundo
+      // translúcido, as seções de baixo apareciam através dela.
+      className={cn(
+        "rounded-lg border border-border bg-muted/20 p-3",
+        isDragging && "relative z-10 bg-card shadow-[var(--shadow-md)]",
+      )}
     >
       <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-start gap-2">
         <Button
@@ -696,9 +840,11 @@ function SortableSectionEditor({
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="size-4" />
+          <GripVertical className="size-4" aria-hidden="true" />
         </Button>
-        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+        {/* Empilhados: a orientação costuma ser uma frase inteira, e ao lado
+            do título ela ficava cortada num campo de uma linha. */}
+        <div className="grid min-w-0 gap-3">
           <label className="grid min-w-0 gap-1.5 text-xs font-medium">
             Título da seção
             <Input
@@ -711,8 +857,10 @@ function SortableSectionEditor({
             />
           </label>
           <label className="grid min-w-0 gap-1.5 text-xs font-medium">
-            Descrição opcional
-            <Input
+            Orientação ao profissional (opcional)
+            <Textarea
+              rows={2}
+              className="min-h-16 resize-y field-sizing-content"
               value={section.description ?? ""}
               onChange={(event) =>
                 onChange({
@@ -720,7 +868,7 @@ function SortableSectionEditor({
                   description: event.target.value || undefined,
                 })
               }
-              placeholder="Orientação para o preenchimento"
+              placeholder="Aparece abaixo do título da seção, no atendimento."
             />
           </label>
         </div>
@@ -777,7 +925,9 @@ function FieldList({
           items={fieldIds}
           strategy={verticalListSortingStrategy}
         >
-          <div className="grid gap-2">
+          {/* Uma lista com divisórias, não um cartão por campo: eram três
+              níveis de caixas com borda (ficha, seção, campo). */}
+          <div className="grid divide-y divide-border rounded-md border border-border bg-card">
             {fields.map((field) => (
               <SortableFieldEditor
                 key={field.id}
@@ -821,14 +971,24 @@ function SortableFieldEditor({
   onChange: (field: ClinicalField) => void;
   onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id: field.id });
+  const {
+    attributes,
+    isDragging,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: field.id, transition: sortableTransition });
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="rounded-md border border-border bg-card p-3"
+      className={cn(
+        "bg-card p-3 first:rounded-t-md last:rounded-b-md",
+        isDragging &&
+          "relative z-10 rounded-md shadow-[var(--shadow-md)] ring-1 ring-border",
+      )}
     >
       <div className="grid grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-start gap-2">
         <Button
@@ -839,7 +999,7 @@ function SortableFieldEditor({
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="size-4" />
+          <GripVertical className="size-4" aria-hidden="true" />
         </Button>
         <div className="grid min-w-0 gap-3">
           <div className="grid min-w-0 gap-3 sm:grid-cols-2 sm:items-end">
@@ -902,12 +1062,15 @@ function FieldSettings({
 
   return (
     <div className="grid gap-3">
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+      {/* Um embaixo do outro e com duas linhas: exemplos e orientações são
+          frases inteiras, e lado a lado ficavam cortados pela metade. */}
+      <div className="grid min-w-0 gap-3">
         {supportsPlaceholder ? (
           <label className="grid min-w-0 gap-1.5 text-xs font-medium">
-            Placeholder
-            <Input
-              className="min-w-0 w-full"
+            Exemplo dentro do campo
+            <Textarea
+              rows={2}
+              className="min-h-16 resize-y field-sizing-content"
               value={field.placeholder ?? ""}
               onChange={(event) =>
                 onChange({
@@ -915,14 +1078,15 @@ function FieldSettings({
                   placeholder: event.target.value || undefined,
                 })
               }
-              placeholder="Exemplo ou orientação curta"
+              placeholder="Ex.: Paciente relata dor de garganta há três dias."
             />
           </label>
         ) : null}
         <label className="grid min-w-0 gap-1.5 text-xs font-medium">
           Texto de ajuda
-          <Input
-            className="min-w-0 w-full"
+          <Textarea
+            rows={2}
+            className="min-h-16 resize-y field-sizing-content"
             value={field.helpText ?? ""}
             onChange={(event) =>
               onChange({
@@ -930,7 +1094,7 @@ function FieldSettings({
                 helpText: event.target.value || undefined,
               })
             }
-            placeholder="Orientação exibida abaixo do campo"
+            placeholder="Aparece abaixo do campo, em texto menor."
           />
         </label>
       </div>

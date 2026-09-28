@@ -1,13 +1,9 @@
 import { z } from "zod";
 
-export const clinicalDocumentTypes = [
-  "prescription",
-  "exam_request",
-  "medical_certificate",
-  "attendance_declaration",
-] as const;
-
-export type ClinicalDocumentType = (typeof clinicalDocumentTypes)[number];
+export {
+  clinicalDocumentTypes,
+  type ClinicalDocumentType,
+} from "./document-types";
 
 const fontSizeSchema = z.enum(["small", "medium", "large"]);
 

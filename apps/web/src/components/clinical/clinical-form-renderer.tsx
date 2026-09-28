@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input, MultiSelect, Select } from "@/components/ui/field";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { RequiredMark } from "@/components/ui/required-mark";
+import { RichTextView } from "@/components/clinical/rich-text-view";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   normalizeClinicalTemplateSchema,
@@ -24,6 +25,7 @@ type ClinicalFormRendererProps = {
     fieldId: string,
     value: ClinicalFieldValue | undefined,
   ) => void;
+  errors?: Record<string, string>;
 };
 
 export function ClinicalFormRenderer({
@@ -32,6 +34,7 @@ export function ClinicalFormRenderer({
   mode,
   disabled = false,
   onValueChange,
+  errors = {},
 }: ClinicalFormRendererProps) {
   const schema = normalizeClinicalTemplateSchema(schemaInput);
 
@@ -63,6 +66,7 @@ export function ClinicalFormRenderer({
                 value={values[field.id]}
                 mode={mode}
                 disabled={disabled}
+                error={errors[field.id]}
                 onValueChange={(value) => onValueChange?.(field.id, value)}
               />
             ))}
@@ -84,13 +88,17 @@ function ClinicalFieldControl({
   mode,
   disabled,
   onValueChange,
+  error,
 }: {
   field: ClinicalField;
   value: unknown;
   mode: ClinicalFormMode;
   disabled: boolean;
   onValueChange: (value: ClinicalFieldValue | undefined) => void;
+  error?: string;
 }) {
+  const controlId = useId();
+  const labelId = `${controlId}-label`;
   if (mode === "readonly") {
     return <ReadonlyClinicalField field={field} value={value} />;
   }
@@ -99,20 +107,28 @@ function ClinicalFieldControl({
   const controlDisabled = disabled || mode === "preview";
 
   return (
-    <div className="grid gap-2 text-sm">
-      <div className="font-medium">
+    <div className="grid gap-2 text-sm" data-clinical-field-id={field.id}>
+      <label id={labelId} htmlFor={controlId} className="font-medium">
         {field.label}
         {field.required ? <RequiredMark /> : null}
-      </div>
+      </label>
       <EditableClinicalField
         field={field}
+        id={controlId}
+        labelId={labelId}
         name={name}
         value={value}
         disabled={controlDisabled}
+        invalid={Boolean(error)}
         onValueChange={onValueChange}
       />
       {field.helpText ? (
         <p className="text-xs text-muted-foreground">{field.helpText}</p>
+      ) : null}
+      {error ? (
+        <p className="text-xs text-destructive" role="alert">
+          {error}
+        </p>
       ) : null}
     </div>
   );
@@ -120,37 +136,48 @@ function ClinicalFieldControl({
 
 function EditableClinicalField({
   field,
+  id,
+  labelId,
   name,
   value,
   disabled,
+  invalid,
   onValueChange,
 }: {
   field: ClinicalField;
+  id: string;
+  labelId: string;
   name: string;
   value: unknown;
   disabled: boolean;
+  invalid: boolean;
   onValueChange: (value: ClinicalFieldValue | undefined) => void;
 }) {
   switch (field.type) {
     case "text":
       return (
         <Input
+          id={id}
           name={name}
           defaultValue={scalarValue(value)}
           placeholder={field.placeholder ?? field.label}
           required={field.required}
           disabled={disabled}
+          aria-invalid={invalid}
           onChange={(event) => onValueChange(event.target.value || undefined)}
         />
       );
     case "textarea":
       return (
         <RichTextEditor
+          id={id}
+          ariaLabelledBy={labelId}
           name={name}
           defaultValue={scalarValue(value)}
           placeholder={field.placeholder ?? field.label}
           required={field.required}
           disabled={disabled}
+          invalid={invalid}
           onChange={(nextValue) => onValueChange(nextValue || undefined)}
         />
       );
@@ -158,6 +185,7 @@ function EditableClinicalField({
       return (
         <div className="relative">
           <Input
+            id={id}
             name={name}
             type="number"
             inputMode="decimal"
@@ -168,6 +196,7 @@ function EditableClinicalField({
             step={field.step ?? "any"}
             required={field.required}
             disabled={disabled}
+            aria-invalid={invalid}
             className={field.unit ? "pr-16" : undefined}
             onChange={(event) => {
               const next = event.target.value;
@@ -185,11 +214,13 @@ function EditableClinicalField({
     case "time":
       return (
         <Input
+          id={id}
           name={name}
           type={field.type}
           defaultValue={scalarValue(value)}
           required={field.required}
           disabled={disabled}
+          aria-invalid={invalid}
           onChange={(event) => onValueChange(event.target.value || undefined)}
         />
       );
@@ -204,6 +235,7 @@ function EditableClinicalField({
         >
           <RadioGroup
             name={name}
+            ariaLabelledBy={labelId}
             defaultValue={booleanFormValue(value)}
             disabled={disabled}
             className="sm:grid-cols-2"
@@ -222,6 +254,7 @@ function EditableClinicalField({
           placeholder={field.placeholder ?? "Selecione uma opção"}
           required={field.required}
           disabled={disabled}
+          aria-label={field.label}
           onValueChange={(nextValue) => onValueChange(nextValue || undefined)}
         >
           <option value="">{field.placeholder ?? "Selecione uma opção"}</option>
@@ -307,7 +340,11 @@ function ReadonlyClinicalField({
           isLongText && "min-h-20",
         )}
       >
-        {formatted || "—"}
+        {isLongText && formatted ? (
+          <RichTextView value={formatted} />
+        ) : (
+          formatted || "—"
+        )}
       </div>
       {field.helpText ? (
         <p className="text-xs text-muted-foreground">{field.helpText}</p>

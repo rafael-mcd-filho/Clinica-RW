@@ -1,8 +1,15 @@
+import {
+  clinicalDocumentTypes,
+  documentTypePermissions,
+} from "@/lib/clinical/document-types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   ArrowLeft,
   CalendarDots as CalendarDays,
+  ClipboardText,
+  FileText,
+  WarningCircle,
   UserCircle as UserRound,
 } from "@phosphor-icons/react/dist/ssr";
 import {
@@ -15,12 +22,16 @@ import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs } from "@/components/ui/tabs";
+import { EncounterAttachments } from "@/components/clinical/encounter-attachments";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import {
   normalizeAgendaTimeZone,
   safeAgendaReturnTo,
 } from "@/lib/agenda/range";
 import { buildClinicalDocumentVariables } from "@/lib/clinical/document-context";
+import { buildRenderContext } from "@/lib/pdf/clinical-document";
+import { listEncounterAttachments } from "@/lib/storage/clinical-attachments";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type EncounterRow = {
@@ -42,6 +53,13 @@ type EntryRow = {
   };
   structured_data: Record<string, unknown>;
   free_notes: string | null;
+  updated_at: string;
+};
+
+type ClinicalSummaryRow = {
+  allergies: string | null;
+  comorbidities: string | null;
+  medications: string | null;
 };
 
 type PatientRow = {
@@ -151,10 +169,12 @@ export default async function EncounterPage({
     clinicResult,
     organizationSettingsResult,
     appointmentResult,
+    clinicalSummaryResult,
+    attachmentsResult,
   ] = await Promise.all([
     supabase
       .from("encounter_entries")
-      .select("template_snapshot, structured_data, free_notes")
+      .select("template_snapshot, structured_data, free_notes, updated_at")
       .eq("organization_id", encounter.organization_id)
       .eq("encounter_id", encounter.id)
       .single<EntryRow>(),
@@ -217,7 +237,9 @@ export default async function EncounterPage({
       .returns<DocumentTemplateVersionRow[]>(),
     supabase
       .from("clinical_documents")
-      .select("id, document_type, title, issued_at")
+      .select(
+        "id, document_type, title, issued_at, consent_events:clinical_document_consent_events(event_type, created_at)",
+      )
       .eq("organization_id", encounter.organization_id)
       .eq("encounter_id", encounter.id)
       .order("issued_at", { ascending: false })
@@ -242,6 +264,16 @@ export default async function EncounterPage({
           .eq("id", encounter.appointment_id)
           .maybeSingle<AppointmentRow>()
       : Promise.resolve({ data: null as AppointmentRow | null }),
+    context.permissionCodes.has("paciente.ver_dados_sensiveis")
+      ? supabase
+          .from("patient_clinical_summaries")
+          .select("allergies, comorbidities, medications")
+          .eq("organization_id", encounter.organization_id)
+          .eq("patient_id", encounter.patient_id)
+          .maybeSingle<ClinicalSummaryRow>()
+      : Promise.resolve({ data: null as ClinicalSummaryRow | null }),
+    // O atendimento acima já passou pelas regras de acesso da pessoa.
+    listEncounterAttachments(encounter.organization_id, encounter.id),
   ]);
 
   if (!entryResult.data || !patientResult.data || !professionalResult.data) {
@@ -305,6 +337,13 @@ export default async function EncounterPage({
   const timeZone = normalizeAgendaTimeZone(
     organizationSettingsResult.data?.timezone,
   );
+  const documentRenderContext = buildRenderContext({
+    renderSnapshot: { timezone: timeZone, unit: unitResult.data },
+    patient: patientResult.data,
+    professional: professionalResult.data,
+    clinic: clinicResult.data,
+    organization: context.organization,
+  });
   const documentVariables = buildClinicalDocumentVariables({
     timeZone,
     patient: {
@@ -377,7 +416,6 @@ export default async function EncounterPage({
   const authorName = new Map(
     (authors ?? []).map((item) => [item.id, item.name]),
   );
-  const firstDiagnosis = diagnosesResult.data?.[0];
   const source = Array.isArray(query.from) ? query.from[0] : query.from;
   const returnTo = Array.isArray(query.return_to)
     ? query.return_to[0]
@@ -426,65 +464,148 @@ export default async function EncounterPage({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <InfoCard
-          icon="patient"
-          label="Paciente"
-          value={patientResult.data.social_name || patientResult.data.full_name}
-          detail={
-            patientResult.data.birth_date
-              ? formatDate(patientResult.data.birth_date)
-              : "Nascimento não informado"
-          }
-        />
-        <InfoCard
-          icon="doctor"
-          label="Profissional"
-          value={professionalResult.data.name}
-          detail={formatDateTime(encounter.started_at)}
-        />
-        <InfoCard
-          icon="calendar"
-          label="Agenda"
-          value={encounter.appointment_id ? "Vinculado" : "Sem agendamento"}
-          detail={
-            encounter.finalized_at
-              ? `Finalizado em ${formatDateTime(encounter.finalized_at)}`
-              : "Em atendimento"
-          }
-        />
-      </div>
+      <Card className="overflow-hidden">
+        <CardContent className="grid divide-y divide-border p-0 md:grid-cols-3 md:divide-x md:divide-y-0">
+          <ContextItem
+            icon="patient"
+            label="Paciente"
+            value={
+              patientResult.data.social_name || patientResult.data.full_name
+            }
+            detail={
+              patientResult.data.birth_date
+                ? formatDate(patientResult.data.birth_date)
+                : "Nascimento não informado"
+            }
+          />
+          <ContextItem
+            icon="doctor"
+            label="Profissional"
+            value={professionalResult.data.name}
+            detail={`Iniciado em ${formatDateTime(encounter.started_at, timeZone)}`}
+          />
+          <ContextItem
+            icon="calendar"
+            label="Agenda"
+            value={
+              encounter.appointment_id
+                ? "Agendamento vinculado"
+                : "Atendimento avulso"
+            }
+            detail={
+              encounter.finalized_at
+                ? `Finalizado em ${formatDateTime(encounter.finalized_at, timeZone)}`
+                : "Em atendimento"
+            }
+          />
+        </CardContent>
+      </Card>
 
-      <EncounterEditor
-        encounterId={encounter.id}
-        status={encounter.status}
-        canEdit={context.permissionCodes.has("clinico.preencher_prontuario")}
-        canFinalize={context.permissionCodes.has(
-          "clinico.finalizar_prontuario",
-        )}
-        schema={entryResult.data.template_snapshot.schema ?? { sections: [] }}
-        structuredData={entryResult.data.structured_data ?? {}}
-        freeNotes={entryResult.data.free_notes}
-        cidCode={firstDiagnosis?.cid_code ?? ""}
-        cidDescription={firstDiagnosis?.description ?? ""}
-        addenda={(addendaResult.data ?? []).map((item) => ({
-          id: item.id,
-          content: item.content,
-          created_at: item.created_at,
-          author: authorName.get(item.author_user_id) ?? "Usuário",
-        }))}
-      />
+      {clinicalSummaryResult.data &&
+      (clinicalSummaryResult.data.allergies ||
+        clinicalSummaryResult.data.comorbidities ||
+        clinicalSummaryResult.data.medications) ? (
+        <Card className="border-warning-muted bg-warning-muted/20">
+          <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+            <div className="flex gap-2 md:col-span-3">
+              <WarningCircle
+                className="mt-0.5 size-4 shrink-0 text-warning-foreground"
+                aria-hidden="true"
+              />
+              <p className="text-sm font-semibold">
+                Contexto clínico permanente
+              </p>
+            </div>
+            <ClinicalContextItem
+              label="Alergias"
+              value={clinicalSummaryResult.data.allergies}
+              alert
+            />
+            <ClinicalContextItem
+              label="Medicamentos em uso"
+              value={clinicalSummaryResult.data.medications}
+            />
+            <ClinicalContextItem
+              label="Comorbidades"
+              value={clinicalSummaryResult.data.comorbidities}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <DocumentPanel
-        encounterId={encounter.id}
-        templates={documentTemplates}
-        documents={documentsResult.data ?? []}
-        variables={documentVariables}
-        canIssue={{
-          prescription: context.permissionCodes.has("clinico.prescrever"),
-          examRequest: context.permissionCodes.has("clinico.solicitar_exame"),
-          certificate: context.permissionCodes.has("clinico.emitir_atestado"),
-        }}
+      <Tabs
+        ariaLabel="Áreas do prontuário"
+        defaultTab="ficha"
+        keepMounted
+        items={[
+          {
+            id: "ficha",
+            label: "Ficha do atendimento",
+            icon: <ClipboardText aria-hidden="true" />,
+            content: (
+              <div className="grid gap-5">
+                <EncounterEditor
+                  encounterId={encounter.id}
+                  status={encounter.status}
+                  canEdit={context.permissionCodes.has(
+                    "clinico.preencher_prontuario",
+                  )}
+                  canFinalize={context.permissionCodes.has(
+                    "clinico.finalizar_prontuario",
+                  )}
+                  canAddAddendum={context.permissionCodes.has(
+                    "clinico.adicionar_adendo",
+                  )}
+                  entryUpdatedAt={entryResult.data.updated_at}
+                  timeZone={timeZone}
+                  schema={
+                    entryResult.data.template_snapshot.schema ?? {
+                      sections: [],
+                    }
+                  }
+                  structuredData={entryResult.data.structured_data ?? {}}
+                  freeNotes={entryResult.data.free_notes}
+                  diagnoses={diagnosesResult.data ?? []}
+                  addenda={(addendaResult.data ?? []).map((item) => ({
+                    id: item.id,
+                    content: item.content,
+                    created_at: item.created_at,
+                    author: authorName.get(item.author_user_id) ?? "Usuário",
+                  }))}
+                />
+                <EncounterAttachments
+                  encounterId={encounter.id}
+                  attachments={attachmentsResult.attachments}
+                  available={attachmentsResult.available}
+                  canUpload={
+                    attachmentsResult.available &&
+                    context.permissionCodes.has("clinico.preencher_prontuario")
+                  }
+                  timeZone={timeZone}
+                />
+              </div>
+            ),
+          },
+          {
+            id: "documentos",
+            label: `Documentos (${documentsResult.data?.length ?? 0})`,
+            icon: <FileText aria-hidden="true" />,
+            content: (
+              <DocumentPanel
+                encounterId={encounter.id}
+                templates={documentTemplates}
+                documents={documentsResult.data ?? []}
+                variables={documentVariables}
+                renderContext={documentRenderContext}
+                timeZone={timeZone}
+                showHeader={false}
+                allowedTypes={clinicalDocumentTypes.filter((type) =>
+                  context.permissionCodes.has(documentTypePermissions[type]),
+                )}
+              />
+            ),
+          },
+        ]}
       />
     </div>
   );
@@ -513,10 +634,18 @@ function encounterBackDestination(
     return { href: "/pacientes", label: "Voltar para pacientes" };
   }
 
-  return { href: "/prontuario", label: "Voltar para prontuários" };
+  // Vindo da lista filtrada, volta para a mesma busca/página. Só aceita a
+  // própria lista como destino, para o parâmetro não virar um redirecionamento.
+  const listHref =
+    source === "prontuario" &&
+    returnTo &&
+    /^\/prontuario(\?[^#]*)?$/.test(returnTo)
+      ? returnTo
+      : "/prontuario";
+  return { href: listHref, label: "Voltar para o prontuário" };
 }
 
-function InfoCard({
+function ContextItem({
   icon,
   label,
   value,
@@ -529,20 +658,41 @@ function InfoCard({
 }) {
   const Icon = icon === "calendar" ? CalendarDays : UserRound;
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="rounded-md bg-primary-muted p-2 text-primary">
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase text-muted-foreground">
-            {label}
-          </p>
-          <p className="truncate text-sm font-semibold">{value}</p>
-          <p className="truncate text-xs text-muted-foreground">{detail}</p>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex min-w-0 items-center gap-3 px-4 py-3">
+      <div className="rounded-md bg-primary-muted p-2 text-primary">
+        <Icon className="size-4" aria-hidden="true" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-label font-medium text-muted-foreground">{label}</p>
+        <p className="truncate text-body-sm font-semibold">{value}</p>
+        <p className="truncate text-caption text-muted-foreground">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function ClinicalContextItem({
+  label,
+  value,
+  alert = false,
+}: {
+  label: string;
+  value: string | null;
+  alert?: boolean;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-border bg-card px-3 py-2">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={`mt-1 break-words text-sm ${
+          alert && value ? "font-semibold text-destructive-foreground" : ""
+        }`}
+      >
+        {value || "Não informado"}
+      </p>
+    </div>
   );
 }
 
@@ -552,9 +702,10 @@ function formatDate(value: string) {
   );
 }
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string, timeZone: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone,
   }).format(new Date(value));
 }

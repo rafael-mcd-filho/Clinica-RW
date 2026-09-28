@@ -1,5 +1,7 @@
 "use server";
 
+import { clinicalDocumentTypes } from "@/lib/clinical/document-types";
+
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getRequestContext } from "@/lib/auth/context";
@@ -9,6 +11,7 @@ import {
   sanitizeDocumentTemplateText,
 } from "@/lib/clinical/document-templates";
 import { clinicalTemplateSchema } from "@/lib/clinical/template-schema";
+import { logger } from "@/lib/observability/logger";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ModelActionState = {
@@ -53,7 +56,13 @@ function friendlyModelError(error: { code?: string; message: string }) {
   if (error.code === "42501") {
     return "Seu perfil não possui permissão para alterar modelos.";
   }
-  return error.message;
+  // O texto do banco (em inglês e técnico) chegava direto na tela. Ele vai
+  // para o log; a pessoa recebe o que fazer.
+  logger.error("clinical_models.action_failed", {
+    code: error.code,
+    message: error.message,
+  });
+  return "Não foi possível salvar agora. Tente de novo em alguns instantes.";
 }
 
 function revalidateModels() {
@@ -185,12 +194,7 @@ export async function saveDocumentTemplate(
     .object({
       template_id: templateIdSchema,
       expected_version_number: expectedVersionSchema,
-      document_type: z.enum([
-        "prescription",
-        "exam_request",
-        "medical_certificate",
-        "attendance_declaration",
-      ]),
+      document_type: z.enum(clinicalDocumentTypes),
       name: z.string().trim().min(3).max(160),
       description: z.string().trim().max(500),
       title_template: z.string().trim().min(3).max(300),
@@ -252,7 +256,7 @@ export async function saveDocumentTemplate(
   revalidateModels();
   return {
     success: parsed.data.template_id
-      ? "Nova versão do documento publicada."
+      ? "Nova versão do modelo publicada."
       : "Modelo de documento criado.",
   };
 }
@@ -285,6 +289,6 @@ export async function setDocumentTemplateActive(
   return {
     success: parsed.data.active
       ? "Modelo de documento reativado."
-      : "Modelo de documento desativado.",
+      : "Modelo de documento arquivado.",
   };
 }
