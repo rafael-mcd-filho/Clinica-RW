@@ -9,6 +9,7 @@ import {
   DotsThreeVertical as MoreVertical,
   PencilSimple as Pencil,
   MagnifyingGlass as Search,
+  ShieldWarning as ShieldAlert,
   Trash as Trash2,
   LockOpen as Unlock,
   UserCircle as UserRound,
@@ -151,7 +152,7 @@ export function UsuariosTable({
         </Select>
       </section>
 
-      <section className="app-list-table-lg animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+      <section className="app-list-table-lg overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
         <div className="max-h-[calc(100vh-20rem)] overflow-y-auto">
           <div className="app-list-row sticky top-0 z-10 hidden grid-cols-[1.6fr_1fr_0.9fr_0.6fr_5rem] items-center gap-4 border-b border-border bg-muted px-5 py-3 text-xs font-semibold text-foreground lg:grid">
             <span className="app-list-cell">Usuário</span>
@@ -458,19 +459,32 @@ function PasswordDialog({
           </div>
 
           {mode === "manual" ? (
-            <label className="grid gap-2 text-sm font-medium">
-              <span>
-                Nova senha
-                <RequiredMark />
-              </span>
-              <Input
-                name="password"
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                placeholder="Mínimo de 8 caracteres"
-              />
-            </label>
+            <>
+              <div className="flex items-start gap-2 rounded-md border border-warning-muted bg-warning-muted px-3 py-2 text-xs text-warning-foreground">
+                <ShieldAlert
+                  className="mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <p>
+                  A senha atual do usuário para de funcionar assim que você
+                  confirmar. Ele não é avisado automaticamente — combine a nova
+                  senha com ele por fora.
+                </p>
+              </div>
+              <label className="grid gap-2 text-sm font-medium">
+                <span>
+                  Nova senha
+                  <RequiredMark />
+                </span>
+                <Input
+                  name="password"
+                  type="password"
+                  minLength={8}
+                  autoComplete="new-password"
+                  placeholder="Mínimo de 8 caracteres"
+                />
+              </label>
+            </>
           ) : (
             <p className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
               Geramos um link para o usuário definir a própria senha. Ele

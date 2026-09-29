@@ -1,9 +1,20 @@
 "use client";
 
 import {
+  Buildings as Building2,
+  CalendarCheck,
+  ClipboardText,
   ClockCounterClockwise as History,
+  FileText,
+  GearSix as Settings,
   Info,
+  MapPin,
   ArrowRight as MoveRight,
+  ShieldWarning as ShieldAlert,
+  Tag,
+  UserCircle,
+  UsersThree as UsersRound,
+  Wallet as WalletCards,
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +23,12 @@ import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
 
 export type JsonValue =
-  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
 
 export type AuditLogItem = {
   id: string;
@@ -30,28 +46,40 @@ export type AuditLogItem = {
 const actionLabel: Record<string, string> = {
   "organization.created": "Empresa criada",
   "organization.updated": "Empresa atualizada",
-  "organization.deleted": "Empresa excluida",
+  "organization.deleted": "Empresa excluída",
   "platform_settings.updated": "Plataforma atualizada",
   "super_admin.bootstrapped": "Super Admin configurado",
   "impersonation.started": "Suporte impersonado iniciado",
   "impersonation.ended": "Suporte impersonado encerrado",
   "patients.insert": "Paciente cadastrado",
   "patients.update": "Paciente atualizado",
-  "patient_addresses.insert": "Endereco do paciente cadastrado",
-  "patient_addresses.update": "Endereco do paciente atualizado",
-  "patient_clinical_summaries.insert": "Resumo clinico cadastrado",
-  "patient_clinical_summaries.update": "Resumo clinico atualizado",
+  "patient_addresses.insert": "Endereço do paciente cadastrado",
+  "patient_addresses.update": "Endereço do paciente atualizado",
+  "patient_clinical_summaries.insert": "Resumo clínico cadastrado",
+  "patient_clinical_summaries.update": "Resumo clínico atualizado",
   "patient_consents.insert": "Consentimento registrado",
   "patient_consents.update": "Consentimento atualizado",
   "patient_tags.insert": "Tag vinculada ao paciente",
+  "patient_diagnoses.added": "Diagnóstico adicionado à ficha",
+  "patient_diagnoses.removed": "Diagnóstico removido da ficha",
+  "patient_diagnoses.primary_changed": "Diagnóstico principal alterado",
+  "encounter_attachments.uploaded": "Arquivo anexado",
+  "encounter_attachments.removed": "Arquivo removido da ficha",
   "patient_tags.delete": "Tag removida do paciente",
   "appointments.status_changed": "Status do agendamento alterado",
   "appointments.status_initialized": "Status inicial do agendamento",
-  "clinical_documents.issue": "Documento clinico emitido",
-  "clinical_documents.issued": "Documento clinico emitido",
+  "clinical_documents.issue": "Documento clínico emitido",
+  "clinical_documents.issued": "Documento clínico emitido",
   "payment.received": "Pagamento recebido",
   "account_payable.paid": "Conta a pagar baixada",
   "professional_payout.paid": "Repasse profissional baixado",
+  "user.self_updated": "Dados pessoais atualizados",
+  "user.self_avatar_changed": "Foto de perfil alterada",
+  "user.self_avatar_removed": "Foto de perfil removida",
+  "user.self_password_changed": "Senha alterada pelo usuário",
+  "user.self_email_change_requested": "Troca de e-mail solicitada",
+  "user.self_sessions_revoked": "Sessões em outros dispositivos encerradas",
+  "user.login_email_changed": "E-mail de login alterado",
 };
 
 const keyLabel: Record<string, string> = {
@@ -61,11 +89,11 @@ const keyLabel: Record<string, string> = {
   email: "E-mail",
   ended_at: "Fim",
   from_status: "Status anterior",
-  health_insurance_id: "Convenio",
+  health_insurance_id: "Convênio",
   name: "Nome",
   organization_id: "Empresa",
-  owner_email: "E-mail do responsavel",
-  owner_user_id: "Responsavel",
+  owner_email: "E-mail do responsável",
+  owner_user_id: "Responsável",
   patient_id: "Paciente",
   patient_name: "Paciente",
   plan_key: "Plano",
@@ -74,11 +102,11 @@ const keyLabel: Record<string, string> = {
   reason: "Motivo",
   resource_id: "Registro",
   status: "Status",
-  target_user_id: "Usuario atendido",
+  target_user_id: "Usuário atendido",
   to_status: "Status novo",
   current_status: "Status novo",
   type: "Tipo",
-  user_id: "Usuario",
+  user_id: "Usuário",
 };
 
 const statusLabel: Record<string, string> = {
@@ -100,11 +128,11 @@ const statusLabel: Record<string, string> = {
   queued: "Na fila",
   rejected: "Rejeitado",
   requested: "Solicitado",
-  running: "Em execucao",
+  running: "Em execução",
   scheduled: "Agendado",
   sent: "Enviado",
   skipped: "Ignorado",
-  succeeded: "Concluido",
+  succeeded: "Concluído",
   suspended: "Suspenso",
   trial: "Teste",
   waiting: "Em espera",
@@ -145,8 +173,8 @@ function humanKey(key: string) {
 }
 
 function humanValue(value: JsonValue, key?: string): string {
-  if (value === null) return "Nao informado";
-  if (typeof value === "boolean") return value ? "Sim" : "Nao";
+  if (value === null) return "Não informado";
+  if (typeof value === "boolean") return value ? "Sim" : "Não";
   if (typeof value === "number") return String(value);
   if (typeof value === "string") {
     if (key?.includes("status")) return statusLabel[value] ?? value;
@@ -198,6 +226,37 @@ function metadataEntries(metadata: JsonValue) {
   );
 }
 
+// Ícone por tipo de recurso — mesma leitura visual rápida das listas de
+// Empresas e Usuários, aplicada aqui para identificar o evento de relance.
+const resourceIcon: Record<string, typeof History> = {
+  organization: Building2,
+  organizations: Building2,
+  app_user: UsersRound,
+  app_users: UsersRound,
+  users: UsersRound,
+  professional: UsersRound,
+  impersonation: ShieldAlert,
+  impersonation_session: ShieldAlert,
+  impersonation_sessions: ShieldAlert,
+  platform_settings: Settings,
+  patients: UserCircle,
+  patient_addresses: MapPin,
+  patient_clinical_summaries: ClipboardText,
+  patient_consents: FileText,
+  patient_tags: Tag,
+  appointments: CalendarCheck,
+  clinical_documents: ClipboardText,
+  encounter_attachment: ClipboardText,
+  patient_diagnosis: ClipboardText,
+  payment: WalletCards,
+  account_payable: WalletCards,
+  professional_payout: WalletCards,
+};
+
+function getResourceIcon(resourceType: string) {
+  return resourceIcon[resourceType] ?? History;
+}
+
 export function AuditLogTable({ rows }: { rows: AuditLogItem[] }) {
   const [selected, setSelected] = useState<AuditLogItem | null>(null);
   const selectedStatus = selected ? statusPair(selected.metadata) : null;
@@ -227,6 +286,7 @@ export function AuditLogTable({ rows }: { rows: AuditLogItem[] }) {
       <div className="divide-y divide-border">
         {rows.map((audit) => {
           const statuses = statusPair(audit.metadata);
+          const ResourceIcon = getResourceIcon(audit.resourceType);
           return (
             <Button
               key={audit.id}
@@ -235,7 +295,10 @@ export function AuditLogTable({ rows }: { rows: AuditLogItem[] }) {
               onClick={() => setSelected(audit)}
               className="app-list-row grid h-auto w-full gap-2 rounded-none px-5 py-4 text-left text-body font-normal text-foreground hover:bg-background focus-visible:bg-background focus-visible:outline-inset lg:grid-cols-[1.35fr_0.95fr_0.9fr_0.65fr_5rem] lg:items-center lg:gap-4"
             >
-              <div className="app-list-cell min-w-0 lg:text-center">
+              <div className="app-list-cell flex min-w-0 items-center gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded bg-muted text-primary">
+                  <ResourceIcon className="size-4" aria-hidden="true" />
+                </span>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">
                     {actionLabel[audit.action] ?? audit.action}
@@ -283,13 +346,16 @@ export function AuditLogTable({ rows }: { rows: AuditLogItem[] }) {
         description="Detalhes do evento de auditoria selecionado."
         className="max-w-3xl"
         footer={
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => setSelected(null)}
-          >
-            Fechar
-          </Button>
+          <div className="flex w-full justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={() => setSelected(null)}
+            >
+              Fechar
+            </Button>
+          </div>
         }
       >
         {selected ? (
@@ -299,17 +365,17 @@ export function AuditLogTable({ rows }: { rows: AuditLogItem[] }) {
               <Detail label="Quando" value={formatDate(selected.createdAt)} />
               <Detail label="Empresa" value={selected.organizationName} />
               <Detail label="Recurso" value={selected.resourceType} />
-              <Detail label="Acao tecnica" value={selected.action} />
+              <Detail label="Ação técnica" value={selected.action} />
               <Detail
                 label="ID do registro"
-                value={selected.resourceId ?? "Nao informado"}
+                value={selected.resourceId ?? "Não informado"}
               />
             </section>
 
             {selectedStatus?.previousStatus || selectedStatus?.currentStatus ? (
               <section className="rounded-md border border-border bg-muted p-4">
                 <p className="text-xs font-semibold uppercase text-muted-foreground">
-                  Transicao de status
+                  Transição de status
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <Badge variant="neutral">

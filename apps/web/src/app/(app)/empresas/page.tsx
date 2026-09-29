@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { Buildings as Building2, Plus } from "@phosphor-icons/react/dist/ssr";
+import {
+  Buildings as Building2,
+  Plus,
+  ShieldWarning as ShieldAlert,
+} from "@phosphor-icons/react/dist/ssr";
 import { EmpresasTable, type EmpresaRow } from "./empresas-table";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
@@ -76,9 +80,22 @@ export default async function EmpresasPage() {
       />
 
       {error ? (
-        <div className="rounded-lg border border-border bg-card px-5 py-8 text-sm text-destructive shadow-[var(--shadow-soft)]">
-          {error.message}
-        </div>
+        <section className="rounded-lg border border-border bg-card p-6 shadow-[var(--shadow-soft)]">
+          <div className="flex items-start gap-3">
+            <ShieldAlert
+              className="mt-0.5 size-5 shrink-0 text-destructive"
+              aria-hidden="true"
+            />
+            <div>
+              <h2 className="font-semibold">
+                Não foi possível carregar as empresas
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Tente atualizar a página em alguns instantes.
+              </p>
+            </div>
+          </div>
+        </section>
       ) : (
         <EmpresasTable organizations={organizations} />
       )}

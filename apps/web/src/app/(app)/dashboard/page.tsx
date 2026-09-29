@@ -15,6 +15,7 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import type { Icon as LucideIcon } from "@phosphor-icons/react";
 import { formatInTimeZone } from "date-fns-tz";
+import Link from "next/link";
 import { DashboardFilters } from "./dashboard-filters";
 import {
   CompanyOperationsPanel,
@@ -26,9 +27,9 @@ import {
   type CompanyDashboardChartsData,
   type DashboardSlice,
 } from "./company-dashboard-charts";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { SummaryBarChart } from "@/components/ui/summary-chart";
 import { getRequestContext } from "@/lib/auth/context";
 import { categoricalColors, chartSeries } from "@/lib/colors";
 import {
@@ -57,7 +58,29 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
 type OrganizationMetric = {
+  id: string;
+  name: string;
   status: string;
+  created_at: string;
+};
+
+// Mesmos rótulos e variantes usados em `/empresas` — mantém a leitura de
+// status consistente entre a lista completa e este resumo do Painel.
+const organizationStatusLabel: Record<string, string> = {
+  trial: "Trial",
+  active: "Ativa",
+  suspended: "Suspensa",
+  cancelled: "Cancelada",
+};
+
+const organizationStatusVariant: Record<
+  string,
+  "neutral" | "success" | "warning" | "destructive"
+> = {
+  trial: "warning",
+  active: "success",
+  suspended: "destructive",
+  cancelled: "neutral",
 };
 
 type DashboardPageProps = {
@@ -259,9 +282,13 @@ export default async function DashboardPage({
   const supabase = await createSupabaseServerClient();
   const { data: organizationRows } = await supabase
     .from("organizations")
-    .select("status")
+    .select("id, name, status, created_at")
+    .order("created_at", { ascending: false })
     .returns<OrganizationMetric[]>();
   const organizations = organizationRows ?? [];
+  // As 5 mais recentes: é o que o operador da plataforma quer ver de cara —
+  // quem acabou de entrar, ainda em trial, ou entrou suspensa por engano.
+  const recentOrganizations = organizations.slice(0, 5);
 
   const totalCompanies = organizations.length;
   const activeCompanies = organizations.filter(
@@ -353,39 +380,63 @@ export default async function DashboardPage({
         ))}
       </section>
 
-      <SummaryBarChart
-        title="Empresas por status"
-        data={[
-          { label: "Ativas", value: activeCompanies },
-          { label: "Trials", value: trialCompanies },
-          { label: "Suspensas", value: suspendedCompanies },
-        ]}
-      />
-
       <Card>
-        <CardHeader>
-          <h2 className="text-heading-sm font-semibold">Próxima entrega</h2>
-          <p className="text-sm text-muted-foreground">
-            Cadastros e configurações para iniciar a operação das empresas.
-          </p>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <h2 className="text-heading-sm font-semibold">Empresas recentes</h2>
+            <p className="text-sm text-muted-foreground">
+              Os últimos cadastros na plataforma.
+            </p>
+          </div>
+          <Link
+            href="/empresas"
+            className="shrink-0 text-sm font-medium text-primary hover:underline"
+          >
+            Ver todas
+          </Link>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          {[
-            "Configurar unidades",
-            "Cadastrar profissionais",
-            "Definir serviços e horários",
-          ].map((item) => (
-            <div
-              key={item}
-              className="flex min-h-20 items-center gap-3 rounded-lg border border-border bg-background p-4"
-            >
-              <ClipboardCheck
-                className="size-4 shrink-0 text-primary"
-                aria-hidden="true"
-              />
-              <p className="text-sm font-medium">{item}</p>
-            </div>
-          ))}
+        <CardContent className="grid gap-2">
+          {recentOrganizations.length ? (
+            recentOrganizations.map((organization) => (
+              <Link
+                key={organization.id}
+                href={`/empresas/${organization.id}`}
+                className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3 transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-muted"
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded bg-muted text-primary">
+                    <Building2 className="size-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">
+                      {organization.name}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      Cadastrada em{" "}
+                      {formatInTimeZone(
+                        organization.created_at,
+                        defaultDashboardTimeZone,
+                        "dd/MM/yyyy",
+                      )}
+                    </span>
+                  </span>
+                </span>
+                <Badge
+                  variant={
+                    organizationStatusVariant[organization.status] ?? "neutral"
+                  }
+                  className="shrink-0"
+                >
+                  {organizationStatusLabel[organization.status] ??
+                    organization.status}
+                </Badge>
+              </Link>
+            ))
+          ) : (
+            <p className="px-1 py-3 text-sm text-muted-foreground">
+              Nenhuma empresa cadastrada ainda.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
