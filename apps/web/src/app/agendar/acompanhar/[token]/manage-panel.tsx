@@ -33,7 +33,7 @@ export type BookingDetails = {
 
 const initialState: BookingManageState = {};
 const statusLabel: Record<BookingStatus, string> = {
-  requested: "Aguardando confirmacao",
+  requested: "Aguardando confirmação",
   confirmed: "Confirmado",
   rejected: "Rejeitado",
   cancelled: "Cancelado",
@@ -68,7 +68,7 @@ export function ManageBookingPanel({ booking }: { booking: BookingDetails }) {
       <CardContent className="grid gap-3 text-sm md:grid-cols-2">
         <Detail label="Paciente" value={booking.patientName} />
         <Detail
-          label="Horario"
+          label="Horário"
           value={formatDateTime(booking.requestedStartAt, booking.timezone)}
         />
         <Detail label="Procedimento" value={booking.procedureName} />
@@ -76,7 +76,7 @@ export function ManageBookingPanel({ booking }: { booking: BookingDetails }) {
         <Detail label="Unidade" value={booking.unitName} />
         <Detail
           label="Cancelamento online"
-          value={`${booking.cancellationNoticeHours}h de antecedencia`}
+          value={`${booking.cancellationNoticeHours}h de antecedência`}
         />
       </CardContent>
     </Card>
@@ -108,12 +108,22 @@ export function RescheduleCard({
       <CardHeader>
         <div className="flex items-center gap-2">
           <CalendarClock className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="font-semibold">Remarcar solicitacao pendente</h2>
+          <h2 className="font-semibold">Remarcar solicitação pendente</h2>
         </div>
       </CardHeader>
       <CardContent>
         <form action={action} className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <Select name="start_at" required>
+          {/* Sem horário pré-escolhido: antes o primeiro da lista vinha
+              marcado e um clique em "Remarcar" mudava o pedido sem escolha. */}
+          <Select
+            name="start_at"
+            required
+            placeholder="Escolha o novo horário"
+            aria-label="Novo horário"
+            searchable={slots.length > 8}
+            searchPlaceholder="Buscar dia ou horário"
+          >
+            <option value="">Escolha o novo horário</option>
             {slots.map((slot) => (
               <option key={slot.id} value={slot.startAt}>
                 {slot.label}

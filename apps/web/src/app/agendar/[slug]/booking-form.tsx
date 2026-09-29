@@ -111,10 +111,34 @@ export function BookingForm({
   );
 
   const [step, setStep] = useState<BookingStep>(1);
+  // Direção da última troca de passo: o passo novo entra do lado para onde
+  // se foi. Nula no primeiro passo, que não anima ao abrir a página.
+  const [stepDirection, setStepDirection] = useState<"forward" | "back" | null>(
+    null,
+  );
+  const stepEnterClass =
+    stepDirection === "forward"
+      ? "animate-step-forward"
+      : stepDirection === "back"
+        ? "animate-step-back"
+        : "";
   const [stepError, setStepError] = useState("");
-  const [professionalId, setProfessionalId] = useState("");
-  const [scheduleId, setScheduleId] = useState("");
+  // Com um único profissional (e uma única agenda dele) não há o que
+  // escolher: já vem selecionado.
+  const [professionalId, setProfessionalId] = useState(() => {
+    const ids = [...new Set(schedules.map((item) => item.professionalId))];
+    return ids.length === 1 ? ids[0] : "";
+  });
+  const [scheduleId, setScheduleId] = useState(() => {
+    const ids = [...new Set(schedules.map((item) => item.professionalId))];
+    if (ids.length !== 1) return "";
+    const own = schedules.filter((item) => item.professionalId === ids[0]);
+    return own.length === 1 ? own[0].id : "";
+  });
   const [procedureId, setProcedureId] = useState("");
+  // Serviço escolhido pelo botão "Agendar" da lista de serviços da página.
+  const [preferredProcedureId, setPreferredProcedureId] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [selectedDayState, setSelectedDayState] = useState("");
   const [dayWindowStart, setDayWindowStart] = useState(0);
   const [slotId, setSlotId] = useState("");
@@ -130,9 +154,6 @@ export function BookingForm({
   const [slotsError, setSlotsError] = useState("");
   const [slotsReloadKey, setSlotsReloadKey] = useState(0);
   const [reviewRefreshPending, setReviewRefreshPending] = useState(false);
-  const [verificationContactType, setVerificationContactType] = useState<
-    "email" | "phone"
-  >("email");
   const [verificationChallengeContactKey, setVerificationChallengeContactKey] =
     useState("");
 
@@ -160,6 +181,24 @@ export function BookingForm({
     );
   }, [schedules]);
 
+  const preferredProcedure = procedures.find(
+    (procedure) => procedure.id === preferredProcedureId,
+  );
+  const orderedProfessionals = preferredProcedureId
+    ? [...professionals].sort(
+        (left, right) =>
+          Number(
+            right.schedules.some((schedule) =>
+              schedule.procedureIds.includes(preferredProcedureId),
+            ),
+          ) -
+          Number(
+            left.schedules.some((schedule) =>
+              schedule.procedureIds.includes(preferredProcedureId),
+            ),
+          ),
+      )
+    : professionals;
   const selectedProfessional = professionals.find(
     (professional) => professional.id === professionalId,
   );
@@ -212,14 +251,11 @@ export function BookingForm({
   const selectedProcedure = procedures.find((item) => item.id === procedureId);
   const selectedInsurance = insurances.find((item) => item.id === insuranceId);
 
-  const verificationDestination =
-    verificationContactType === "email" ? email : phone;
+  // O código sai pelo WhatsApp da clínica: o contato verificado é o telefone.
+  const verificationDestination = phone;
   const verificationId =
     verificationState.verificationId ?? codeState.verificationId ?? "";
-  const currentContactKey = buildContactKey(
-    verificationContactType,
-    verificationDestination,
-  );
+  const currentContactKey = buildContactKey(verificationDestination);
   const verifiedCurrentContact =
     Boolean(codeState.verified) &&
     Boolean(codeState.verificationId) &&
@@ -267,6 +303,34 @@ export function BookingForm({
     return () => controller.abort();
   }, [procedureId, scheduleId, slotsReloadKey, slug]);
 
+  useEffect(() => {
+    function onChooseService(event: Event) {
+      const nextProcedureId = (event as CustomEvent<string>).detail;
+      if (!procedures.some((procedure) => procedure.id === nextProcedureId)) {
+        return;
+      }
+      setPreferredProcedureId(nextProcedureId);
+      // Agenda já escolhida e oferecendo o serviço: ele entra direto.
+      const schedule = schedules.find((item) => item.id === scheduleId);
+      if (schedule?.procedureIds.includes(nextProcedureId)) {
+        handleProcedureChange(nextProcedureId);
+      }
+    }
+    window.addEventListener("booking:choose-service", onChooseService);
+    return () =>
+      window.removeEventListener("booking:choose-service", onChooseService);
+  });
+
+  function clearFieldError(key: string) {
+    setStepError("");
+    setFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
   function resetDateAndSlot() {
     setSelectedDayState("");
     setSlotId("");
@@ -277,22 +341,34 @@ export function BookingForm({
     const nextSchedules = schedules.filter(
       (schedule) => schedule.professionalId === nextProfessionalId,
     );
+    const nextScheduleId =
+      nextSchedules.length === 1 ? nextSchedules[0].id : "";
+    const preferred =
+      nextScheduleId &&
+      nextSchedules[0].procedureIds.includes(preferredProcedureId)
+        ? preferredProcedureId
+        : "";
     setProfessionalId(nextProfessionalId);
-    setScheduleId(nextSchedules.length === 1 ? nextSchedules[0].id : "");
-    setProcedureId("");
+    setScheduleId(nextScheduleId);
+    setProcedureId(preferred);
     setSlots([]);
     setSlotsError("");
-    setSlotsLoading(false);
+    setSlotsLoading(Boolean(preferred));
     resetDateAndSlot();
     setStepError("");
   }
 
   function handleScheduleChange(nextScheduleId: string) {
+    const preferred = schedules
+      .find((item) => item.id === nextScheduleId)
+      ?.procedureIds.includes(preferredProcedureId)
+      ? preferredProcedureId
+      : "";
     setScheduleId(nextScheduleId);
-    setProcedureId("");
+    setProcedureId(preferred);
     setSlots([]);
     setSlotsError("");
-    setSlotsLoading(false);
+    setSlotsLoading(Boolean(preferred));
     resetDateAndSlot();
     setStepError("");
   }
@@ -308,42 +384,54 @@ export function BookingForm({
 
   function goToStep(nextStep: BookingStep) {
     setStepError("");
+    setStepDirection(nextStep > step ? "forward" : "back");
     setStep(nextStep);
   }
 
   async function continueFromDetails() {
-    if (patientName.trim().length < 2) {
-      setStepError("Informe o nome completo.");
-      return;
-    }
+    const errors: Record<string, string> = {};
+    if (patientName.trim().length < 2) errors.name = "Informe o nome completo.";
     if (!email.trim() && !phone.trim()) {
-      setStepError("Informe pelo menos um e-mail ou telefone para contato.");
-      return;
+      errors.phone = "Informe um telefone ou um e-mail para contato.";
     }
     if (email.trim() && !isValidEmail(email)) {
-      setStepError("Informe um e-mail válido.");
-      return;
+      errors.email = "Confira o e-mail: falta algo, como o @ ou o domínio.";
     }
     if (phone.trim() && !isValidPhoneBR(phone)) {
-      setStepError("Informe um telefone com DDD válido.");
-      return;
+      errors.phone = "Informe o telefone com DDD, ex.: (85) 99999-0000.";
+    }
+    if (requireContactVerification && !phone.trim()) {
+      errors.phone = "Informe o WhatsApp para receber o código.";
     }
     if (cpf.trim() && !isValidCPF(cpf)) {
-      setStepError("Informe um CPF válido.");
-      return;
+      errors.cpf = "CPF inválido. Confira os números ou deixe em branco.";
     }
-    if (requireContactVerification && !verifiedCurrentContact) {
-      setStepError("Valide o contato escolhido antes de continuar.");
-      return;
+    if (
+      requireContactVerification &&
+      !verifiedCurrentContact &&
+      !errors.phone
+    ) {
+      errors.verification = "Confirme o código enviado pelo WhatsApp.";
     }
     if (!lgpdConsent) {
-      setStepError("Autorize o uso dos dados para continuar.");
+      errors.consent = "Marque a autorização para continuar.";
+    }
+    setFieldErrors(errors);
+    const firstError = [
+      ["name", "booking-name"],
+      ["phone", "booking-phone"],
+      ["email", "booking-email"],
+      ["verification", "booking-verification"],
+      ["cpf", "booking-cpf"],
+      ["consent", "booking-consent"],
+    ].find(([key]) => errors[key]);
+    if (firstError) {
+      document.getElementById(firstError[1])?.focus();
       return;
     }
     if (!selectedSlot || !scheduleId || !procedureId) {
       setSlotsError("Selecione novamente um horário disponível.");
-      setStepError("");
-      setStep(2);
+      goToStep(2);
       return;
     }
 
@@ -365,8 +453,7 @@ export function BookingForm({
         setSlotsError(
           "Esse horário não está mais disponível. Escolha outro horário.",
         );
-        setStepError("");
-        setStep(2);
+        goToStep(2);
         return;
       }
       goToStep(4);
@@ -383,15 +470,15 @@ export function BookingForm({
 
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader className="min-w-0">
+      <CardHeader className="relative min-w-0 border-0 pb-2 pl-[3.75rem] pt-4">
         <div className="flex min-w-0 items-center gap-2">
           <CalendarCheck
-            className="size-5 shrink-0 text-primary"
+            className="absolute left-5 top-4 size-7 shrink-0 text-primary"
             aria-hidden="true"
           />
-          <h2 className="truncate font-semibold">Solicitar agendamento</h2>
+          <h2 className="text-base font-bold">Solicitar agendamento</h2>
         </div>
-        <p className="text-sm text-muted-foreground">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           A clínica confirma o horário antes de ele entrar na agenda.
         </p>
       </CardHeader>
@@ -400,64 +487,105 @@ export function BookingForm({
 
       <CardContent className="min-w-0 overflow-hidden p-4">
         {state.accessToken ? (
-          <BookingSuccess accessToken={state.accessToken} />
+          <BookingSuccess
+            accessToken={state.accessToken}
+            summary={[
+              selectedProcedure?.name,
+              selectedProfessional?.name,
+              formatSlotLabel(selectedSlot?.label),
+            ]
+              .filter((item) => item && item !== "—")
+              .join(" · ")}
+          />
         ) : (
           <div className="min-w-0">
             {step === 1 ? (
               <section
-                className="grid min-w-0 gap-5"
+                className={cn("grid min-w-0 gap-3", stepEnterClass)}
                 aria-labelledby="step-1-title"
               >
                 <div>
                   <h3 id="step-1-title" className="font-semibold">
                     Escolha o profissional
                   </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Depois mostraremos as agendas, os serviços e os horários
-                    disponíveis.
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {preferredProcedure
+                      ? `Serviço escolhido: ${preferredProcedure.name}. Quem oferece aparece primeiro.`
+                      : "Depois você escolhe o serviço, o dia e o horário."}
                   </p>
                 </div>
 
-                <label className="grid min-w-0 gap-2 text-sm font-medium">
-                  Profissional
-                  <Select
-                    value={professionalId}
-                    onValueChange={handleProfessionalChange}
-                    className="min-w-0 w-full"
+                {professionals.length ? (
+                  // Cartões em vez de lista suspensa: o paciente vê todos os
+                  // nomes de uma vez e toca no que quer.
+                  <div
+                    role="radiogroup"
+                    aria-labelledby="step-1-title"
+                    className="grid max-h-[26rem] min-w-0 gap-1.5 overflow-y-auto"
                   >
-                    <option value="">Selecione um profissional</option>
-                    {professionals.map((professional) => (
-                      <option key={professional.id} value={professional.id}>
-                        {professional.name}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-
-                {selectedProfessional ? (
-                  <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-muted/30 p-3">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-primary">
-                      <UserRound className="size-5" aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
-                        {selectedProfessional.name}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {selectedProfessional.schedules.length === 1
-                          ? selectedProfessional.schedules[0].unitName
-                          : `${selectedProfessional.schedules.length} agendas disponíveis`}
-                      </p>
-                    </div>
+                    {orderedProfessionals.map((professional) => {
+                      const selected = professional.id === professionalId;
+                      const offersPreferred =
+                        !preferredProcedureId ||
+                        professional.schedules.some((schedule) =>
+                          schedule.procedureIds.includes(preferredProcedureId),
+                        );
+                      return (
+                        <button
+                          key={professional.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() =>
+                            handleProfessionalChange(professional.id)
+                          }
+                          className={cn(
+                            "flex min-w-0 items-center gap-4 rounded-lg border px-3 py-2 text-left transition-[border-color,background-color,box-shadow,scale] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:scale-[0.99] motion-reduce:active:scale-100",
+                            selected
+                              ? "border-primary bg-primary-muted/50 shadow-[var(--shadow-soft)]"
+                              : "border-border bg-card hover:border-primary/50",
+                          )}
+                        >
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted text-primary">
+                            <UserRound className="size-5" aria-hidden="true" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold">
+                              {professional.name}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {offersPreferred
+                                ? [
+                                    ...new Set(
+                                      professional.schedules.map(
+                                        (schedule) => schedule.unitName,
+                                      ),
+                                    ),
+                                  ].join(" · ")
+                                : "Não oferece o serviço escolhido online"}
+                            </span>
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors duration-[var(--motion-fast)]",
+                              selected
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border-strong",
+                            )}
+                          >
+                            {selected ? <Check className="size-3" /> : null}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                ) : null}
-
-                {!professionals.length ? (
+                ) : (
                   <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
                     Nenhum profissional está disponível para agendamento online
                     no momento.
                   </p>
-                ) : null}
+                )}
 
                 <Button
                   type="button"
@@ -473,7 +601,7 @@ export function BookingForm({
 
             {step === 2 ? (
               <section
-                className="grid min-w-0 gap-4"
+                className={cn("grid min-w-0 gap-4", stepEnterClass)}
                 aria-labelledby="step-2-title"
               >
                 <div className="min-w-0">
@@ -485,21 +613,34 @@ export function BookingForm({
                   </p>
                 </div>
 
-                <label className="grid min-w-0 gap-2 text-sm font-medium">
-                  Agenda e unidade
-                  <Select
-                    value={scheduleId}
-                    onValueChange={handleScheduleChange}
-                    className="min-w-0 w-full"
-                  >
-                    <option value="">Selecione uma agenda</option>
-                    {professionalSchedules.map((schedule) => (
-                      <option key={schedule.id} value={schedule.id}>
-                        {schedule.name} — {schedule.unitName}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
+                {professionalSchedules.length > 1 ? (
+                  <label className="grid min-w-0 gap-2 text-sm font-medium">
+                    Local de atendimento
+                    <Select
+                      value={scheduleId}
+                      onValueChange={handleScheduleChange}
+                      className="min-w-0 w-full"
+                    >
+                      <option value="">Selecione o local</option>
+                      {professionalSchedules.map((schedule) => (
+                        <option key={schedule.id} value={schedule.id}>
+                          {professionalSchedules.filter(
+                            (item) => item.unitName === schedule.unitName,
+                          ).length > 1
+                            ? `${schedule.unitName} — ${schedule.name}`
+                            : schedule.unitName}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                ) : professionalSchedules[0] ? (
+                  <p className="text-sm text-muted-foreground">
+                    Local:{" "}
+                    <span className="font-medium text-foreground">
+                      {professionalSchedules[0].unitName}
+                    </span>
+                  </p>
+                ) : null}
 
                 <label className="grid min-w-0 gap-2 text-sm font-medium">
                   Serviço
@@ -512,7 +653,7 @@ export function BookingForm({
                     <option value="">Selecione um serviço</option>
                     {availableProcedures.map((procedure) => (
                       <option key={procedure.id} value={procedure.id}>
-                        {procedure.name} ({procedure.durationMinutes} min)
+                        {procedure.name} · {procedure.durationMinutes} min
                       </option>
                     ))}
                   </Select>
@@ -611,7 +752,7 @@ export function BookingForm({
 
             {step === 3 ? (
               <section
-                className="grid min-w-0 gap-4"
+                className={cn("grid min-w-0 gap-4", stepEnterClass)}
                 aria-labelledby="step-3-title"
               >
                 <div>
@@ -620,86 +761,137 @@ export function BookingForm({
                   </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
                     A clínica usará estas informações para confirmar o pedido.
+                    Campos com <span className="text-destructive">*</span> são
+                    obrigatórios.
                   </p>
                 </div>
 
-                <label className="grid min-w-0 gap-2 text-sm font-medium">
-                  Nome completo
+                <DetailsField
+                  id="booking-name"
+                  label="Nome completo"
+                  required
+                  error={fieldErrors.name}
+                >
                   <Input
+                    id="booking-name"
                     autoComplete="name"
                     value={patientName}
+                    aria-invalid={Boolean(fieldErrors.name)}
+                    aria-describedby={
+                      fieldErrors.name ? "booking-name-error" : undefined
+                    }
                     onChange={(event) => {
                       setPatientName(event.target.value);
-                      setStepError("");
+                      clearFieldError("name");
                     }}
                   />
-                </label>
-                <label className="grid min-w-0 gap-2 text-sm font-medium">
-                  E-mail
-                  <Input
-                    type="email"
-                    autoComplete="email"
-                    value={email}
-                    onChange={(event) => {
-                      setEmail(event.target.value);
-                      setStepError("");
-                    }}
-                  />
-                </label>
-                <label className="grid min-w-0 gap-2 text-sm font-medium">
-                  Telefone/WhatsApp
+                </DetailsField>
+                <DetailsField
+                  id="booking-phone"
+                  label="Telefone/WhatsApp"
+                  required={requireContactVerification}
+                  hint={
+                    requireContactVerification
+                      ? undefined
+                      : "Informe telefone ou e-mail (pelo menos um)."
+                  }
+                  error={fieldErrors.phone}
+                >
                   <MaskedInput
+                    id="booking-phone"
                     maskKind="phone"
                     autoComplete="tel"
                     inputMode="tel"
                     placeholder="(00) 00000-0000"
                     value={phone}
+                    aria-invalid={Boolean(fieldErrors.phone)}
+                    aria-describedby={
+                      fieldErrors.phone ? "booking-phone-error" : undefined
+                    }
                     onValueChange={(value) => {
                       setPhone(value);
-                      setStepError("");
+                      clearFieldError("phone");
                     }}
                   />
-                </label>
+                </DetailsField>
+                <DetailsField
+                  id="booking-email"
+                  label="E-mail"
+                  optional={requireContactVerification}
+                  error={fieldErrors.email}
+                >
+                  <Input
+                    id="booking-email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    aria-invalid={Boolean(fieldErrors.email)}
+                    aria-describedby={
+                      fieldErrors.email ? "booking-email-error" : undefined
+                    }
+                    onChange={(event) => {
+                      setEmail(event.target.value);
+                      clearFieldError("email");
+                      clearFieldError("phone");
+                    }}
+                  />
+                </DetailsField>
 
                 {requireContactVerification ? (
-                  <ContactVerification
-                    slug={slug}
-                    email={email}
-                    phone={phone}
-                    contactType={verificationContactType}
-                    onContactTypeChange={setVerificationContactType}
-                    destination={verificationDestination}
-                    verificationId={verificationId}
-                    ttlMinutes={verificationTtlMinutes}
-                    verified={verifiedCurrentContact}
-                    startState={verificationState}
-                    codeState={codeState}
-                    startAction={startVerificationAction}
-                    verifyAction={verifyCodeAction}
-                    startPending={startVerificationPending}
-                    verifyPending={verifyCodePending}
-                    onStart={() =>
-                      setVerificationChallengeContactKey(currentContactKey)
-                    }
-                  />
+                  <div
+                    id="booking-verification"
+                    tabIndex={-1}
+                    className="grid gap-2 outline-none"
+                  >
+                    <ContactVerification
+                      slug={slug}
+                      destination={verificationDestination}
+                      verificationId={verificationId}
+                      ttlMinutes={verificationTtlMinutes}
+                      verified={verifiedCurrentContact}
+                      startState={verificationState}
+                      codeState={codeState}
+                      startAction={startVerificationAction}
+                      verifyAction={verifyCodeAction}
+                      startPending={startVerificationPending}
+                      verifyPending={verifyCodePending}
+                      onStart={() =>
+                        setVerificationChallengeContactKey(currentContactKey)
+                      }
+                    />
+                    {fieldErrors.verification ? (
+                      <p role="alert" className="text-sm text-destructive">
+                        {fieldErrors.verification}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
 
-                <label className="grid min-w-0 gap-2 text-sm font-medium">
-                  CPF
+                <DetailsField
+                  id="booking-cpf"
+                  label="CPF"
+                  optional
+                  error={fieldErrors.cpf}
+                >
                   <MaskedInput
+                    id="booking-cpf"
                     maskKind="cpf"
                     inputMode="numeric"
                     placeholder="000.000.000-00"
                     value={cpf}
+                    aria-invalid={Boolean(fieldErrors.cpf)}
+                    aria-describedby={
+                      fieldErrors.cpf ? "booking-cpf-error" : undefined
+                    }
                     onValueChange={(value) => {
                       setCpf(value);
-                      setStepError("");
+                      clearFieldError("cpf");
                     }}
                   />
-                </label>
-                <label className="grid min-w-0 gap-2 text-sm font-medium">
-                  Convênio
+                </DetailsField>
+                <DetailsField id="booking-insurance" label="Convênio" optional>
                   <Select
+                    id="booking-insurance"
                     value={insuranceId}
                     onValueChange={setInsuranceId}
                     allowEmptyOption
@@ -712,18 +904,27 @@ export function BookingForm({
                       </option>
                     ))}
                   </Select>
-                </label>
-                <label className="grid min-w-0 gap-2 text-sm font-medium">
-                  Observações
+                </DetailsField>
+                <DetailsField id="booking-notes" label="Observações" optional>
                   <Textarea
+                    id="booking-notes"
                     value={notes}
                     maxLength={500}
                     onChange={(event) => setNotes(event.target.value)}
-                    placeholder="Opcional"
+                    placeholder="Algo que a clínica deva saber antes da consulta"
                   />
-                </label>
+                </DetailsField>
 
-                <div className="grid min-w-0 gap-3 rounded-md border border-border bg-muted/35 p-3">
+                <div
+                  id="booking-consent"
+                  tabIndex={-1}
+                  className={cn(
+                    "grid min-w-0 gap-3 rounded-md border bg-muted/35 p-3 outline-none",
+                    fieldErrors.consent
+                      ? "border-destructive"
+                      : "border-border",
+                  )}
+                >
                   <div className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground">
                     <ShieldCheck
                       className="mt-0.5 size-4 shrink-0 text-primary"
@@ -738,10 +939,15 @@ export function BookingForm({
                     checked={lgpdConsent}
                     onChange={(event) => {
                       setLgpdConsent(event.target.checked);
-                      setStepError("");
+                      clearFieldError("consent");
                     }}
                     label="Autorizo o uso dos dados para tratar esta solicitação."
                   />
+                  {fieldErrors.consent ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {fieldErrors.consent}
+                    </p>
+                  ) : null}
                 </div>
 
                 {stepError ? (
@@ -782,7 +988,7 @@ export function BookingForm({
 
             {step === 4 ? (
               <section
-                className="grid min-w-0 gap-4"
+                className={cn("grid min-w-0 gap-4", stepEnterClass)}
                 aria-labelledby="step-4-title"
               >
                 <div>
@@ -822,7 +1028,13 @@ export function BookingForm({
                   {selectedProcedure ? (
                     <ReviewRow
                       label="Valor"
-                      value={formatCurrency(selectedProcedure.basePrice)}
+                      value={
+                        selectedInsurance
+                          ? `Pelo convênio ${selectedInsurance.name}`
+                          : selectedProcedure.basePrice > 0
+                            ? formatCurrency(selectedProcedure.basePrice)
+                            : "A combinar com a clínica"
+                      }
                     />
                   ) : null}
                 </ReviewBlock>
@@ -949,12 +1161,13 @@ function AvailabilityPicker({
   onSelectDay: (day: string) => void;
   onSelectSlot: (slotId: string) => void;
 }) {
+  const selectedDayInfo = days.find((day) => day.key === selectedDay);
   return (
     <div className="grid min-w-0 gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="text-sm font-medium">Horários disponíveis</span>
         <Badge variant="neutral">{matchingSlotCount}</Badge>
-        {selectedProcedure ? (
+        {selectedProcedure && selectedProcedure.basePrice > 0 ? (
           <Badge variant="primary">
             {formatCurrency(selectedProcedure.basePrice)}
           </Badge>
@@ -982,6 +1195,8 @@ function AvailabilityPicker({
                   type="button"
                   variant="secondary"
                   onClick={() => onSelectDay(day.key)}
+                  aria-pressed={day.key === selectedDay}
+                  aria-label={`${day.weekdayLabel}, ${day.dateLabel}`}
                   className={cn(
                     "h-auto min-w-0 flex-col gap-0 overflow-hidden px-1 py-2",
                     day.key === selectedDay
@@ -1013,7 +1228,9 @@ function AvailabilityPicker({
 
           <div className="mt-3 min-w-0 border-t border-border pt-3">
             <p className="mb-2 truncate text-xs font-medium text-muted-foreground">
-              Horários em {selectedDay}
+              {selectedDayInfo
+                ? `Horários de ${selectedDayInfo.weekdayLabel}, ${selectedDayInfo.dateLabel}`
+                : "Horários"}
             </p>
             <div className="grid min-w-0 grid-cols-3 gap-2">
               {daySlots.map((slot) => (
@@ -1022,6 +1239,7 @@ function AvailabilityPicker({
                   type="button"
                   variant="secondary"
                   onClick={() => onSelectSlot(slot.id)}
+                  aria-pressed={slot.id === selectedSlotId}
                   className={cn(
                     "min-w-0 px-1.5 py-2 text-control font-medium tabular-nums",
                     slot.id === selectedSlotId
@@ -1047,8 +1265,6 @@ function AvailabilityPicker({
 
 function ContactVerification({
   slug,
-  contactType,
-  onContactTypeChange,
   destination,
   verificationId,
   ttlMinutes,
@@ -1062,10 +1278,6 @@ function ContactVerification({
   onStart,
 }: {
   slug: string;
-  email: string;
-  phone: string;
-  contactType: "email" | "phone";
-  onContactTypeChange: (value: "email" | "phone") => void;
   destination: string;
   verificationId: string;
   ttlMinutes: number;
@@ -1078,6 +1290,7 @@ function ContactVerification({
   verifyPending: boolean;
   onStart: () => void;
 }) {
+  const phoneReady = isValidPhoneBR(destination);
   return (
     <div className="grid min-w-0 gap-3 rounded-md border border-border bg-muted/35 p-3">
       <div className="flex min-w-0 items-start justify-between gap-2">
@@ -1087,102 +1300,149 @@ function ContactVerification({
             aria-hidden="true"
           />
           <div className="min-w-0">
-            <p className="text-sm font-medium">Verificação de contato</p>
+            <p className="text-sm font-medium">Confirme seu WhatsApp</p>
             <p className="text-xs text-muted-foreground">
-              O código vale por {ttlMinutes} minutos.
+              {phoneReady
+                ? `Enviaremos um código de 6 dígitos para ${destination}. Ele vale por ${ttlMinutes} minutos.`
+                : "Preencha o telefone acima para receber o código pelo WhatsApp."}
             </p>
           </div>
         </div>
         <Badge variant={verified ? "success" : "warning"}>
-          {verified ? "Verificado" : "Pendente"}
+          {verified ? "Confirmado" : "Pendente"}
         </Badge>
       </div>
 
-      <form
-        action={startAction}
-        onSubmit={onStart}
-        className="grid min-w-0 gap-3"
-      >
-        <input type="hidden" name="slug" value={slug} />
-        <input type="hidden" name="destination" value={destination} />
-        <label className="grid min-w-0 gap-2 text-sm font-medium">
-          Canal para receber o código
-          <Select
-            name="contact_type"
-            value={contactType}
-            onValueChange={(value) =>
-              onContactTypeChange(value as "email" | "phone")
-            }
-            className="min-w-0 w-full"
+      {!verified ? (
+        <form
+          action={startAction}
+          onSubmit={onStart}
+          className="grid min-w-0 gap-2"
+        >
+          <input type="hidden" name="slug" value={slug} />
+          <input type="hidden" name="destination" value={destination} />
+          {startState.deliveryDebugCode ? (
+            <p className="text-sm font-medium text-primary">
+              Código de teste: {startState.deliveryDebugCode}
+            </p>
+          ) : null}
+          <Button
+            type="submit"
+            variant={verificationId ? "secondary" : "primary"}
+            disabled={startPending || !phoneReady}
+            className="w-full"
           >
-            <option value="email">E-mail</option>
-            <option value="phone">Telefone</option>
-          </Select>
-        </label>
-        <p className="min-w-0 break-words text-xs text-muted-foreground">
-          {destination || "Preencha o contato acima antes de gerar o código."}
-        </p>
-        {startState.deliveryDebugCode ? (
-          <p className="text-sm font-medium text-primary">
-            Código gerado: {startState.deliveryDebugCode}
-          </p>
-        ) : null}
-        <Button
-          type="submit"
-          disabled={startPending || destination.trim().length < 3}
-          className="w-full"
-        >
-          {startPending ? "Gerando..." : "Gerar código"}
-        </Button>
-        {startState.error ? (
-          <p className="text-sm text-destructive">{startState.error}</p>
-        ) : null}
-      </form>
+            {startPending
+              ? "Enviando..."
+              : verificationId
+                ? "Enviar outro código"
+                : "Enviar código pelo WhatsApp"}
+          </Button>
+          {startState.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {startState.error}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
 
-      <form
-        action={verifyAction}
-        className="grid min-w-0 gap-3 border-t border-border pt-3"
-      >
-        <input type="hidden" name="verification_id" value={verificationId} />
-        <label className="grid min-w-0 gap-2 text-sm font-medium">
-          Código de 6 dígitos
-          <Input
-            name="code"
-            inputMode="numeric"
-            maxLength={6}
-            pattern="[0-9]{6}"
-            disabled={!verificationId}
-          />
-        </label>
-        <Button
-          type="submit"
-          variant="secondary"
-          disabled={verifyPending || !verificationId}
-          className="w-full"
+      {verificationId && !verified ? (
+        <form
+          action={verifyAction}
+          className="grid min-w-0 gap-3 border-t border-border pt-3"
         >
-          {verifyPending ? "Validando..." : "Validar código"}
-        </Button>
-        {codeState.error ? (
-          <p className="text-sm text-destructive">{codeState.error}</p>
+          <input type="hidden" name="verification_id" value={verificationId} />
+          <label className="grid min-w-0 gap-2 text-sm font-medium">
+            Código recebido
+            <Input
+              name="code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              pattern="[0-9]{6}"
+              placeholder="000000"
+              className="tabular-nums tracking-[0.3em]"
+              required
+            />
+          </label>
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={verifyPending}
+            className="w-full"
+          >
+            {verifyPending ? "Confirmando..." : "Confirmar código"}
+          </Button>
+          {codeState.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {codeState.error}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
+function DetailsField({
+  children,
+  error,
+  hint,
+  id,
+  label,
+  optional,
+  required,
+}: {
+  children: React.ReactNode;
+  error?: string;
+  hint?: string;
+  id: string;
+  label: string;
+  optional?: boolean;
+  required?: boolean;
+}) {
+  return (
+    <div className="grid min-w-0 gap-2">
+      <label htmlFor={id} className="text-sm font-medium">
+        {label}
+        {required ? (
+          <span className="text-destructive" aria-hidden="true">
+            {" "}
+            *
+          </span>
         ) : null}
-      </form>
+        {optional ? (
+          <span className="font-normal text-muted-foreground"> (opcional)</span>
+        ) : null}
+      </label>
+      {children}
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : hint ? (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   );
 }
 
 function BookingStepper({ step }: { step: BookingStep }) {
   return (
-    <div className="grid grid-cols-4 border-y border-border px-2 py-3">
+    <div
+      className="grid grid-cols-4 border-b border-border px-2 pb-4 pt-2"
+      aria-label="Etapas do agendamento"
+    >
       {stepDefinitions.map((definition, index) => (
         <div
           key={definition.n}
-          className="relative flex min-w-0 flex-col items-center gap-1 text-center"
+          className="relative flex min-w-0 flex-col items-center gap-1.5 text-center"
           aria-current={definition.n === step ? "step" : undefined}
         >
           {index > 0 ? (
             <span
               className={cn(
-                "absolute right-1/2 top-3 z-0 h-px w-full bg-border",
+                "absolute right-[calc(50%+1.5rem)] top-3.5 z-0 h-px w-[calc(100%-3rem)] bg-border-strong",
                 definition.n <= step && "bg-primary/40",
               )}
               aria-hidden="true"
@@ -1190,7 +1450,7 @@ function BookingStepper({ step }: { step: BookingStep }) {
           ) : null}
           <span
             className={cn(
-              "relative z-10 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+              "relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
               definition.n < step
                 ? "bg-success text-white"
                 : definition.n === step
@@ -1244,7 +1504,13 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function BookingSuccess({ accessToken }: { accessToken: string }) {
+function BookingSuccess({
+  accessToken,
+  summary,
+}: {
+  accessToken: string;
+  summary: string;
+}) {
   const router = useRouter();
   const [isNavigating, startNavigation] = useTransition();
 
@@ -1255,15 +1521,22 @@ function BookingSuccess({ accessToken }: { accessToken: string }) {
   }
 
   return (
+    // O único momento de encanto do fluxo, e raro: uma vez por agendamento.
+    // O selo cresce até o lugar e o texto vem logo depois, sem repetir.
     <div className="grid min-w-0 gap-4 py-2 text-center">
-      <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-muted text-success-foreground">
+      <span className="mx-auto flex size-12 animate-success-pop items-center justify-center rounded-full bg-success-muted text-success-foreground">
         <Check className="size-6" aria-hidden="true" />
       </span>
-      <div>
+      <div className="animate-content-enter [animation-delay:60ms]">
         <h3 className="font-semibold">Solicitação registrada</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           A clínica entrará em contato para confirmar o horário.
         </p>
+        {summary ? (
+          <p className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-sm font-medium">
+            {summary}
+          </p>
+        ) : null}
       </div>
       <Button
         type="button"
@@ -1300,10 +1573,20 @@ async function fetchPublicBookingSlots({
     schedule_id: scheduleId,
     procedure_id: procedureId,
   });
-  const response = await fetch(`/api/public-booking/slots?${query}`, {
-    cache: "no-store",
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/public-booking/slots?${query}`, {
+      cache: "no-store",
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    // Sem conexão o navegador rejeita com "Failed to fetch", que chegava
+    // assim, em inglês, à tela do paciente.
+    throw new Error(
+      "Não foi possível carregar os horários. Verifique sua conexão e tente de novo.",
+    );
+  }
   const payload = (await response.json().catch(() => null)) as {
     error?: unknown;
     slots?: unknown;
@@ -1339,9 +1622,8 @@ function isPublicSlot(value: unknown): value is PublicSlot {
   ].every((key) => typeof slot[key] === "string");
 }
 
-function buildContactKey(contactType: "email" | "phone", destination: string) {
-  if (contactType === "email") return destination.trim().toLowerCase();
-  return destination.replace(/\D/g, "");
+function buildContactKey(destination: string) {
+  return destination.replace(/D/g, "");
 }
 
 function isValidEmail(value: string) {

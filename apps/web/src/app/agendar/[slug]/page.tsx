@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
   CalendarDots as CalendarDays,
@@ -5,6 +6,10 @@ import {
   Clock as Clock3,
   CreditCard,
   MapPin,
+  PhoneCall,
+  Users,
+  Hospital,
+  CaretDown,
   ShieldCheck,
   Stethoscope,
   Star,
@@ -16,9 +21,13 @@ import {
   type PublicProcedure,
   type PublicSchedule,
 } from "./booking-form";
+import { BookServiceButton } from "./book-service-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getPlatformSettings } from "@/lib/platform/settings";
+import { formatPhoneBR } from "@/lib/validation/br";
+import styles from "./booking-page.module.css";
 
 type SettingsRow = {
   organization_id: string;
@@ -101,6 +110,40 @@ type ReviewRow = {
   review_date: string;
   professional_response: string | null;
 };
+// Título e descrição ao compartilhar o link (WhatsApp, redes sociais).
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const supabase = createSupabaseAdminClient();
+  const { data: settings } = await supabase
+    .from("online_booking_settings")
+    .select("organization_id")
+    .eq("public_slug", slug.toLowerCase())
+    .eq("enabled", true)
+    .maybeSingle<{ organization_id: string }>();
+  if (!settings) return { title: "Agendamento online" };
+  const [{ data: clinic }, { data: organization }] = await Promise.all([
+    supabase
+      .from("clinics")
+      .select("trade_name")
+      .eq("organization_id", settings.organization_id)
+      .maybeSingle<{ trade_name: string | null }>(),
+    supabase
+      .from("organizations")
+      .select("name")
+      .eq("id", settings.organization_id)
+      .maybeSingle<{ name: string }>(),
+  ]);
+  const name = clinic?.trade_name || organization?.name || "Clínica";
+  return {
+    title: `Agendar em ${name}`,
+    description: `Escolha o profissional, o serviço e o horário e solicite seu agendamento em ${name}.`,
+  };
+}
+
 export default async function OnlineBookingPage({
   params,
 }: {
@@ -206,7 +249,7 @@ export default async function OnlineBookingPage({
     scheduleProcedureMappings.error ||
     procedures.error
   ) {
-    throw new Error("Unable to load the public booking catalog.");
+    throw new Error("Não foi possível carregar o agendamento online.");
   }
 
   const clinicName =
@@ -286,7 +329,15 @@ export default async function OnlineBookingPage({
     ? reviewRows.reduce((sum, review) => sum + Number(review.rating), 0) /
       reviewRows.length
     : 0;
-  const representativeSchedule = publishedScheduleRows[0] ?? null;
+  // Com vários profissionais, a página é da clínica: pôr o primeiro no topo
+  // fazia parecer que só ele atendia.
+  const publishedProfessionalCount = new Set(
+    publishedScheduleRows.map((schedule) => schedule.professional_id),
+  ).size;
+  const singleProfessional = publishedProfessionalCount === 1;
+  const representativeSchedule = singleProfessional
+    ? publishedScheduleRows[0]
+    : null;
   const professionalName =
     representativeSchedule?.professionals?.name ?? clinicName;
   const councilLine = representativeSchedule?.professionals
@@ -301,48 +352,88 @@ export default async function OnlineBookingPage({
   const cancellationNotices = new Set(
     publicSchedules.map((schedule) => schedule.cancellationNoticeHours),
   );
+  const platform = await getPlatformSettings();
+  const publishedUnitCount = new Set(
+    publishedScheduleRows.map((schedule) => schedule.unit_id).filter(Boolean),
+  ).size;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-primary-muted/50 via-background to-background text-foreground">
-      <header className="bg-gradient-to-r from-primary to-primary-hover text-primary-foreground">
-        <div className="mx-auto flex min-h-24 w-full max-w-6xl flex-col justify-center gap-1 px-4 py-6 md:px-6">
-          <p className="text-sm font-medium text-primary-foreground/80">
-            Agendamento online
-          </p>
-          <h1 className="text-heading font-bold">{clinicName}</h1>
-          <p className="text-sm text-primary-foreground/80">
-            Escolha o profissional, o serviço e o horário. Depois, informe seus
-            dados.
-          </p>
+    <main className={styles.page}>
+      <header className={styles.header}>
+        <div className="relative mx-auto flex min-h-[4.25rem] w-full max-w-[1240px] items-center gap-7 px-4 py-3 sm:px-6">
+          <div className="hidden shrink-0 items-center gap-2 border-r border-white/35 pr-7 sm:flex">
+            {platform.logo_full_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={platform.logo_full_url}
+                alt={platform.app_name}
+                className="h-9 max-w-40 object-contain brightness-0 invert"
+              />
+            ) : (
+              <>
+                <Hospital className="size-9" aria-hidden="true" />
+                <span className="text-2xl font-semibold tracking-tight">
+                  {platform.app_name}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg font-bold">{clinicName}</h1>
+            <p className="mt-0.5 text-xs leading-relaxed text-white/90">
+              Agende online: escolha o profissional, o serviço e o horário.
+              Depois, informe seus dados.
+            </p>
+          </div>
+          <div className="hidden items-center gap-3 text-xs leading-snug xl:flex">
+            <span className="flex size-11 items-center justify-center rounded-full bg-white/15">
+              <CalendarDays className="size-6" aria-hidden="true" />
+            </span>
+            <span>
+              Cuidado médico,
+              <br />
+              de forma mais simples.
+            </span>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 md:px-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
-        <div className="order-2 grid min-w-0 gap-5 lg:order-1">
+      <div className="mx-auto grid w-full max-w-[1240px] items-start gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1.42fr)_minmax(0,1fr)]">
+        <div className="order-2 grid min-w-0 gap-3 lg:order-1">
           <ProfileHero
             clinicName={clinicName}
             professionalName={professionalName}
-            headline={settings.profile_headline}
+            headline={
+              settings.profile_headline ||
+              (singleProfessional
+                ? null
+                : publishedProfessionalCount > 1
+                  ? `${publishedProfessionalCount} profissionais com agenda online`
+                  : null)
+            }
             summary={settings.profile_summary}
             councilLine={councilLine}
             logoUrl={organization.data?.logo_url}
             rating={averageRating}
             reviewCount={reviewRows.length}
-            address={formatAddress(clinic.data)}
+            professionalCount={publishedProfessionalCount}
+            unitCount={publishedUnitCount}
           />
-          <ExperienceCard settings={settings} />
           <ServicesCard procedures={publishedProcedureRows} />
           <AcceptedPlansCard
             insurances={acceptedInsurances}
             notes={settings.accepted_plan_notes}
           />
           <PaymentMethodsCard methods={acceptedPaymentMethods} />
-          <ReviewsCard reviews={reviewRows} rating={averageRating} />
+          <ExperienceCard settings={settings} />
+          {reviewRows.length ? (
+            <ReviewsCard reviews={reviewRows} rating={averageRating} />
+          ) : null}
         </div>
 
         <aside
           id="agendamento"
-          className="order-1 grid min-w-0 content-start gap-4 lg:order-2"
+          className="order-1 grid min-w-0 scroll-mt-5 content-start gap-3 lg:order-2"
         >
           <div className="min-w-0">
             <BookingForm
@@ -355,17 +446,31 @@ export default async function OnlineBookingPage({
             />
           </div>
           <Card>
-            <CardContent className="grid gap-4 p-4">
+            <CardContent className="grid gap-3 p-3.5">
               <div className="flex items-start gap-3">
                 <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
-                  <Stethoscope className="size-5" aria-hidden="true" />
+                  <PhoneCall className="size-5" aria-hidden="true" />
                 </div>
                 <div>
                   <p className="font-medium">{clinicName}</p>
                   <p className="text-sm text-muted-foreground">
-                    {clinic.data?.phone ??
-                      clinic.data?.email ??
-                      "Contato pela clínica"}
+                    {clinic.data?.phone ? (
+                      <a
+                        href={`tel:${clinic.data.phone.replace(/[^+\d]/g, "")}`}
+                        className="hover:text-primary hover:underline"
+                      >
+                        {formatClinicPhone(clinic.data.phone)}
+                      </a>
+                    ) : clinic.data?.email ? (
+                      <a
+                        href={`mailto:${clinic.data.email}`}
+                        className="break-all hover:text-primary hover:underline"
+                      >
+                        {clinic.data.email}
+                      </a>
+                    ) : (
+                      "Contato pela clínica"
+                    )}
                   </p>
                 </div>
               </div>
@@ -376,16 +481,7 @@ export default async function OnlineBookingPage({
                     aria-hidden="true"
                   />
                   <p className="text-sm text-muted-foreground">
-                    {[
-                      [clinic.data.address_line, clinic.data.address_number]
-                        .filter(Boolean)
-                        .join(", "),
-                      [clinic.data.city, clinic.data.state]
-                        .filter(Boolean)
-                        .join(" - "),
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+                    {formatAddress(clinic.data)}
                   </p>
                 </div>
               ) : null}
@@ -393,12 +489,11 @@ export default async function OnlineBookingPage({
           </Card>
 
           <Card>
-            <CardContent className="grid gap-3 p-4">
+            <CardContent className="relative grid gap-2 py-3.5 pl-[4.5rem] pr-4">
+              <span className="absolute left-4 top-3.5 flex size-10 items-center justify-center rounded-xl bg-primary-muted text-primary">
+                <CalendarDays className="size-6" aria-hidden="true" />
+              </span>
               <div className="flex items-center gap-2">
-                <CalendarDays
-                  className="size-4 text-muted-foreground"
-                  aria-hidden="true"
-                />
                 <p className="text-sm font-medium">Política de agenda</p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -427,24 +522,19 @@ export default async function OnlineBookingPage({
           </Card>
 
           <Card className="border-primary-muted-hover bg-primary-muted/40">
-            <CardContent className="grid gap-3 p-4">
+            <CardContent className="grid gap-3 p-3.5">
               <div className="flex items-start gap-3">
-                <ShieldCheck
-                  className="mt-0.5 size-5 shrink-0 text-primary"
-                  aria-hidden="true"
-                />
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted text-primary">
+                  <ShieldCheck className="size-6" aria-hidden="true" />
+                </span>
                 <div>
                   <p className="text-sm font-semibold">Seus dados protegidos</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     Este portal recebe apenas dados administrativos de
                     agendamento. Documentos e informações clínicas ficam
                     protegidos no sistema da clínica.
                   </p>
                 </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="primary">Conforme a LGPD</Badge>
-                <Badge variant="primary">Conexão segura</Badge>
               </div>
             </CardContent>
           </Card>
@@ -463,7 +553,8 @@ function ProfileHero({
   logoUrl,
   rating,
   reviewCount,
-  address,
+  professionalCount,
+  unitCount,
 }: {
   clinicName: string;
   professionalName: string;
@@ -473,48 +564,67 @@ function ProfileHero({
   logoUrl: string | null | undefined;
   rating: number;
   reviewCount: number;
-  address: string;
+  professionalCount: number;
+  unitCount: number;
 }) {
   return (
-    <Card>
-      <CardContent className="grid gap-4 p-5 md:grid-cols-[7rem_minmax(0,1fr)]">
-        <div className="flex size-28 items-center justify-center overflow-hidden rounded-full bg-primary-muted text-primary">
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
+    <Card className="relative overflow-hidden">
+      <ClinicIllustration />
+      <CardContent className="relative flex items-center gap-4 p-4 sm:gap-5">
+        {logoUrl ? (
+          // Logo inteira, sem recorte em círculo: marcas raramente são redondas.
+          <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-white p-3 sm:h-[6.5rem] sm:w-28">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={logoUrl}
               alt={clinicName}
-              className="h-full w-full object-cover"
+              className="max-h-full max-w-full object-contain"
             />
-          ) : (
-            <UserRound className="size-12" aria-hidden="true" />
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex size-20 shrink-0 items-center justify-center rounded-xl border border-border bg-white/80 text-primary sm:h-[6.5rem] sm:w-28">
+            <Hospital className="size-12" aria-hidden="true" />
+          </div>
+        )}
         <div className="min-w-0">
-          <h2 className="text-heading-sm font-semibold">{professionalName}</h2>
+          <h2 className="text-lg font-bold">{professionalName}</h2>
           <p className="mt-1 text-sm text-secondary-foreground">
             {headline || clinicName}
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge variant="neutral">
+              <MapPin
+                className="mr-1.5 size-4 text-primary"
+                aria-hidden="true"
+              />
+              Atendimento em {unitCount}{" "}
+              {unitCount === 1 ? "unidade" : "unidades"}
+            </Badge>
+            <Badge variant="neutral">
+              <Users
+                className="mr-1.5 size-4 text-primary"
+                aria-hidden="true"
+              />
+              {professionalCount}{" "}
+              {professionalCount === 1 ? "profissional" : "profissionais"}
+            </Badge>
+          </div>
           {councilLine ? (
             <p className="mt-2 text-sm text-muted-foreground">{councilLine}</p>
           ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <RatingStars rating={rating || 5} />
-            <span className="text-sm text-secondary-foreground">
-              {reviewCount
-                ? `${reviewCount} opinioes`
-                : "Avaliacoes verificadas"}
-            </span>
-          </div>
+          {/* Só com avaliações de verdade: sem elas não há nota a mostrar. */}
+          {reviewCount ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <RatingStars rating={rating} />
+              <span className="text-sm text-secondary-foreground">
+                {rating.toFixed(1).replace(".", ",")} · {reviewCount}{" "}
+                {reviewCount === 1 ? "opinião" : "opiniões"}
+              </span>
+            </div>
+          ) : null}
           {summary ? (
             <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-secondary-foreground">
               {summary}
-            </p>
-          ) : null}
-          {address ? (
-            <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-              <MapPin className="size-4" aria-hidden="true" />
-              {address}
             </p>
           ) : null}
         </div>
@@ -523,39 +633,99 @@ function ProfileHero({
   );
 }
 
+function ClinicIllustration() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 240 130"
+      className="pointer-events-none absolute bottom-0 right-0 h-28 w-52 opacity-30 max-xl:hidden"
+    >
+      <path d="M12 117h221" stroke="#7db8dd" strokeWidth="2" />
+      <path d="M68 117V36l56-15v96" fill="#b1cdf7" />
+      <path d="m124 21 24 8v88h-24" fill="#78a7ec" />
+      <path d="M131 117V61l45-12v68" fill="#d3e4fc" />
+      <path d="m176 49 22 8v60h-22" fill="#8eb6ec" />
+      <path d="M98 39v19m-9-9h18" stroke="#659feb" strokeWidth="6" />
+      {[68, 87].map((y) => (
+        <g key={y} fill="#6da7e8">
+          <path
+            d={`M80 ${y}h11v10H80zM105 ${y}h11v10h-11zM143 ${y}h10v9h-10zM162 ${y}h9v9h-9z`}
+          />
+        </g>
+      ))}
+      <path d="M94 117V99h14v18" fill="#72a7d5" />
+      <g fill="#67b0bf">
+        <ellipse cx="39" cy="101" rx="13" ry="15" />
+        <circle cx="40" cy="84" r="9" />
+        <ellipse cx="213" cy="102" rx="12" ry="13" />
+        <circle cx="213" cy="90" r="8" />
+      </g>
+      <path
+        d="M40 94v23m-8-15 8 6 7-8m166-3v20m-7-15 7 5 6-7"
+        stroke="#468d9d"
+        strokeWidth="2"
+        fill="none"
+      />
+      <path
+        d="M17 36a8 8 0 0 1 14-5 10 10 0 0 1 18 5h9v5H12v-5zm164-17a7 7 0 0 1 13-4 8 8 0 0 1 14 4h9v4h-42v-4z"
+        fill="#dbeaff"
+      />
+    </svg>
+  );
+}
+
 function ExperienceCard({ settings }: { settings: SettingsRow }) {
+  // Número zero não é credencial: só aparece o que foi preenchido.
+  const educationCount = settings.education_count ?? 0;
+  const planCount = settings.accepted_plan_count ?? 0;
+  const hasMetrics =
+    educationCount > 0 ||
+    planCount > 0 ||
+    Boolean(settings.excellence_badge_year);
+  const hasContent =
+    hasMetrics ||
+    Boolean(settings.experience_text) ||
+    settings.treated_conditions.length > 0 ||
+    settings.patient_groups.length > 0 ||
+    settings.consultation_formats.length > 0 ||
+    settings.profile_highlights.length > 0;
+  if (!hasContent) return null;
+
   return (
     <Card>
       <CardContent className="grid gap-5 p-5">
-        <div className="flex flex-wrap gap-8">
-          <Metric label="Formacao" value={settings.education_count ?? 0} />
-          <Metric
-            label="Planos de saude aceitos"
-            value={settings.accepted_plan_count ?? 0}
-          />
-          {settings.excellence_badge_year ? (
-            <div className="flex items-center gap-2">
-              <span className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                <ShieldCheck className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-sm font-semibold">
-                  Certificado de excelencia
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {settings.excellence_badge_year}
-                </p>
+        {hasMetrics ? (
+          <div className="flex flex-wrap gap-8">
+            {educationCount > 0 ? (
+              <Metric label="Formação" value={educationCount} />
+            ) : null}
+            {planCount > 0 ? (
+              <Metric label="Planos de saúde aceitos" value={planCount} />
+            ) : null}
+            {settings.excellence_badge_year ? (
+              <div className="flex items-center gap-2">
+                <span className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <ShieldCheck className="size-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">
+                    Certificado de excelência
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {settings.excellence_badge_year}
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
         {settings.experience_text ? (
           <p className="whitespace-pre-wrap text-sm leading-6 text-secondary-foreground">
             {settings.experience_text}
           </p>
         ) : null}
         <TagBlock
-          title="Principais doencas tratadas"
+          title="Principais doenças tratadas"
           items={settings.treated_conditions}
         />
         <IconList
@@ -579,43 +749,73 @@ function ExperienceCard({ settings }: { settings: SettingsRow }) {
 }
 
 function ServicesCard({ procedures }: { procedures: ProcedureRow[] }) {
+  if (!procedures.length) return null;
   const visible = procedures.slice(0, 6);
+  const hidden = procedures.slice(6);
   return (
     <Card>
       <CardContent className="p-5">
-        <h2 className="text-heading-sm font-semibold">Servicos e precos</h2>
-        <div className="mt-4 divide-y divide-border">
+        <div className="flex items-start gap-4">
+          <Stethoscope
+            className="mt-0.5 size-7 shrink-0 text-primary"
+            aria-hidden="true"
+          />
+          <div>
+            <h2 className="text-lg font-bold">Serviços e preços</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Escolha o serviço que deseja agendar.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 divide-y divide-border border-y border-border">
           {visible.map((procedure) => (
-            <div
-              key={procedure.id}
-              className="flex flex-col justify-between gap-3 py-4 sm:flex-row sm:items-center"
-            >
-              <div>
-                <p className="font-semibold">{procedure.name}</p>
-                <p className="mt-1 text-sm text-secondary-foreground">
-                  {Number(procedure.base_price) > 0
-                    ? formatCurrency(Number(procedure.base_price))
-                    : "Preco a combinar"}
-                  {" - "}
-                  {procedure.duration_minutes} min
-                </p>
-              </div>
-              <a
-                href="#agendamento"
-                className="inline-flex h-10 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary-hover"
-              >
-                Agendar consulta
-              </a>
-            </div>
+            <ServiceRow key={procedure.id} procedure={procedure} />
           ))}
         </div>
-        {procedures.length > visible.length ? (
-          <p className="mt-3 text-sm text-primary">
-            + {procedures.length - visible.length} servicos
-          </p>
+        {hidden.length ? (
+          // Antes era um "+N serviços" que não abria nada.
+          <details className="group mt-1">
+            <summary className="flex cursor-pointer list-none items-center gap-2 pt-3 text-xs font-semibold text-primary hover:underline">
+              <span className="group-open:hidden">
+                Ver mais {hidden.length}{" "}
+                {hidden.length === 1 ? "serviço" : "serviços"}
+              </span>
+              <span className="hidden group-open:inline">Ver menos</span>
+              <CaretDown
+                className="size-3.5 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
+            </summary>
+            <div className="divide-y divide-border border-t border-border">
+              {hidden.map((procedure) => (
+                <ServiceRow key={procedure.id} procedure={procedure} />
+              ))}
+            </div>
+          </details>
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function ServiceRow({ procedure }: { procedure: ProcedureRow }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2.5">
+      <span className="hidden size-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted text-primary sm:flex">
+        <Stethoscope className="size-5" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">{procedure.name}</p>
+        <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+          {Number(procedure.base_price) > 0
+            ? formatCurrency(Number(procedure.base_price))
+            : "Preço a combinar"}
+          {" · "}
+          {procedure.duration_minutes} min
+        </p>
+      </div>
+      <BookServiceButton procedureId={procedure.id} />
+    </div>
   );
 }
 
@@ -626,22 +826,62 @@ function AcceptedPlansCard({
   insurances: InsuranceRow[];
   notes: string | null;
 }) {
+  const visible = insurances.slice(0, 8);
+  const hidden = insurances.slice(8);
   return (
     <Card>
-      <CardContent className="p-5">
-        <h2 className="text-heading-sm font-semibold">
-          Planos de saude aceitos
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-secondary-foreground">
+      <CardContent className="relative py-3.5 pl-[4.25rem] pr-4">
+        <span className="absolute left-4 top-3.5 flex size-10 items-center justify-center rounded-xl bg-primary-muted text-primary">
+          <ShieldCheck className="size-6" aria-hidden="true" />
+        </span>
+        <h2 className="text-sm font-bold">Planos de saúde aceitos</h2>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           {notes ||
-            "Os planos de saude sao aceitos, mas a cobertura varia por local e servico. Confirme durante o agendamento."}
+            "A cobertura varia por plano e serviço. Confirme com a clínica ao agendar."}
         </p>
         {insurances.length ? (
-          <ul className="mt-4 list-disc space-y-1 pl-5 text-sm">
-            {insurances.slice(0, 8).map((insurance) => (
-              <li key={insurance.id}>{insurance.name}</li>
-            ))}
-          </ul>
+          <>
+            <ul className="mt-2 flex flex-wrap gap-2 text-xs">
+              {visible.map((insurance) => (
+                <li
+                  key={insurance.id}
+                  className="flex items-center gap-1.5 rounded-xl bg-muted px-3 py-2 font-medium"
+                >
+                  <CircleCheck
+                    weight="fill"
+                    className="size-4 text-emerald-600"
+                    aria-hidden="true"
+                  />
+                  {insurance.name}
+                </li>
+              ))}
+            </ul>
+            {hidden.length ? (
+              <details className="group mt-2">
+                <summary className="cursor-pointer list-none text-sm font-medium text-primary hover:underline">
+                  <span className="group-open:hidden">
+                    Ver mais {hidden.length}
+                  </span>
+                  <span className="hidden group-open:inline">Ver menos</span>
+                </summary>
+                <ul className="mt-2 flex flex-wrap gap-2 text-xs">
+                  {hidden.map((insurance) => (
+                    <li
+                      key={insurance.id}
+                      className="flex items-center gap-1.5 rounded-xl bg-muted px-3 py-2 font-medium"
+                    >
+                      <CircleCheck
+                        weight="fill"
+                        className="size-4 text-emerald-600"
+                        aria-hidden="true"
+                      />
+                      {insurance.name}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </>
         ) : (
           <p className="mt-4 text-sm text-muted-foreground">
             Nenhum plano informado publicamente.
@@ -655,14 +895,26 @@ function AcceptedPlansCard({
 function PaymentMethodsCard({ methods }: { methods: PaymentMethodRow[] }) {
   return (
     <Card>
-      <CardContent className="p-5">
-        <h2 className="text-heading-sm font-semibold">
-          Modalidades de pagamento
-        </h2>
+      <CardContent className="p-3.5">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted text-primary">
+            <CreditCard className="size-6" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="text-sm font-bold">Modalidades de pagamento</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Pague de forma segura e prática.
+            </p>
+          </div>
+        </div>
         {methods.length ? (
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             {methods.map((method) => (
-              <Badge key={method.id} variant="primary">
+              <Badge
+                key={method.id}
+                variant="primary"
+                className="rounded-lg px-3 py-2"
+              >
                 <CreditCard className="mr-1 size-3.5" aria-hidden="true" />
                 {method.name}
               </Badge>
@@ -670,7 +922,7 @@ function PaymentMethodsCard({ methods }: { methods: PaymentMethodRow[] }) {
           </div>
         ) : (
           <p className="mt-3 text-sm text-muted-foreground">
-            Formas de pagamento informadas durante a confirmacao.
+            Formas de pagamento informadas durante a confirmação.
           </p>
         )}
       </CardContent>
@@ -692,11 +944,13 @@ function ReviewsCard({
   return (
     <Card>
       <CardContent className="p-5">
-        <h2 className="text-heading-sm font-semibold">Opinioes</h2>
+        <h2 className="text-heading-sm font-semibold">Opiniões</h2>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <RatingStars rating={rating || 5} />
+          <RatingStars rating={rating} />
           <span className="text-sm text-secondary-foreground">
-            {reviews.length ? `${reviews.length} opinioes` : "Sem opinioes"}
+            {reviews.length
+              ? `${reviews.length} ${reviews.length === 1 ? "opinião" : "opiniões"}`
+              : ""}
           </span>
         </div>
         {tags.length ? (
@@ -724,7 +978,7 @@ function ReviewsCard({
                   <p className="font-semibold">{review.patient_display_name}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {formatDate(review.review_date)}
-                    {review.source_label ? ` - ${review.source_label}` : ""}
+                    {review.source_label ? ` · ${review.source_label}` : ""}
                   </p>
                 </div>
                 <RatingStars rating={review.rating} />
@@ -823,7 +1077,16 @@ function formatAddress(clinic: ClinicRow | null | undefined) {
     [clinic.city, clinic.state].filter(Boolean).join(" - "),
   ]
     .filter(Boolean)
-    .join(" - ");
+    .join(" · ");
+}
+
+function formatClinicPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  const national =
+    digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
+  return national.length === 10 || national.length === 11
+    ? formatPhoneBR(national)
+    : value;
 }
 
 function formatCurrency(value: number) {

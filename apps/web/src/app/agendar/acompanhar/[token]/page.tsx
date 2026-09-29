@@ -157,7 +157,7 @@ export default async function ManageOnlineBookingPage({
 
   const timezoneName = timezone.data?.timezone ?? "America/Fortaleza";
   const clinicName =
-    clinic.data?.trade_name ?? organization.data?.name ?? "Clinica";
+    clinic.data?.trade_name ?? organization.data?.name ?? "Clínica";
   const booking: BookingDetails = {
     token,
     status: request.status,
@@ -208,8 +208,8 @@ export default async function ManageOnlineBookingPage({
               aria-hidden="true"
             />
             <p className="text-sm text-muted-foreground">
-              Este link permite consultar e alterar apenas esta solicitacao de
-              agendamento. Nao compartilhe o link com terceiros.
+              Este link permite consultar e alterar apenas esta solicitação de
+              agendamento. Não compartilhe o link com terceiros.
             </p>
           </CardContent>
         </Card>
