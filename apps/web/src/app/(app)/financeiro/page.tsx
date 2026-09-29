@@ -2,6 +2,8 @@ import {
   Buildings as Building2,
   CurrencyCircleDollar as CircleDollarSign,
   GearSix as Settings,
+  ShieldWarning as ShieldAlert,
+  TrendUp as TrendingUp,
   Wallet as WalletCards,
 } from "@phosphor-icons/react/dist/ssr";
 import {
@@ -23,6 +25,7 @@ import {
   isValidTimeZone,
 } from "@/lib/dashboard/periods";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { formatInTimeZone } from "date-fns-tz";
 import { redirect } from "next/navigation";
 
 type OrganizationBillingRow = {
@@ -244,13 +247,13 @@ export async function renderFinanceiroPage(
           })
           .returns<DreRow[]>()
       : Promise.resolve({ data: [] as DreRow[] }),
-    isOverview && (canViewCash || canViewPayables)
-      ? supabase
-          .from("organization_settings")
-          .select("timezone")
-          .eq("organization_id", organizationId)
-          .maybeSingle<{ timezone: string | null }>()
-      : Promise.resolve({ data: null }),
+    // Toda aba precisa do fuso: a visão geral fecha os dias nele, e as
+    // listas usam o "hoje" da clínica para marcar o que venceu.
+    supabase
+      .from("organization_settings")
+      .select("timezone")
+      .eq("organization_id", organizationId)
+      .maybeSingle<{ timezone: string | null }>(),
     isOverview && (canViewCash || canViewPayables)
       ? supabase
           .rpc("get_finance_cash_metrics", {
@@ -265,6 +268,7 @@ export async function renderFinanceiroPage(
   const timeZone = isValidTimeZone(organizationSettings.data?.timezone)
     ? (organizationSettings.data?.timezone as string)
     : defaultDashboardTimeZone;
+  const today = formatInTimeZone(new Date(), timeZone, "yyyy-MM-dd");
   // A visão geral depende do fuso da clínica para fechar os dias, por isso
   // roda numa segunda onda. Sem a migration do RPC aplicada volta null e a
   // aba cai no resumo simples.
@@ -339,6 +343,7 @@ export async function renderFinanceiroPage(
     <FinancePanel
       section={section}
       period={period}
+      today={today}
       overview={parseFinanceOverview(overviewResult?.data)}
       overviewError={overviewResult?.error?.message ?? null}
       dreRows={dreRows.map((row) => ({
@@ -515,14 +520,14 @@ async function SuperAdminFinanceView() {
           </p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)]">
-          <WalletCards className="size-5 text-primary" aria-hidden="true" />
+          <TrendingUp className="size-5 text-primary" aria-hidden="true" />
           <p className="mt-5 text-sm text-muted-foreground">Trials</p>
           <p className="mt-1 text-display font-semibold tabular-nums">
             {trialOrganizations}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)]">
-          <WalletCards className="size-5 text-warning" aria-hidden="true" />
+          <ShieldAlert className="size-5 text-warning" aria-hidden="true" />
           <p className="mt-5 text-sm text-muted-foreground">
             Empresas suspensas
           </p>
@@ -541,7 +546,7 @@ async function SuperAdminFinanceView() {
           <div>
             <h2 className="text-heading-sm font-semibold">Cobrança SaaS</h2>
             <p className="text-sm text-muted-foreground">
-              Assinaturas e receita recorrente entram na Fase 19.
+              Assinaturas e receita recorrente da própria plataforma.
             </p>
           </div>
         </div>
@@ -555,8 +560,8 @@ async function SuperAdminFinanceView() {
               Financeiro SaaS ainda sem billing recorrente
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              A Fase 9 cobre o financeiro operacional das clínicas. Billing da
-              plataforma continua reservado para a Fase 19.
+              Este painel mostra o financeiro operacional das clínicas. A
+              cobrança da própria plataforma ainda não foi implementada.
             </p>
           </div>
         </div>

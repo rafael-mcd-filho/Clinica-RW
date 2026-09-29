@@ -37,6 +37,7 @@ function financialDateTime(value: string | undefined) {
 }
 
 function revalidateFinance() {
+  revalidatePath("/pacientes", "layout");
   revalidatePath("/financeiro");
   revalidatePath("/financeiro/contas-a-receber");
   revalidatePath("/financeiro/contas-a-pagar");
