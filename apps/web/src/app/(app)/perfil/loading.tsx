@@ -1,35 +1,38 @@
 import { Skeleton } from "@/components/ui/loader";
+import styles from "./profile.module.css";
 
 export default function Loading() {
   return (
-    <div className="grid gap-6">
-      <div className="flex items-center gap-3">
-        <Skeleton className="size-10 rounded-md" />
-        <div className="grid gap-2">
-          <Skeleton className="h-6 w-36" />
-          <Skeleton className="h-4 w-64" />
+    <div className={styles.profilePage} aria-hidden="true">
+      <Skeleton className="h-[60px] rounded-[10px]" />
+
+      <div className={styles.accountHeader}>
+        <Skeleton className="size-[88px] shrink-0 rounded-full" />
+        <div className="grid flex-1 gap-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3 w-56" />
+          <Skeleton className="h-3 w-48" />
+          <Skeleton className="h-6 w-44 rounded-md" />
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
-        <div className="flex items-center gap-3 border-b border-border px-5 py-4">
-          <Skeleton className="size-10 rounded" />
-          <div className="grid gap-2">
-            <Skeleton className="h-4 w-44" />
-            <Skeleton className="h-3 w-32" />
-          </div>
+      <div className={styles.settingsGrid}>
+        <div className={styles.gridIntro}>
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="mt-3 h-12 w-full" />
         </div>
-        <div className="grid gap-3 p-5 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div
-              key={index}
-              className="rounded-lg border border-border bg-background p-4"
-            >
-              <Skeleton className="h-3 w-20" />
-              <Skeleton className="mt-2 h-4 w-40" />
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div className={styles.settingsCard} key={index}>
+            <div className="flex items-center gap-3">
+              <Skeleton className="size-10 shrink-0 rounded-lg" />
+              <div className="grid flex-1 gap-2">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-2.5 w-full" />
+              </div>
             </div>
-          ))}
-        </div>
+            <Skeleton className="min-h-16 flex-1 rounded-lg" />
+          </div>
+        ))}
       </div>
     </div>
   );
