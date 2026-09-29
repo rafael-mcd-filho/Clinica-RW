@@ -37,8 +37,9 @@ export function PatientCompletenessRing({
         background: `conic-gradient(${color} ${displayedPercentage}%, var(--border) ${displayedPercentage}% 100%)`,
       }}
       title={label}
-      aria-label={label}
     >
+      {/* aria-label num span sem papel não é anunciado; o texto oculto é. */}
+      <span className="sr-only">{label}</span>
       <span className="inline-flex rounded-full bg-card p-0.5">{children}</span>
     </span>
   );

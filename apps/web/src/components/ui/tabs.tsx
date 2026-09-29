@@ -25,9 +25,11 @@ export function Tabs({
   defaultTab,
   iconOnly = false,
   items,
+  keepMounted = false,
   onValueChange,
   urlParam,
   value,
+  variant = "default",
 }: {
   ariaLabel?: string;
   className?: string;
@@ -35,9 +37,16 @@ export function Tabs({
   defaultTab?: string;
   iconOnly?: boolean;
   items: TabItem[];
+  /** Mantém os painéis inativos montados (só escondidos). Necessário quando
+      as abas guardam formulários: desmontar descartava o que já tinha sido
+      digitado e não salvo ao trocar de aba. */
+  keepMounted?: boolean;
   onValueChange?: (value: string) => void;
   urlParam?: string;
   value?: string;
+  /** "card": barra branca de largura total, aba ativa em azul-claro com
+      sublinhado (ficha do paciente). */
+  variant?: "default" | "card";
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -118,19 +127,35 @@ export function Tabs({
 
   return (
     <TabsNavigationContext.Provider value={selectTab}>
-      <div className={cn("min-w-0 w-full", className)}>
+      {/* No "card" a barra é um contêiner: abas e conteúdo se ajustam à
+          largura real da área (com o menu lateral aberto ela é bem menor
+          que a tela). */}
+      <div
+        className={cn(
+          "min-w-0 w-full",
+          variant === "card" && "@container",
+          className,
+        )}
+      >
         <div
           className={cn(
-            "max-w-full pb-1",
-            iconOnly
-              ? "overflow-hidden"
-              : "overflow-x-auto overscroll-x-contain",
+            "max-w-full",
+            variant === "card"
+              ? // Rola quando não cabe (celular), sem a barra de rolagem
+                // embaixo da barra de abas.
+                "overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              : iconOnly
+                ? "overflow-hidden pb-1"
+                : "overflow-x-auto overscroll-x-contain pb-1",
           )}
         >
           <div
             className={cn(
-              "inline-flex items-center gap-1 rounded-lg border border-border bg-muted p-1 shadow-[var(--shadow-soft)]",
-              iconOnly ? "w-full min-w-0" : "min-w-max",
+              "items-center gap-1 rounded-lg border border-border p-1 shadow-[var(--shadow-soft)]",
+              variant === "card"
+                ? "flex w-max min-w-full bg-card p-1.5"
+                : "inline-flex bg-muted",
+              variant !== "card" && (iconOnly ? "w-full min-w-0" : "min-w-max"),
             )}
             role="tablist"
             aria-label={ariaLabel}
@@ -143,7 +168,12 @@ export function Tabs({
                 <>
                   {item.icon ? (
                     <span
-                      className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4"
+                      className={cn(
+                        "size-4 shrink-0 items-center justify-center [&_svg]:size-4",
+                        // Na barra "card" estreita, só o texto: as sete abas
+                        // cabem sem rolagem.
+                        variant === "card" ? "hidden @4xl:flex" : "flex",
+                      )}
                       aria-hidden="true"
                     >
                       {item.icon}
@@ -155,11 +185,15 @@ export function Tabs({
                 </>
               );
               const tabClassName = cn(
-                "relative inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border px-3.5 text-body-sm font-medium transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
+                "relative inline-flex h-10 shrink-0 touch-manipulation items-center justify-center gap-2 rounded-md border px-3.5 text-body-sm font-medium transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
                 iconOnly && "min-w-0 flex-1 px-2",
-                isActive
-                  ? "border-border-strong bg-card text-foreground shadow-[var(--shadow-soft)] after:absolute after:inset-x-3 after:bottom-1 after:h-0.5 after:rounded-full after:bg-primary"
-                  : "border-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground",
+                variant === "card"
+                  ? isActive
+                    ? "border-transparent bg-primary-muted px-2.5 text-primary after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary @5xl:px-5"
+                    : "border-transparent px-2.5 text-secondary-foreground hover:bg-muted hover:text-foreground @5xl:px-5"
+                  : isActive
+                    ? "border-border-strong bg-card text-foreground shadow-[var(--shadow-soft)] after:absolute after:inset-x-3 after:bottom-1 after:h-0.5 after:rounded-full after:bg-primary"
+                    : "border-transparent text-muted-foreground hover:bg-card/70 hover:text-foreground",
               );
 
               return item.href ? (
@@ -170,6 +204,7 @@ export function Tabs({
                   role="tab"
                   aria-controls={panelId(item.id)}
                   aria-selected={isActive}
+                  aria-current={isActive ? "page" : undefined}
                   title={iconOnly ? item.label : undefined}
                   tabIndex={isActive ? 0 : -1}
                   scroll={false}
@@ -201,7 +236,23 @@ export function Tabs({
             })}
           </div>
         </div>
-        {activeItem?.content !== undefined ? (
+        {keepMounted ? (
+          items.map((item) =>
+            item.content !== undefined ? (
+              <div
+                key={item.id}
+                id={panelId(item.id)}
+                role="tabpanel"
+                aria-labelledby={tabId(item.id)}
+                tabIndex={0}
+                hidden={item.id !== activeItem?.id}
+                className={cn("min-w-0 w-full pt-5", contentClassName)}
+              >
+                {item.content}
+              </div>
+            ) : null,
+          )
+        ) : activeItem?.content !== undefined ? (
           <div
             id={panelId(activeItem.id)}
             role="tabpanel"
@@ -219,9 +270,14 @@ export function Tabs({
 
 export function TabSelectionButton({
   onClick,
+  scrollToTop = false,
   value,
   ...props
-}: React.ComponentPropsWithoutRef<"button"> & { value: string }) {
+}: React.ComponentPropsWithoutRef<"button"> & {
+  value: string;
+  /** Volta ao topo ao trocar de aba (atalhos no meio da página). */
+  scrollToTop?: boolean;
+}) {
   const selectTab = useContext(TabsNavigationContext);
 
   return (
@@ -232,6 +288,7 @@ export function TabSelectionButton({
         onClick?.(event);
         if (!event.defaultPrevented) {
           selectTab?.(value);
+          if (scrollToTop) window.scrollTo({ top: 0, behavior: "smooth" });
         }
       }}
     />

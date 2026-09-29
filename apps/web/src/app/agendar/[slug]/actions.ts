@@ -2,8 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { logger } from "@/lib/observability/logger";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isValidCPF, isValidPhoneBR } from "@/lib/validation/br";
+import {
+  formatPhoneBR,
+  isValidCPF,
+  isValidPhoneBR,
+  onlyDigits,
+} from "@/lib/validation/br";
+import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
+import { sendTextMessage } from "@/lib/whatsapp/evolution-client";
 
 export type OnlineBookingState = {
   error?: string;
@@ -62,9 +71,21 @@ function friendlyError(message: string, code?: string) {
   if (message.includes("not available")) {
     return "Esta agenda ou serviço não está disponível para agendamento online.";
   }
-  return message;
+  // O texto técnico do banco (em inglês) chegava ao paciente. Ele fica no
+  // log; na tela vai uma mensagem que diz o que fazer.
+  logger.error("public_booking.request_failed", { code, message });
+  return "Não foi possível enviar agora. Tente de novo em alguns instantes ou fale com a clínica.";
 }
 
+/**
+ * Gera o código de verificação e o envia pelo WhatsApp da clínica.
+ *
+ * O código só existe no servidor: a função do banco é restrita ao service
+ * role, e a resposta ao navegador nunca o carrega (antes ele aparecia na
+ * tela e a verificação não verificava nada). Sem WhatsApp conectado não há
+ * como entregar — fora do desenvolvimento, o paciente é orientado a falar
+ * com a clínica.
+ */
 export async function startContactVerification(
   _state: ContactVerificationState,
   formData: FormData,
@@ -72,36 +93,99 @@ export async function startContactVerification(
   const parsed = z
     .object({
       slug: z.string().trim().min(3),
-      contact_type: z.enum(["email", "phone"]),
       destination: z.string().trim().min(3),
     })
     .safeParse(Object.fromEntries(formData));
 
-  if (!parsed.success) {
-    return { error: "Informe o contato para verificação." };
+  if (!parsed.success || !isValidPhoneBR(parsed.data.destination)) {
+    return { error: "Informe um telefone com DDD para receber o código." };
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc(
+  const admin = createSupabaseAdminClient();
+  const { data: settings } = await admin
+    .from("online_booking_settings")
+    .select("organization_id, contact_verification_ttl_minutes")
+    .eq("public_slug", parsed.data.slug.toLowerCase())
+    .eq("enabled", true)
+    .maybeSingle<{
+      organization_id: string;
+      contact_verification_ttl_minutes: number;
+    }>();
+  if (!settings) {
+    return { error: "O agendamento online desta clínica não está disponível." };
+  }
+
+  const [config, clinic] = await Promise.all([
+    getOrganizationEvolutionConfig(settings.organization_id),
+    admin
+      .from("clinics")
+      .select("trade_name")
+      .eq("organization_id", settings.organization_id)
+      .maybeSingle<{ trade_name: string | null }>(),
+  ]);
+  const developmentOnly = process.env.NODE_ENV === "development";
+  if (!config && !developmentOnly) {
+    logger.error("public_booking.verification_without_whatsapp", {
+      organizationId: settings.organization_id,
+    });
+    return {
+      error:
+        "A clínica não consegue enviar o código agora. Entre em contato com ela para agendar.",
+    };
+  }
+
+  const { data, error } = await admin.rpc(
     "start_online_booking_contact_verification",
     {
       p_public_slug: parsed.data.slug,
-      p_contact_type: parsed.data.contact_type,
+      p_contact_type: "phone",
       p_destination: parsed.data.destination,
     },
   );
-
   if (error) return { error: friendlyError(error.message, error.code) };
 
   const payload = data as {
     verification_id?: string;
     delivery_debug_code?: string;
   } | null;
+  const code = payload?.delivery_debug_code;
+  if (!payload?.verification_id || !code) {
+    return { error: "Não foi possível gerar o código. Tente de novo." };
+  }
 
+  const phoneLabel = formatPhoneBR(onlyDigits(parsed.data.destination));
+  if (config) {
+    const clinicName = clinic.data?.trade_name?.trim() || "a clínica";
+    try {
+      await sendTextMessage(
+        onlyDigits(parsed.data.destination),
+        `Seu código para confirmar o agendamento com ${clinicName}: *${code}*
+
+Ele vale por ${settings.contact_verification_ttl_minutes} minutos. Se não foi você, ignore esta mensagem.`,
+        config,
+      );
+    } catch (sendError) {
+      logger.error("public_booking.verification_send_failed", {
+        organizationId: settings.organization_id,
+        message: sendError instanceof Error ? sendError.message : "unknown",
+      });
+      return {
+        error:
+          "Não foi possível enviar o código pelo WhatsApp agora. Confira o número e tente de novo em instantes.",
+      };
+    }
+    return {
+      success: `Enviamos o código pelo WhatsApp para ${phoneLabel}.`,
+      verificationId: payload.verification_id,
+    };
+  }
+
+  // Só em desenvolvimento, sem WhatsApp configurado: o código aparece na tela
+  // para permitir testar o fluxo.
   return {
-    success: "Código gerado.",
-    verificationId: payload?.verification_id,
-    deliveryDebugCode: payload?.delivery_debug_code,
+    success: "Código de teste gerado (só em desenvolvimento).",
+    verificationId: payload.verification_id,
+    deliveryDebugCode: code,
   };
 }
 

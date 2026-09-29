@@ -44,6 +44,8 @@ const densityClasses = {
 } as const;
 
 type DataTableProps<TData> = {
+  /** Nome lido por tecnologias assistivas antes das colunas. */
+  ariaLabel?: string;
   columns: ColumnDef<TData>[];
   data: TData[];
   /** `compact` reduz o espaço vertical das linhas, para listas longas. */
@@ -69,6 +71,7 @@ type DataTableProps<TData> = {
 };
 
 export function DataTable<TData>({
+  ariaLabel = "Tabela de dados",
   columns,
   data,
   density = "default",
@@ -114,13 +117,13 @@ export function DataTable<TData>({
             serverPagination.total,
           )
         : 0;
-      return `${from}-${to} de ${serverPagination.total}`;
+      return `${from}–${to} de ${serverPagination.total}`;
     }
 
     const state = table.getState().pagination;
     const from = rows.length ? state.pageIndex * state.pageSize + 1 : 0;
     const to = state.pageIndex * state.pageSize + rows.length;
-    return `${from}-${to} de ${data.length}`;
+    return `${from}–${to} de ${data.length}`;
   }, [data.length, rows.length, serverPagination, table]);
   const currentPage =
     serverPagination?.page ?? table.getState().pagination.pageIndex + 1;
@@ -135,7 +138,10 @@ export function DataTable<TData>({
     : table.getCanNextPage();
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+    <div
+      aria-busy={loading || serverPagination?.pending || undefined}
+      className="overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]"
+    >
       {searchable ? (
         <div className="border-b border-border px-4 py-3">
           <div className="relative max-w-xs">
@@ -157,6 +163,7 @@ export function DataTable<TData>({
         className={cn("overflow-x-auto", renderMobileRow && "hidden md:block")}
       >
         <table className="app-table w-full min-w-[760px] text-table tabular-nums">
+          <caption className="sr-only">{ariaLabel}</caption>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
@@ -164,38 +171,52 @@ export function DataTable<TData>({
                   <th
                     key={header.id}
                     className={spacing.head}
+                    aria-sort={
+                      !header.column.getCanSort()
+                        ? undefined
+                        : header.column.getIsSorted() === "asc"
+                          ? "ascending"
+                          : header.column.getIsSorted() === "desc"
+                            ? "descending"
+                            : "none"
+                    }
                     style={
                       header.column.columnDef.size !== undefined
                         ? { width: header.getSize() }
                         : undefined
                     }
                   >
-                    {header.isPlaceholder ? null : (
+                    {header.isPlaceholder ? null : header.column.getCanSort() ? (
                       <button
                         type="button"
-                        className={cn(
-                          "inline-flex w-full items-center justify-center gap-1 text-center",
-                          header.column.getCanSort()
-                            ? "cursor-pointer hover:text-foreground"
-                            : "cursor-default",
-                        )}
-                        disabled={!header.column.getCanSort()}
+                        className="inline-flex w-full touch-manipulation items-center justify-center gap-1 rounded-sm text-center hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2"
                         onClick={header.column.getToggleSortingHandler()}
                       >
                         {flexRender(
                           header.column.columnDef.header,
                           header.getContext(),
                         )}
-                        {header.column.getCanSort() ? (
-                          header.column.getIsSorted() === "asc" ? (
-                            <ChevronUp className="size-3.5" />
-                          ) : header.column.getIsSorted() === "desc" ? (
-                            <ChevronDown className="size-3.5" />
-                          ) : (
-                            <ChevronsUpDown className="size-3.5 opacity-60" />
-                          )
-                        ) : null}
+                        {header.column.getIsSorted() === "asc" ? (
+                          <ChevronUp className="size-3.5" aria-hidden="true" />
+                        ) : header.column.getIsSorted() === "desc" ? (
+                          <ChevronDown
+                            className="size-3.5"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <ChevronsUpDown
+                            className="size-3.5 opacity-60"
+                            aria-hidden="true"
+                          />
+                        )}
                       </button>
+                    ) : (
+                      <span className="inline-flex w-full items-center justify-center text-center">
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                      </span>
                     )}
                   </th>
                 ))}
@@ -257,40 +278,47 @@ export function DataTable<TData>({
       {!rows.length && !showLoadingState ? (
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : null}
-      <div className="flex flex-col gap-3 px-4 py-4 text-body text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-        <span>{paginationLabel}</span>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={!canPrevious || serverPagination?.pending}
-            onClick={() =>
-              serverPagination
-                ? serverPagination.onPageChange(serverPagination.page - 1)
-                : table.previousPage()
-            }
-          >
-            Anterior
-          </Button>
-          <span className="tabular-nums">
-            {currentPage} / {totalPages}
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={!canNext || serverPagination?.pending}
-            onClick={() =>
-              serverPagination
-                ? serverPagination.onPageChange(serverPagination.page + 1)
-                : table.nextPage()
-            }
-          >
-            Próxima
-          </Button>
+      {/* Vazia na primeira página, a tabela não tem rodapé: "0–0 de 0" e
+          botões desabilitados não diziam nada além do estado vazio. Com uma
+          página só, fica a contagem, sem a navegação. */}
+      {!rows.length && !showLoadingState && currentPage === 1 ? null : (
+        <div className="flex flex-col gap-3 px-4 py-4 text-body text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <span>{paginationLabel}</span>
+          {totalPages > 1 || currentPage > 1 ? (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={!canPrevious || serverPagination?.pending}
+                onClick={() =>
+                  serverPagination
+                    ? serverPagination.onPageChange(serverPagination.page - 1)
+                    : table.previousPage()
+                }
+              >
+                Anterior
+              </Button>
+              <span className="tabular-nums">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={!canNext || serverPagination?.pending}
+                onClick={() =>
+                  serverPagination
+                    ? serverPagination.onPageChange(serverPagination.page + 1)
+                    : table.nextPage()
+                }
+              >
+                Próxima
+              </Button>
+            </div>
+          ) : null}
         </div>
-      </div>
+      )}
     </div>
   );
 }

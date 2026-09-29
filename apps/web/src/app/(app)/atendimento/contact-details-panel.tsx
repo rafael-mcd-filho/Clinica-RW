@@ -23,13 +23,14 @@ import {
   Paperclip,
   Play,
   Tag as TagIcon,
-  TrendUp,
   UserCircle,
+  UserPlus,
   WhatsappLogo,
   X,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 import {
+  useActionState,
   useCallback,
   useEffect,
   useMemo,
@@ -39,6 +40,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+  createPatientFromContactAction,
   loadContactDetailsAction,
   type ContactAppointmentView,
   type ContactAttendanceEventView,
@@ -54,7 +56,7 @@ import type { AppointmentFormData } from "@/lib/agenda/slots";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/dialog";
+import { ConfirmDialog, FormDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
@@ -189,11 +191,11 @@ export function ContactDetailsPanel({
         type="button"
         aria-label="Fechar detalhes do contato"
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-foreground/35 backdrop-blur-[1px] xl:hidden"
+        className="fixed inset-0 z-40 bg-foreground/35 backdrop-blur-[1px] 2xl:hidden"
       />
       <aside
         aria-label="Detalhes do contato"
-        className="fixed inset-y-0 right-0 z-50 flex min-h-0 w-[min(100%,30rem)] flex-col overflow-hidden border-l border-border bg-card shadow-[var(--shadow-lg)] xl:static xl:inset-auto xl:z-auto xl:w-auto xl:shadow-none"
+        className="fixed inset-y-0 right-0 z-50 flex min-h-0 w-[min(100%,30rem)] flex-col overflow-hidden border-l border-border bg-card shadow-[var(--shadow-lg)] 2xl:static 2xl:inset-auto 2xl:z-auto 2xl:w-auto 2xl:shadow-none"
       >
         <header className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2">
           <div className="flex min-w-0 items-center gap-3">
@@ -241,8 +243,8 @@ export function ContactDetailsPanel({
           <PanelError error={current.error} onRetry={refresh} />
         ) : (
           <Tabs
-            ariaLabel="Informações do contato"
             iconOnly
+            ariaLabel="Informações do contato"
             value={activeTab}
             onValueChange={setActiveTab}
             className="flex min-h-0 flex-1 flex-col px-4 pt-3"
@@ -281,12 +283,6 @@ export function ContactDetailsPanel({
                     contactName={conversation.contactName}
                   />
                 ),
-              },
-              {
-                id: "historico",
-                label: "Histórico",
-                icon: <TrendUp />,
-                content: <HistoryTab data={current.data} />,
               },
             ]}
           />
@@ -444,13 +440,24 @@ function ContactTab({
             </p>
           )
         ) : canAttend && data.permissions.canViewPatient ? (
-          <PatientLinkSearch
-            contactId={data.contact.id}
-            onLinked={() => {
-              onRefresh();
-              router.refresh();
-            }}
-          />
+          <div className="grid gap-3">
+            <PatientLinkSearch
+              contactId={data.contact.id}
+              onLinked={() => {
+                onRefresh();
+                router.refresh();
+              }}
+            />
+            {data.permissions.canCreatePatient ? (
+              <CreateContactPatient
+                contact={data.contact}
+                onCreated={() => {
+                  onRefresh();
+                  router.refresh();
+                }}
+              />
+            ) : null}
+          </div>
         ) : (
           <p className="rounded-md border border-dashed border-border px-2.5 py-1.5 text-label text-muted-foreground">
             Contato ainda não vinculado a um paciente.
@@ -468,7 +475,7 @@ function ContactTab({
             asChild
             variant="ghost"
             size="icon-sm"
-            className="rounded-full border border-border text-[#128c7e]"
+            className="rounded-full border border-border text-success-foreground"
           >
             <a
               href={`https://wa.me/${whatsappPhone(data.contact.phone)}`}
@@ -588,6 +595,13 @@ function ContactTab({
           )}
         </div>
       </PanelSection>
+
+      <PanelSection
+        title="Histórico de atendimentos"
+        icon={<ClockCounterClockwise className="size-4" aria-hidden="true" />}
+      >
+        <ContactHistory data={data} />
+      </PanelSection>
     </div>
   );
 }
@@ -684,12 +698,18 @@ function TagPickerModal({
       description="Marque as etiquetas que devem ficar nesta conversa."
       className="max-w-md"
       footer={
-        <>
-          <Button type="button" variant="secondary" onClick={onClose}>
+        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full sm:w-auto"
+            onClick={onClose}
+          >
             Cancelar
           </Button>
           <Button
             type="button"
+            className="w-full sm:w-auto"
             onClick={() => {
               onSave(draft);
               onClose();
@@ -697,7 +717,7 @@ function TagPickerModal({
           >
             Salvar etiquetas
           </Button>
-        </>
+        </div>
       }
     >
       <ul className="grid max-h-[50vh] gap-1 overflow-y-auto overscroll-contain">
@@ -988,7 +1008,7 @@ function FileSizeLabel({
   return <span ref={ref}>{size ? formatFileSize(size) : "Tamanho n/d"}</span>;
 }
 
-function HistoryTab({ data }: { data: ContactDetailsData }) {
+function ContactHistory({ data }: { data: ContactDetailsData }) {
   return (
     <div className="grid gap-6">
       <HistorySection title="Agendamentos">
@@ -1023,6 +1043,94 @@ function HistoryTab({ data }: { data: ContactDetailsData }) {
         )}
       </HistorySection>
     </div>
+  );
+}
+
+function CreateContactPatient({
+  contact,
+  onCreated,
+}: {
+  contact: ContactDetailsData["contact"];
+  onCreated: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        variant="secondary"
+        className="w-full"
+        onClick={() => setOpen(true)}
+      >
+        <UserPlus className="size-4" aria-hidden="true" />
+        Criar paciente com este contato
+      </Button>
+      {open ? (
+        <CreateContactPatientDialog
+          contact={contact}
+          onClose={() => setOpen(false)}
+          onCreated={onCreated}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function CreateContactPatientDialog({
+  contact,
+  onClose,
+  onCreated,
+}: {
+  contact: ContactDetailsData["contact"];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [state, action, pending] = useActionState(
+    createPatientFromContactAction.bind(null, contact.id),
+    {},
+  );
+  const handled = useRef(false);
+  useEffect(() => {
+    if (!state.patientId || handled.current) return;
+    handled.current = true;
+    toast.success("Paciente cadastrado e vinculado ao contato.");
+    onClose();
+    onCreated();
+  }, [state.patientId, onClose, onCreated]);
+  return (
+    <FormDialog
+      open
+      onClose={() => {
+        if (!pending) onClose();
+      }}
+      title="Criar paciente"
+      description="Confira os dados. O paciente será vinculado a esta conversa e poderá ser agendado em seguida."
+      formAction={action}
+      pending={pending}
+      error={state.error}
+      confirmLabel="Criar e vincular"
+      pendingLabel="Cadastrando..."
+    >
+      <label className="grid gap-2 text-label font-medium">
+        Nome completo
+        <Input
+          name="full_name"
+          autoComplete="name"
+          defaultValue={/[a-zÀ-ÿ]/i.test(contact.name) ? contact.name : ""}
+          minLength={3}
+          maxLength={160}
+          required
+          autoFocus
+        />
+      </label>
+      <label className="grid gap-2 text-label font-medium">
+        Telefone / WhatsApp
+        <Input value={formatPhone(contact.phone)} readOnly />
+      </label>
+      <label className="grid gap-2 text-label font-medium">
+        E-mail (opcional)
+        <Input name="email" type="email" autoComplete="email" maxLength={254} />
+      </label>
+    </FormDialog>
   );
 }
 
@@ -1230,7 +1338,7 @@ function HistorySection({
 }) {
   return (
     <section>
-      <h2 className="mb-3 text-heading-sm font-semibold">{title}</h2>
+      <h3 className="mb-3 text-body-sm font-medium">{title}</h3>
       {children}
     </section>
   );

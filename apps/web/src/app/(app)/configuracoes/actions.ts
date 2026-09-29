@@ -62,18 +62,55 @@ export async function updatePlatformSettings(
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
-  const uploaded = await uploadBrandingLogo(formData.get("logo"), "platform");
+  const supabase = await createSupabaseServerClient();
+  const { data: storedBranding, error: brandingError } = await supabase
+    .from("platform_settings")
+    .select("*")
+    .eq("id", true)
+    .maybeSingle<{ logo_url: string | null; logo_full_url?: string | null }>();
 
-  if (uploaded.error) {
-    return { error: uploaded.error };
+  if (brandingError) {
+    return { error: "Não foi possível carregar as logos atuais." };
   }
 
-  const removeLogo = formData.get("remove_logo") === "true";
-  const currentLogoUrl =
-    String(formData.get("current_logo_url") ?? "").trim() || null;
-  const logoUrl = uploaded.url ?? (removeLogo ? null : currentLogoUrl);
+  const hasFullLogoColumn =
+    storedBranding != null && "logo_full_url" in storedBranding;
+  const fullLogoFile = formData.get("logo_full");
+  if (
+    !hasFullLogoColumn &&
+    ((fullLogoFile instanceof File && fullLogoFile.size > 0) ||
+      formData.get("remove_logo_full") === "true")
+  ) {
+    return {
+      error:
+        "A atualização do banco para a logo completa ainda não foi aplicada.",
+    };
+  }
 
-  const supabase = await createSupabaseServerClient();
+  const uploadedIcon = await uploadBrandingLogo(
+    formData.get("logo"),
+    "platform",
+  );
+  if (uploadedIcon.error) {
+    return { error: uploadedIcon.error };
+  }
+
+  const uploadedFullLogo = await uploadBrandingLogo(fullLogoFile, "platform");
+  if (uploadedFullLogo.error) {
+    return { error: uploadedFullLogo.error };
+  }
+
+  const logoUrl =
+    uploadedIcon.url ??
+    (formData.get("remove_logo") === "true"
+      ? null
+      : (storedBranding?.logo_url ?? null));
+  const logoFullUrl =
+    uploadedFullLogo.url ??
+    (formData.get("remove_logo_full") === "true"
+      ? null
+      : (storedBranding?.logo_full_url ?? null));
+
   const settings = parsed.data;
   const admin = createSupabaseAdminClient();
   const { data: currentEvolution } = await admin
@@ -94,6 +131,7 @@ export async function updatePlatformSettings(
     app_name: settings.app_name,
     primary_color: settings.primary_color,
     logo_url: logoUrl,
+    ...(hasFullLogoColumn ? { logo_full_url: logoFullUrl } : {}),
     support_email: emptyToNull(settings.support_email),
     support_whatsapp: emptyToNull(settings.support_whatsapp),
   });

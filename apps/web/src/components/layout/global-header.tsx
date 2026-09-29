@@ -7,19 +7,11 @@ import {
   CaretRight,
   List as Menu,
   MagnifyingGlass,
-  SignOut as LogOut,
   SpinnerGap,
   User,
-  UserCircle,
 } from "@phosphor-icons/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { signOut } from "@/app/(auth)/login/actions";
-import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 export type GlobalSearchPage = {
@@ -40,9 +32,6 @@ type PatientSearchResult = {
 export function GlobalHeader({
   pages,
   patientSearchEnabled,
-  userName,
-  userSubtitle,
-  userOrganization,
   sidebarPinned,
   onOpenMenu,
   todayRailEnabled,
@@ -52,9 +41,6 @@ export function GlobalHeader({
 }: {
   pages: GlobalSearchPage[];
   patientSearchEnabled: boolean;
-  userName: string;
-  userSubtitle: string;
-  userOrganization: string;
   sidebarPinned: boolean;
   onOpenMenu: () => void;
   todayRailEnabled: boolean;
@@ -104,75 +90,6 @@ export function GlobalHeader({
             ) : null}
           </Button>
         ) : null}
-
-        <span
-          className="mx-1 hidden h-8 w-px bg-border sm:block"
-          aria-hidden="true"
-        />
-
-        <DropdownMenu
-          align="end"
-          triggerLabel="Abrir menu da conta"
-          triggerClassName="group !h-auto !w-auto min-w-0 gap-2.5 rounded-lg px-1 py-1 text-foreground sm:px-2"
-          trigger={
-            <>
-              <span className="hidden min-w-0 text-right md:block">
-                <span className="block max-w-44 truncate text-sm font-semibold text-foreground">
-                  {userName}
-                </span>
-                <span className="block max-w-44 truncate text-xs text-muted-foreground">
-                  {userSubtitle}
-                </span>
-              </span>
-              <Avatar
-                name={userName}
-                size="sm"
-                tone="solid"
-                className="shadow-[var(--shadow-soft)] transition-transform group-hover:scale-[1.03]"
-              />
-            </>
-          }
-        >
-          {(close) => (
-            <>
-              <div className="flex min-w-0 items-center gap-3 px-2.5 py-2.5">
-                <Avatar name={userName} />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-foreground">
-                    {userName}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {userOrganization}
-                  </span>
-                </span>
-              </div>
-
-              <DropdownMenuSeparator />
-
-              <Link
-                href="/perfil"
-                prefetch={true}
-                role="menuitem"
-                onClick={close}
-                className="flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-sm font-medium text-foreground transition-colors duration-[var(--motion-fast)] hover:bg-muted"
-              >
-                <UserCircle className="size-4 shrink-0" aria-hidden="true" />
-                Meu perfil
-              </Link>
-
-              <form action={signOut}>
-                <button
-                  type="submit"
-                  role="menuitem"
-                  className="flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-sm font-medium text-foreground transition-colors duration-[var(--motion-fast)] hover:bg-muted"
-                >
-                  <LogOut className="size-4 shrink-0" aria-hidden="true" />
-                  Sair
-                </button>
-              </form>
-            </>
-          )}
-        </DropdownMenu>
       </div>
     </header>
   );

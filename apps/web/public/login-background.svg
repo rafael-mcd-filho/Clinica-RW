@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 941 1672" preserveAspectRatio="xMidYMin slice">
+  <defs>
+    <radialGradient id="leftGlow" cx="0" cy="0" r="1" gradientTransform="translate(100 170) rotate(25) scale(560 420)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b9d7ff" stop-opacity=".76"/>
+      <stop offset=".58" stop-color="#e8f2ff" stop-opacity=".64"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rightGlow" cx="0" cy="0" r="1" gradientTransform="translate(969 322) rotate(158) scale(515 335)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c4ddff" stop-opacity=".85"/>
+      <stop offset=".58" stop-color="#eaf3ff" stop-opacity=".52"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="upperShape" x1="0" y1="0" x2="270" y2="285" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e8f2ff"/>
+      <stop offset="1" stop-color="#d4e7ff" stop-opacity=".72"/>
+    </linearGradient>
+    <linearGradient id="hairline" x1="0" y1="160" x2="368" y2="400" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9bc6ff" stop-opacity=".75"/>
+      <stop offset="1" stop-color="#d6e8ff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="bottomGlow" cx="0" cy="0" r="1" gradientTransform="translate(476 1350) rotate(90) scale(520 620)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#eff5ff" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="941" height="1672" fill="#fff"/>
+  <rect width="941" height="680" fill="url(#leftGlow)"/>
+  <rect width="941" height="710" fill="url(#rightGlow)"/>
+  <path d="M0 0h256c-47 50-52 129-107 186C106 230 50 246 0 265V0Z" fill="url(#upperShape)" opacity=".8"/>
+  <path d="M0 262c138-67 248-133 393-112 133 19 191 20 258 43 144 49 175 194 290 239v1240H0V262Z" fill="#fff" opacity=".63"/>
+  <path d="M0 161 381 408" fill="none" stroke="url(#hairline)" stroke-width="3"/>
+  <rect y="730" width="941" height="942" fill="url(#bottomGlow)"/>
+</svg>

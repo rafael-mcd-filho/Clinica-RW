@@ -40,6 +40,7 @@ import type {
   CompanyAccessUser,
   ResourceScope,
 } from "./types";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -96,6 +97,13 @@ const auditLabels: Record<string, string> = {
   "user.resource_scopes_changed": "Escopo de acesso alterado",
   "user.setup_link_generated": "Novo link de acesso gerado",
   "professional.user_link_changed": "Vínculo profissional alterado",
+  "user.self_updated": "Dados pessoais atualizados",
+  "user.self_avatar_changed": "Foto de perfil alterada",
+  "user.self_avatar_removed": "Foto de perfil removida",
+  "user.self_password_changed": "Senha alterada pelo usuário",
+  "user.self_email_change_requested": "Troca de e-mail solicitada",
+  "user.self_sessions_revoked": "Sessões em outros dispositivos encerradas",
+  "user.login_email_changed": "E-mail de login alterado",
   "profile.created": "Perfil criado",
   "profile.updated": "Perfil atualizado",
   "profile.duplicated": "Perfil duplicado",
@@ -267,9 +275,11 @@ function UsersPanel({
                 className="app-list-row grid gap-3 px-5 py-4 hover:bg-muted/40 lg:grid-cols-[1.35fr_0.8fr_0.9fr_0.9fr_5rem] lg:items-center lg:gap-4"
               >
                 <div className="app-list-cell flex min-w-0 items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary">
-                    <UserCircle className="size-5" aria-hidden="true" />
-                  </span>
+                  <Avatar
+                    name={user.name}
+                    photoUrl={user.avatarUrl}
+                    size="sm"
+                  />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
                       {user.name}

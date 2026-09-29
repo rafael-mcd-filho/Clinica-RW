@@ -194,7 +194,10 @@ function WaitlistCard({
       ) {
         return false;
       }
-      if (procedureFilter && (entry.procedures?.name ?? "") !== procedureFilter) {
+      if (
+        procedureFilter &&
+        (entry.procedures?.name ?? "") !== procedureFilter
+      ) {
         return false;
       }
       if (!term) return true;
@@ -628,7 +631,8 @@ function OnlineRequestsCard({
   // de um dia precisa saltar aos olhos, não ficar igual às que chegaram agora.
   const stalled = useMemo(
     () =>
-      requests.filter((request) => isStalledRequest(request, renderedAt)).length,
+      requests.filter((request) => isStalledRequest(request, renderedAt))
+        .length,
     [requests, renderedAt],
   );
 
@@ -648,7 +652,8 @@ function OnlineRequestsCard({
       ).includes(term),
     );
   }, [requests, query]);
-  const selected = requests.find((request) => request.id === selectedId) ?? null;
+  const selected =
+    requests.find((request) => request.id === selectedId) ?? null;
 
   return (
     <Card>
@@ -756,7 +761,10 @@ function OnlineRequestRow({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
-            <Badge variant={stalled ? "destructive" : "warning"} className="w-fit">
+            <Badge
+              variant={stalled ? "destructive" : "warning"}
+              className="w-fit"
+            >
               {stalled ? "Parada" : "Pendente"}
             </Badge>
             <span className="text-body-sm tabular-nums text-muted-foreground">
@@ -843,7 +851,7 @@ function OnlineRequestModal({
             value={
               [
                 request.units?.name,
-                request.health_insurances?.name ?? "Particular",
+                request.health_insurances?.name ?? "Sem convênio",
               ]
                 .filter(Boolean)
                 .join(" · ") || "Não informado"
@@ -1060,14 +1068,13 @@ function useToastState(state: AgendaActionState) {
 }
 
 function waitlistPatientName(entry: DashboardWaitlistEntry) {
-  return (
-    entry.patients?.social_name || entry.patients?.full_name || "Paciente"
-  );
+  return entry.patients?.social_name || entry.patients?.full_name || "Paciente";
 }
 
 function distinctNames(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.filter((value): value is string => !!value)))
-    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return Array.from(
+    new Set(values.filter((value): value is string => !!value)),
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
 function normalizeSearchText(value: string) {
@@ -1084,10 +1091,7 @@ function normalizeSearchText(value: string) {
  */
 const stalledRequestHours = 24;
 
-function isStalledRequest(
-  request: DashboardOnlineRequest,
-  reference: string,
-) {
+function isStalledRequest(request: DashboardOnlineRequest, reference: string) {
   const elapsed =
     new Date(reference).getTime() - new Date(request.created_at).getTime();
   return elapsed >= stalledRequestHours * 60 * 60 * 1000;

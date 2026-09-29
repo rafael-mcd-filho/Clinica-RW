@@ -11,6 +11,7 @@ type RadioGroupProps = {
   defaultValue?: string;
   disabled?: boolean;
   className?: string;
+  ariaLabelledBy?: string;
 };
 
 export function RadioGroup({
@@ -19,9 +20,14 @@ export function RadioGroup({
   disabled,
   name,
   options,
+  ariaLabelledBy,
 }: RadioGroupProps) {
   return (
-    <div className={cn("grid gap-2", className)} role="radiogroup">
+    <div
+      className={cn("grid gap-2", className)}
+      role="radiogroup"
+      aria-labelledby={ariaLabelledBy}
+    >
       {options.map((option) => (
         <label
           key={option.value}

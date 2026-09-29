@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { logger } from "@/lib/observability/logger";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type BookingManageState = {
@@ -11,27 +12,42 @@ export type BookingManageState = {
 
 function friendlyError(message: string, code?: string) {
   const normalizedMessage = message.toLowerCase();
+  if (normalizedMessage.includes("online booking request not found")) {
+    return "Não encontramos esta solicitação. Confira o link que você recebeu.";
+  }
   if (normalizedMessage.includes("schedule does not accept online booking")) {
     return "Esta agenda não está mais disponível para remarcação online.";
+  }
+  if (normalizedMessage.includes("online booking is not available")) {
+    return "O agendamento online desta clínica está desativado no momento.";
   }
   if (
     normalizedMessage.includes("procedure is not available on this schedule")
   ) {
     return "Este serviço não está mais disponível nesta agenda.";
   }
+  if (normalizedMessage.includes("procedure not found")) {
+    return "Este serviço não está mais disponível.";
+  }
   if (code === "23P01" || message.includes("slot is not available")) {
-    return "Este horario nao esta mais disponivel.";
+    return "Este horário não está mais disponível.";
   }
   if (message.includes("Cancellation window")) {
-    return "O prazo de cancelamento online desta consulta ja encerrou.";
+    return "O prazo de cancelamento online desta consulta já encerrou.";
+  }
+  if (normalizedMessage.includes("cannot be cancelled online")) {
+    return "Esta solicitação não pode mais ser cancelada por aqui. Fale com a clínica.";
   }
   if (message.includes("Only pending")) {
-    return "Somente solicitacoes pendentes podem ser remarcadas por aqui.";
+    return "Somente solicitações pendentes podem ser remarcadas por aqui.";
   }
   if (message.includes("booking window")) {
-    return "O horario escolhido esta fora da janela de agendamento.";
+    return "O horário escolhido está fora da janela de agendamento.";
   }
-  return message;
+  // O texto técnico do banco (em inglês) chegava ao paciente. Ele fica no
+  // log; na tela vai uma mensagem que diz o que fazer.
+  logger.error("public_booking.manage_failed", { code, message });
+  return "Não foi possível concluir agora. Tente de novo em alguns instantes ou fale com a clínica.";
 }
 
 export async function reschedulePublicBooking(
@@ -46,7 +62,7 @@ export async function reschedulePublicBooking(
     })
     .safeParse(Object.fromEntries(formData));
 
-  if (!parsed.success) return { error: "Selecione um novo horario." };
+  if (!parsed.success) return { error: "Selecione um novo horário." };
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.rpc("reschedule_online_booking_request", {
@@ -57,7 +73,7 @@ export async function reschedulePublicBooking(
   if (error) return { error: friendlyError(error.message, error.code) };
 
   revalidatePath(`/agendar/acompanhar/${token}`);
-  return { success: "Solicitacao remarcada." };
+  return { success: "Solicitação remarcada." };
 }
 
 export async function cancelPublicBooking(
@@ -81,5 +97,5 @@ export async function cancelPublicBooking(
   if (error) return { error: friendlyError(error.message, error.code) };
 
   revalidatePath(`/agendar/acompanhar/${token}`);
-  return { success: "Solicitacao cancelada." };
+  return { success: "Solicitação cancelada." };
 }

@@ -129,14 +129,14 @@ export function DashboardFilters({
 
         {customTooLong ? (
           <p
-            className="text-xs text-destructive sm:col-span-2 lg:col-span-2 lg:col-start-3"
+            className="text-body-sm text-destructive sm:col-span-2 lg:col-span-2 lg:col-start-3"
             role="alert"
           >
             Selecione no máximo {maxCustomPeriodDays} dias.
           </p>
         ) : customInvalid ? (
           <p
-            className="text-xs text-destructive sm:col-span-2 lg:col-span-2 lg:col-start-3"
+            className="text-body-sm text-destructive sm:col-span-2 lg:col-span-2 lg:col-start-3"
             role="alert"
           >
             Selecione um intervalo de datas válido.

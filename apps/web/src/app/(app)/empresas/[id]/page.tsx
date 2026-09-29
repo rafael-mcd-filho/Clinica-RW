@@ -237,7 +237,7 @@ export default async function EmpresaDetailsPage({
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1fr_20rem]">
-        <Card className="animate-panel-enter">
+        <Card>
           <CardHeader>
             <h2 className="text-heading-sm font-semibold">Dados da empresa</h2>
             <p className="text-sm text-muted-foreground">
@@ -249,7 +249,7 @@ export default async function EmpresaDetailsPage({
           </CardContent>
         </Card>
 
-        <Card className="animate-panel-enter">
+        <Card>
           <CardHeader>
             <h2 className="text-heading-sm font-semibold">Responsavel</h2>
             <p className="text-sm text-muted-foreground">
@@ -275,7 +275,7 @@ export default async function EmpresaDetailsPage({
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card className="animate-panel-enter">
+        <Card>
           <CardHeader className="flex items-center gap-3">
             <UsersRound className="size-5 text-primary" aria-hidden="true" />
             <div>
@@ -324,7 +324,7 @@ export default async function EmpresaDetailsPage({
           )}
         </Card>
 
-        <Card className="animate-panel-enter">
+        <Card>
           <CardHeader className="flex items-center gap-3">
             <UserRound className="size-5 text-primary" aria-hidden="true" />
             <div>
@@ -371,7 +371,7 @@ export default async function EmpresaDetailsPage({
         </Card>
       </section>
 
-      <Card className="animate-panel-enter">
+      <Card>
         <CardHeader className="flex items-center gap-3">
           <History className="size-5 text-primary" aria-hidden="true" />
           <div>

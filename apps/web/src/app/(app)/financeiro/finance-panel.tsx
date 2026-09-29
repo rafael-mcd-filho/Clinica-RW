@@ -23,9 +23,6 @@ import { toast } from "sonner";
 import {
   createAccountReceivable,
   createAccountPayable,
-  payAccountPayable,
-  payProfessionalPayout,
-  receivePayment,
   updateFinancialCategoryDreGroup,
   type FinanceActionState,
 } from "./actions";
@@ -36,10 +33,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
-import { ConfirmDialog, FormDialog } from "@/components/ui/dialog";
+import { FormDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import type { TabItem } from "@/components/ui/tabs";
+import {
+  ReceivePaymentDialog,
+  PayPayableDialog,
+  PayPayoutDialog,
+} from "@/components/finance/settlement-dialogs";
+import { FinancialRecordTrigger } from "@/components/finance/financial-record-details";
 import { cn } from "@/lib/utils";
 
 export type PaymentMethodRow = {
@@ -141,6 +144,7 @@ const initialState: FinanceActionState = {};
 export function FinancePanel({
   section,
   period,
+  today,
   overview,
   overviewError,
   dreRows,
@@ -162,6 +166,8 @@ export function FinancePanel({
     | "repasses"
     | "dre";
   period: FinancePeriod;
+  /** Hoje (yyyy-mm-dd) no fuso da clínica: marca o que já venceu. */
+  today: string;
   overview: FinanceOverview | null;
   overviewError: string | null;
   dreRows: DreRow[];
@@ -300,6 +306,7 @@ export function FinancePanel({
             receivables={receivables}
             paymentMethods={paymentMethods}
             canReceive={permissions.canReceive}
+            today={today}
             pagination={pagination.receivables}
             pending={navigationPending}
             onPageChange={(page) =>
@@ -337,6 +344,7 @@ export function FinancePanel({
             payables={payables}
             paymentMethods={paymentMethods}
             canManage={permissions.canManagePayables}
+            today={today}
             pagination={pagination.payables}
             pending={navigationPending}
             onPageChange={(page) =>
@@ -357,6 +365,7 @@ export function FinancePanel({
         <PayoutsSection
           payouts={payouts}
           canManage={permissions.canManagePayables}
+          today={today}
           pagination={pagination.payouts}
           pending={navigationPending}
           onPageChange={(page) => changePage("payouts_page", "repasses", page)}
@@ -577,7 +586,9 @@ function FinancePeriodFilter({ period }: { period: FinancePeriod }) {
             Até
             <DatePickerInput name="to" defaultValue={period.to} required />
           </label>
-          <Button type="submit" variant="secondary">
+          {/* lg: mesma altura dos campos de data (h-10); no tamanho padrão
+              o botão ficava 4px mais baixo, alinhado só pela base. */}
+          <Button type="submit" variant="secondary" size="lg">
             Aplicar período
           </Button>
         </form>
@@ -652,6 +663,7 @@ function ReceivablesSection({
   receivables,
   paymentMethods,
   canReceive,
+  today,
   pagination,
   pending,
   onPageChange,
@@ -659,6 +671,7 @@ function ReceivablesSection({
   receivables: ReceivableRow[];
   paymentMethods: PaymentMethodRow[];
   canReceive: boolean;
+  today: string;
 } & FinanceSectionPaginationProps) {
   const [target, setTarget] = useState<ReceivableRow | null>(null);
 
@@ -692,7 +705,14 @@ function ReceivablesSection({
         accessorKey: "description",
         header: "Procedimento",
         cell: ({ row }) => (
-          <span className="truncate">{row.original.description}</span>
+          <FinancialRecordTrigger
+            kind="receivable"
+            recordId={row.original.id}
+            label={row.original.description}
+            className="max-w-full truncate"
+          >
+            {row.original.description}
+          </FinancialRecordTrigger>
         ),
       },
       {
@@ -702,9 +722,14 @@ function ReceivablesSection({
           const receivable = row.original;
           return (
             <div>
-              <p className="font-medium tabular-nums">
+              <FinancialRecordTrigger
+                kind="receivable"
+                recordId={row.original.id}
+                label={receivable.description}
+                className="font-medium tabular-nums"
+              >
                 {formatCurrency(receivable.amount)}
-              </p>
+              </FinancialRecordTrigger>
               {receivable.status === "partial" ? (
                 <p className="text-xs text-muted-foreground">
                   {formatCurrency(receivable.paid_amount)} recebido
@@ -717,12 +742,23 @@ function ReceivablesSection({
       {
         accessorKey: "due_date",
         header: "Vencimento",
-        cell: ({ row }) => formatDate(row.original.due_date),
+        cell: ({ row }) => (
+          <DueDateCell
+            dueDate={row.original.due_date}
+            overdue={isOverdue(row.original, today)}
+            today={today}
+          />
+        ),
       },
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => (
+          <StatusBadge
+            status={row.original.status}
+            overdue={isOverdue(row.original, today)}
+          />
+        ),
       },
       {
         id: "actions",
@@ -733,10 +769,14 @@ function ReceivablesSection({
           if (!canReceive || !["open", "partial"].includes(receivable.status)) {
             return null;
           }
+          // Secundário, como "Pagar" nas contas a pagar e nos repasses: uma
+          // coluna de botões azuis sólidos disputava com "Nova receita", a
+          // ação principal da tela.
           return (
             <Button
               type="button"
               size="sm"
+              variant="secondary"
               onClick={() => setTarget(receivable)}
             >
               Receber
@@ -745,7 +785,7 @@ function ReceivablesSection({
         },
       },
     ],
-    [canReceive],
+    [canReceive, today],
   );
 
   return (
@@ -758,17 +798,21 @@ function ReceivablesSection({
         </p>
       </div>
       <DataTable
+        ariaLabel="Contas a receber"
         columns={columns}
         data={receivables}
         enableSorting={false}
         pageSize={pagination.pageSize}
         serverPagination={{ ...pagination, pending, onPageChange }}
-        emptyTitle="Nenhuma conta a receber"
-        emptyDescription="Cobranças geradas por consultas aparecerão aqui."
+        // A lista filtra pelo vencimento. "Nenhuma conta a receber" dizia que
+        // não havia nada — com R$ 46 mil em atraso vencidos antes do período.
+        emptyTitle="Nenhuma conta com vencimento neste período"
+        emptyDescription="Contas vencidas antes do período, inclusive as em atraso, aparecem ampliando as datas acima."
       />
 
       {target ? (
         <ReceivePaymentDialog
+          today={today}
           receivable={target}
           paymentMethods={paymentMethods}
           onClose={() => setTarget(null)}
@@ -792,16 +836,32 @@ function PaymentsSection({
         accessorFn: (payment) =>
           payment.accounts_receivable?.description ?? "Recebimento",
         header: "Descrição",
-        cell: ({ row }) =>
-          row.original.accounts_receivable?.description ?? "Recebimento",
+        cell: ({ row }) => (
+          <FinancialRecordTrigger
+            kind="payment"
+            recordId={row.original.id}
+            label={
+              row.original.accounts_receivable?.description ?? "Recebimento"
+            }
+          >
+            {row.original.accounts_receivable?.description ?? "Recebimento"}
+          </FinancialRecordTrigger>
+        ),
       },
       {
         accessorKey: "amount",
         header: "Valor",
         cell: ({ row }) => (
-          <span className="font-medium tabular-nums">
+          <FinancialRecordTrigger
+            kind="payment"
+            recordId={row.original.id}
+            label={
+              row.original.accounts_receivable?.description ?? "Recebimento"
+            }
+            className="font-medium tabular-nums"
+          >
             {formatCurrency(row.original.amount)}
-          </span>
+          </FinancialRecordTrigger>
         ),
       },
       {
@@ -839,13 +899,14 @@ function PaymentsSection({
     <section className="grid gap-3">
       <h2 className="text-heading-sm font-semibold">Pagamentos recebidos</h2>
       <DataTable
+        ariaLabel="Pagamentos recebidos"
         columns={columns}
         data={payments}
         enableSorting={false}
         pageSize={pagination.pageSize}
         serverPagination={{ ...pagination, pending, onPageChange }}
-        emptyTitle="Nenhum recebimento registrado"
-        emptyDescription="Pagamentos confirmados aparecerão aqui."
+        emptyTitle="Nenhum recebimento neste período"
+        emptyDescription="A lista usa a data do pagamento. Ajuste as datas acima para ver outros períodos."
       />
     </section>
   );
@@ -855,6 +916,7 @@ function PayablesSection({
   payables,
   paymentMethods,
   canManage,
+  today,
   pagination,
   pending,
   onPageChange,
@@ -862,6 +924,7 @@ function PayablesSection({
   payables: PayableRow[];
   paymentMethods: PaymentMethodRow[];
   canManage: boolean;
+  today: string;
 } & FinanceSectionPaginationProps) {
   const [target, setTarget] = useState<PayableRow | null>(null);
 
@@ -872,7 +935,14 @@ function PayablesSection({
         header: "Fornecedor",
         cell: ({ row }) => (
           <div className="min-w-0">
-            <p className="truncate font-medium">{row.original.vendor_name}</p>
+            <FinancialRecordTrigger
+              kind="payable"
+              recordId={row.original.id}
+              label={row.original.description}
+              className="max-w-full truncate font-medium"
+            >
+              {row.original.vendor_name}
+            </FinancialRecordTrigger>
             <p className="truncate text-xs text-muted-foreground">
               {row.original.description}
             </p>
@@ -883,20 +953,36 @@ function PayablesSection({
         accessorKey: "amount",
         header: "Valor",
         cell: ({ row }) => (
-          <span className="font-medium tabular-nums">
+          <FinancialRecordTrigger
+            kind="payable"
+            recordId={row.original.id}
+            label={row.original.description}
+            className="font-medium tabular-nums"
+          >
             {formatCurrency(row.original.amount)}
-          </span>
+          </FinancialRecordTrigger>
         ),
       },
       {
         accessorKey: "due_date",
         header: "Vencimento",
-        cell: ({ row }) => formatDate(row.original.due_date),
+        cell: ({ row }) => (
+          <DueDateCell
+            dueDate={row.original.due_date}
+            overdue={isOverdue(row.original, today)}
+            today={today}
+          />
+        ),
       },
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => (
+          <StatusBadge
+            status={row.original.status}
+            overdue={isOverdue(row.original, today)}
+          />
+        ),
       },
       {
         id: "actions",
@@ -918,24 +1004,26 @@ function PayablesSection({
         },
       },
     ],
-    [canManage],
+    [canManage, today],
   );
 
   return (
     <section className="grid gap-3">
       <h2 className="text-heading-sm font-semibold">Contas a pagar</h2>
       <DataTable
+        ariaLabel="Contas a pagar"
         columns={columns}
         data={payables}
         enableSorting={false}
         pageSize={pagination.pageSize}
         serverPagination={{ ...pagination, pending, onPageChange }}
-        emptyTitle="Nenhuma conta a pagar"
-        emptyDescription="Contas cadastradas manualmente aparecerão aqui."
+        emptyTitle="Nenhuma conta com vencimento neste período"
+        emptyDescription="Contas vencidas antes do período, inclusive as em atraso, aparecem ampliando as datas acima."
       />
 
       {target ? (
         <PayPayableDialog
+          today={today}
           payable={target}
           paymentMethods={paymentMethods}
           onClose={() => setTarget(null)}
@@ -948,12 +1036,14 @@ function PayablesSection({
 function PayoutsSection({
   payouts,
   canManage,
+  today,
   pagination,
   pending,
   onPageChange,
 }: {
   payouts: PayoutRow[];
   canManage: boolean;
+  today: string;
 } & FinanceSectionPaginationProps) {
   const [target, setTarget] = useState<PayoutRow | null>(null);
 
@@ -962,26 +1052,50 @@ function PayoutsSection({
       {
         accessorFn: (payout) => payout.professionals?.name ?? "Profissional",
         header: "Profissional",
-        cell: ({ row }) => row.original.professionals?.name ?? "Profissional",
+        cell: ({ row }) => (
+          <FinancialRecordTrigger
+            kind="payout"
+            recordId={row.original.id}
+            label={row.original.professionals?.name ?? "Repasse"}
+          >
+            {row.original.professionals?.name ?? "Profissional"}
+          </FinancialRecordTrigger>
+        ),
       },
       {
         accessorKey: "amount",
         header: "Valor",
         cell: ({ row }) => (
-          <span className="font-medium tabular-nums">
+          <FinancialRecordTrigger
+            kind="payout"
+            recordId={row.original.id}
+            label={row.original.professionals?.name ?? "Repasse"}
+            className="font-medium tabular-nums"
+          >
             {formatCurrency(row.original.amount)}
-          </span>
+          </FinancialRecordTrigger>
         ),
       },
       {
         accessorKey: "due_date",
         header: "Vencimento",
-        cell: ({ row }) => formatDate(row.original.due_date),
+        cell: ({ row }) => (
+          <DueDateCell
+            dueDate={row.original.due_date}
+            overdue={isOverdue(row.original, today)}
+            today={today}
+          />
+        ),
       },
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => (
+          <StatusBadge
+            status={row.original.status}
+            overdue={isOverdue(row.original, today)}
+          />
+        ),
       },
       {
         id: "actions",
@@ -1003,204 +1117,31 @@ function PayoutsSection({
         },
       },
     ],
-    [canManage],
+    [canManage, today],
   );
 
   return (
     <section className="grid gap-3">
       <h2 className="text-heading-sm font-semibold">Repasses profissionais</h2>
       <DataTable
+        ariaLabel="Repasses profissionais"
         columns={columns}
         data={payouts}
         enableSorting={false}
         pageSize={pagination.pageSize}
         serverPagination={{ ...pagination, pending, onPageChange }}
-        emptyTitle="Nenhum repasse encontrado"
-        emptyDescription="Repasses gerados a partir de pagamentos aparecerão aqui."
+        emptyTitle="Nenhum repasse com vencimento neste período"
+        emptyDescription="A lista usa o vencimento do repasse. Ajuste as datas acima para ver outros períodos."
       />
 
       {target ? (
-        <PayPayoutDialog payout={target} onClose={() => setTarget(null)} />
+        <PayPayoutDialog
+          today={today}
+          payout={target}
+          onClose={() => setTarget(null)}
+        />
       ) : null}
     </section>
-  );
-}
-
-function ReceivePaymentDialog({
-  receivable,
-  paymentMethods,
-  onClose,
-}: {
-  receivable: ReceivableRow;
-  paymentMethods: PaymentMethodRow[];
-  onClose: () => void;
-}) {
-  const [state, formAction, pending] = useActionState(
-    receivePayment,
-    initialState,
-  );
-  const remaining = Number(receivable.amount) - Number(receivable.paid_amount);
-
-  useEffect(() => {
-    if (state.success) {
-      toast.success(state.success);
-      onClose();
-    }
-  }, [state.success, onClose]);
-
-  return (
-    <FormDialog
-      open
-      onClose={onClose}
-      title="Registrar recebimento"
-      description={`${
-        receivable.patients?.social_name ||
-        receivable.patients?.full_name ||
-        "Paciente"
-      } · ${receivable.description}`}
-      formAction={formAction}
-      pending={pending}
-      error={state.error}
-      confirmLabel="Receber"
-      pendingLabel="Registrando..."
-    >
-      <input type="hidden" name="account_receivable_id" value={receivable.id} />
-      <label className="grid gap-2 text-sm font-medium">
-        Forma de pagamento
-        <Select name="payment_method_id" required>
-          {paymentMethods.map((method) => (
-            <option key={method.id} value={method.id}>
-              {method.name}
-            </option>
-          ))}
-        </Select>
-      </label>
-      <label className="grid gap-2 text-sm font-medium">
-        Valor
-        <Input
-          name="amount"
-          type="number"
-          min="0.01"
-          step="0.01"
-          defaultValue={remaining.toFixed(2)}
-          required
-        />
-      </label>
-      <label className="grid gap-2 text-sm font-medium">
-        Data do recebimento
-        <DatePickerInput
-          name="paid_at"
-          defaultValue={localDateValue()}
-          required
-        />
-      </label>
-      <label className="grid gap-2 text-sm font-medium">
-        Observação
-        <Textarea name="notes" placeholder="Observação (opcional)" />
-      </label>
-    </FormDialog>
-  );
-}
-
-function PayPayableDialog({
-  payable,
-  paymentMethods,
-  onClose,
-}: {
-  payable: PayableRow;
-  paymentMethods: PaymentMethodRow[];
-  onClose: () => void;
-}) {
-  const [state, formAction, pending] = useActionState(
-    payAccountPayable,
-    initialState,
-  );
-
-  useEffect(() => {
-    if (state.success) {
-      toast.success(state.success);
-      onClose();
-    }
-  }, [state.success, onClose]);
-
-  return (
-    <FormDialog
-      open
-      onClose={onClose}
-      title="Marcar conta como paga"
-      description={`${payable.vendor_name} · ${formatCurrency(payable.amount)}`}
-      formAction={formAction}
-      pending={pending}
-      error={state.error}
-      confirmLabel="Marcar pago"
-      pendingLabel="Baixando..."
-    >
-      <input type="hidden" name="account_payable_id" value={payable.id} />
-      <label className="grid gap-2 text-sm font-medium">
-        Forma de pagamento
-        <Select name="payment_method_id" required>
-          {paymentMethods.map((method) => (
-            <option key={method.id} value={method.id}>
-              {method.name}
-            </option>
-          ))}
-        </Select>
-      </label>
-      <label className="grid gap-2 text-sm font-medium">
-        Data do pagamento
-        <DatePickerInput
-          name="paid_at"
-          defaultValue={localDateValue()}
-          required
-        />
-      </label>
-    </FormDialog>
-  );
-}
-
-function PayPayoutDialog({
-  payout,
-  onClose,
-}: {
-  payout: PayoutRow;
-  onClose: () => void;
-}) {
-  const [state, formAction, pending] = useActionState(
-    payProfessionalPayout,
-    initialState,
-  );
-
-  useEffect(() => {
-    if (state.success) {
-      toast.success(state.success);
-      onClose();
-    }
-  }, [state.success, onClose]);
-
-  return (
-    <ConfirmDialog
-      open
-      onClose={onClose}
-      title="Marcar repasse como pago"
-      description={`${payout.professionals?.name ?? "Profissional"} · ${formatCurrency(
-        payout.amount,
-      )}`}
-      formAction={formAction}
-      pending={pending}
-      error={state.error}
-      confirmLabel="Marcar pago"
-      pendingLabel="Baixando..."
-    >
-      <input type="hidden" name="payout_id" value={payout.id} />
-      <label className="grid gap-2 text-sm font-medium">
-        Data do pagamento
-        <DatePickerInput
-          name="paid_at"
-          defaultValue={localDateValue()}
-          required
-        />
-      </label>
-    </ConfirmDialog>
   );
 }
 
@@ -1335,7 +1276,52 @@ function localDateValue() {
   }).format(new Date());
 }
 
-function StatusBadge({ status }: { status: string }) {
+/**
+ * Ainda não quitado (aberto, parcial ou repasse pendente) e com vencimento
+ * antes de hoje, no fuso da clínica.
+ */
+function isOverdue(row: { due_date: string; status: string }, today: string) {
+  return (
+    ["open", "partial", "pending"].includes(row.status) && row.due_date < today
+  );
+}
+
+function DueDateCell({
+  dueDate,
+  overdue,
+  today,
+}: {
+  dueDate: string;
+  overdue: boolean;
+  today: string;
+}) {
+  if (!overdue) return <>{formatDate(dueDate)}</>;
+
+  const days = Math.round(
+    (Date.parse(`${today}T12:00:00Z`) - Date.parse(`${dueDate}T12:00:00Z`)) /
+      86_400_000,
+  );
+  return (
+    <div>
+      <p className="tabular-nums">{formatDate(dueDate)}</p>
+      <p className="text-xs text-destructive-foreground">
+        há {days} {days === 1 ? "dia" : "dias"}
+      </p>
+    </div>
+  );
+}
+
+// Vencido é o "Aberto", "Parcial" ou "Pendente" que passou da data. Aparecia
+// igual ao que ainda vai vencer.
+function StatusBadge({
+  status,
+  overdue = false,
+}: {
+  status: string;
+  overdue?: boolean;
+}) {
+  if (overdue) return <Badge variant="destructive">Vencido</Badge>;
+
   const label: Record<string, string> = {
     open: "Aberto",
     partial: "Parcial",

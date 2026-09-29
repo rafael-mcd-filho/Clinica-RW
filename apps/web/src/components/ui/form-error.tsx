@@ -27,7 +27,7 @@ export function FormError({
       role="alert"
       aria-live="assertive"
       tabIndex={-1}
-      className={cn("text-sm text-destructive", className)}
+      className={cn("text-body-sm text-destructive", className)}
     >
       {message}
     </p>

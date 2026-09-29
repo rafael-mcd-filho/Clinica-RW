@@ -6,6 +6,7 @@ import {
   MagnifyingGlass,
   X,
 } from "@phosphor-icons/react";
+
 import {
   Children,
   isValidElement,
@@ -42,12 +43,23 @@ function measurePanelLayout(
   trigger: HTMLButtonElement,
   optionCount: number,
   preferredMaxHeight: number,
+  preferredMinWidth = 0,
 ): PanelLayout {
   const rect = trigger.getBoundingClientRect();
   const modalRoot = trigger.closest<HTMLElement>("[data-select-portal-root]");
   const modalRect = modalRoot?.getBoundingClientRect();
   const boundaryTop = modalRect?.top ?? 0;
   const boundaryBottom = modalRect?.bottom ?? window.innerHeight;
+  const boundaryLeft = modalRect?.left ?? 0;
+  const boundaryRight = modalRect?.right ?? window.innerWidth;
+  const width = Math.min(
+    Math.max(rect.width, preferredMinWidth),
+    boundaryRight - boundaryLeft,
+  );
+  const left = Math.max(
+    boundaryLeft,
+    Math.min(rect.left, boundaryRight - width),
+  );
   const availableAbove = Math.max(0, rect.top - boundaryTop - panelGap);
   const availableBelow = Math.max(0, boundaryBottom - rect.bottom - panelGap);
   const estimatedHeight = Math.min(
@@ -65,8 +77,8 @@ function measurePanelLayout(
     return {
       top: openAbove ? undefined : rect.bottom - modalRect.top + panelGap,
       bottom: openAbove ? modalRect.bottom - rect.top + panelGap : undefined,
-      left: rect.left - modalRect.left,
-      width: rect.width,
+      left: left - modalRect.left,
+      width,
       maxHeight,
       position: "absolute",
       portalTarget: modalRoot,
@@ -76,8 +88,8 @@ function measurePanelLayout(
   return {
     top: openAbove ? undefined : rect.bottom + panelGap,
     bottom: openAbove ? window.innerHeight - rect.top + panelGap : undefined,
-    left: rect.left,
-    width: rect.width,
+    left,
+    width,
     maxHeight,
     position: "fixed",
     portalTarget: null,
@@ -86,6 +98,7 @@ function measurePanelLayout(
 
 type SelectProps = {
   children: ReactNode;
+  id?: string;
   name?: string;
   value?: string;
   defaultValue?: string;
@@ -96,11 +109,16 @@ type SelectProps = {
   allowEmptyOption?: boolean;
   searchable?: boolean;
   searchPlaceholder?: string;
+  /** Minimum menu width in pixels, capped to the viewport or modal. */
+  panelMinWidth?: number;
   className?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean | "true" | "false";
   "aria-label"?: string;
 };
 
 type MultiSelectProps = {
+  id?: string;
   options: SelectOption[];
   value: string[];
   onValueChange: (value: string[]) => void;
@@ -108,6 +126,8 @@ type MultiSelectProps = {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean | "true" | "false";
   "aria-label"?: string;
 };
 
@@ -168,6 +188,7 @@ function normalizeSearch(value: string) {
  */
 export function Select({
   children,
+  id,
   name,
   value,
   defaultValue,
@@ -178,7 +199,10 @@ export function Select({
   allowEmptyOption = false,
   searchable = false,
   searchPlaceholder = "Pesquisar...",
+  panelMinWidth = 0,
   className,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
   "aria-label": ariaLabel,
 }: SelectProps) {
   const allOptions = useMemo(() => extractOptions(children), [children]);
@@ -201,6 +225,7 @@ export function Select({
   const selected = options.find((option) => option.value === currentValue);
 
   const listboxId = useId();
+  const triggerId = id ?? `${listboxId}-trigger`;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -230,6 +255,7 @@ export function Select({
           trigger,
           options.length + (searchable ? 1 : 0),
           searchable ? 320 : 256,
+          panelMinWidth,
         ),
       );
     }
@@ -239,7 +265,7 @@ export function Select({
     setQuery("");
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
     setOpen(true);
-  }, [options, currentValue, searchable]);
+  }, [options, currentValue, searchable, panelMinWidth]);
 
   const commit = useCallback(
     (next: string) => {
@@ -384,6 +410,7 @@ export function Select({
       {name ? <input type="hidden" name={name} value={currentValue} /> : null}
 
       <button
+        id={triggerId}
         ref={triggerRef}
         type="button"
         role="combobox"
@@ -391,6 +418,8 @@ export function Select({
         aria-expanded={open}
         aria-controls={listboxId}
         aria-required={required}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
@@ -511,6 +540,7 @@ export function Select({
 }
 
 export function MultiSelect({
+  id,
   options,
   value,
   onValueChange,
@@ -518,6 +548,8 @@ export function MultiSelect({
   placeholder,
   disabled,
   className,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
   "aria-label": ariaLabel,
 }: MultiSelectProps) {
   const selectedValues = useMemo(() => new Set(value), [value]);
@@ -532,6 +564,7 @@ export function MultiSelect({
         : `${selectedOptions.length} selecionados`;
 
   const listboxId = useId();
+  const triggerId = id ?? `${listboxId}-trigger`;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -613,12 +646,15 @@ export function MultiSelect({
   return (
     <div className={cn("relative min-w-0 max-w-full", className)}>
       <button
+        id={triggerId}
         ref={triggerRef}
         type="button"
         role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}

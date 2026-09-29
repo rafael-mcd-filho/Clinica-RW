@@ -70,10 +70,11 @@ export type AttendanceInstance = {
   displayName: string | null;
 };
 
+/** Status de uma conversa, no singular: aparece no cabeçalho da conversa aberta. */
 export const conversationStatusLabels: Record<ConversationStatus, string> = {
-  pending: "Pendentes",
+  pending: "Pendente",
   open: "Em atendimento",
-  resolved: "Concluídos",
+  resolved: "Concluído",
 };
 
 /** Prévia curta usada em last_message_preview e na lista. */

@@ -96,7 +96,7 @@ export function ClinicalQuickEditButton({
   );
 }
 
-function ClinicalQuickEditDialog({
+export function ClinicalQuickEditDialog({
   field,
   label,
   patientId,
@@ -166,42 +166,53 @@ export function ClinicalSummaryForm({
     <Card>
       <CardHeader>
         <h2 className="font-semibold">Resumo clínico permanente</h2>
+        {/* A ficha transforma cada linha em um marcador; sem avisar aqui,
+            um parágrafo corrido virava um item só. */}
         <p className="mt-1 text-sm text-muted-foreground">
-          Conteúdo protegido, disponível apenas para perfis autorizados.
+          Conteúdo protegido, disponível apenas para perfis autorizados. Use uma
+          linha para cada item: cada linha vira um marcador na ficha.
         </p>
       </CardHeader>
       <CardContent>
         <form action={formAction} className="grid gap-4">
+          {/* Mesmos nomes da coluna da ficha: "Medicações em uso" e
+              "Antecedentes familiares" eram outros nomes para o mesmo dado. */}
           <div className="grid gap-4 md:grid-cols-2">
             <ClinicalField
               label="Alergias"
               name="allergies"
               value={summary?.allergies}
+              disabled={!canEdit}
             />
             <ClinicalField
               label="Comorbidades"
               name="comorbidities"
               value={summary?.comorbidities}
+              disabled={!canEdit}
             />
             <ClinicalField
-              label="Medicações em uso"
+              label="Medicações contínuas"
               name="medications"
               value={summary?.medications}
+              disabled={!canEdit}
             />
             <ClinicalField
               label="Antecedentes pessoais"
               name="medical_history"
               value={summary?.medical_history}
+              disabled={!canEdit}
             />
             <ClinicalField
-              label="Antecedentes familiares"
+              label="História familiar"
               name="family_history"
               value={summary?.family_history}
+              disabled={!canEdit}
             />
             <ClinicalField
               label="Hábitos"
               name="habits"
               value={summary?.habits}
+              disabled={!canEdit}
             />
           </div>
           <div className="grid gap-4 rounded-md border border-border bg-background p-4 md:grid-cols-3">
@@ -217,6 +228,8 @@ export function ClinicalSummaryForm({
               Telefone
               <Input
                 name="emergency_contact_phone"
+                type="tel"
+                inputMode="tel"
                 defaultValue={summary?.emergency_contact_phone ?? ""}
                 disabled={!canEdit}
               />
@@ -236,7 +249,7 @@ export function ClinicalSummaryForm({
           {canEdit ? (
             <div className="flex justify-end">
               <Button type="submit" disabled={pending}>
-                <Save className="size-4" />{" "}
+                <Save className="size-4" aria-hidden="true" />
                 {pending ? "Salvando..." : "Salvar resumo clínico"}
               </Button>
             </div>
@@ -248,10 +261,14 @@ export function ClinicalSummaryForm({
 }
 
 function ClinicalField({
+  disabled,
   label,
   name,
   value,
 }: {
+  /** Sem permissão de editar não há botão de salvar: o campo não pode
+      parecer editável. */
+  disabled?: boolean;
   label: string;
   name: string;
   value?: string | null;
@@ -259,7 +276,7 @@ function ClinicalField({
   return (
     <label className="grid gap-2 text-sm font-medium">
       {label}
-      <Textarea name={name} defaultValue={value ?? ""} />
+      <Textarea name={name} defaultValue={value ?? ""} disabled={disabled} />
     </label>
   );
 }
@@ -307,8 +324,8 @@ export function ConsentsPanel({
               Versão
               <Input name="version" defaultValue="1.0" required />
             </label>
-            <Button type="submit" disabled={pending}>
-              <ShieldCheck className="size-4" />{" "}
+            <Button type="submit" size="lg" disabled={pending}>
+              <ShieldCheck className="size-4" aria-hidden="true" />
               {pending ? "Salvando..." : "Registrar aceite"}
             </Button>
             {state.error ? (
@@ -327,10 +344,18 @@ export function ConsentsPanel({
             >
               <div>
                 <div className="flex items-center gap-2">
+                  {/* Tons -foreground: o verde e o vermelho base ficavam
+                      claros demais como ícone sobre o branco. */}
                   {consent.revoked_at ? (
-                    <XCircle className="size-4 text-destructive" />
+                    <XCircle
+                      className="size-4 text-destructive-foreground"
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <CheckCircle2 className="size-4 text-success" />
+                    <CheckCircle2
+                      className="size-4 text-success-foreground"
+                      aria-hidden="true"
+                    />
                   )}
                   <p className="text-sm font-medium">
                     {consentLabel[consent.consent_type] ?? consent.consent_type}

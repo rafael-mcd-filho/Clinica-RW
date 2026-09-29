@@ -136,6 +136,25 @@
   color: var(--nav-icon-color);
 }
 
+/* Animações nomeadas — sempre com duração/ease dos tokens de motion. Ficam
+   fora do @theme inline de propósito: assim as classes leem a variável, e o
+   bloco de prefers-reduced-motion no fim do arquivo consegue trocá-las por
+   fade. Inline, o valor ia embutido na classe e a troca não pegava. */
+@theme {
+  --animate-content-enter: content-enter var(--motion-fast) var(--ease-out) both;
+  /* Painel que abre acima do gatilho: desce até ele, em vez de se afastar. */
+  --animate-content-enter-above: content-enter-above var(--motion-fast)
+    var(--ease-out) both;
+  --animate-panel-enter: content-enter var(--motion-normal) var(--ease-out) both;
+  --animate-fade-in: fade-in var(--motion-fast) var(--ease-out) both;
+  --animate-dialog-in: dialog-in var(--motion-normal) var(--ease-out) both;
+  /* Passos de um fluxo: o novo entra do lado para onde se está indo. */
+  --animate-step-forward: step-forward var(--motion-normal) var(--ease-out) both;
+  --animate-step-back: step-back var(--motion-normal) var(--ease-out) both;
+  /* Confirmação rara (agendamento enviado): o selo cresce até o lugar. */
+  --animate-success-pop: success-pop 300ms var(--ease-out) both;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -200,12 +219,6 @@
   --text-heading-lg--line-height: 1.5rem;
   --text-display: 1.5rem;
   --text-display--line-height: 2rem;
-
-  /* Animações nomeadas — sempre com duração/ease dos tokens de motion. */
-  --animate-content-enter: content-enter var(--motion-fast) var(--ease-out) both;
-  --animate-panel-enter: content-enter var(--motion-normal) var(--ease-out) both;
-  --animate-fade-in: fade-in var(--motion-fast) var(--ease-out) both;
-  --animate-dialog-in: dialog-in var(--motion-normal) var(--ease-out) both;
 
   --color-sidebar: var(--sidebar-bg);
   --color-sidebar-elevated: var(--sidebar-bg-elevated);
@@ -408,8 +421,15 @@ textarea {
   }
 }
 
+/* Varredura completa, de fora a fora. Antes o ponto de partida vinha de
+   `-translate-x-full`, que no Tailwind 4 é a propriedade `translate` e se
+   soma ao transform: o brilho parava em cima do bloco e saltava de volta. */
 @keyframes shimmer {
-  100% {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
     transform: translateX(100%);
   }
 }
@@ -423,6 +443,54 @@ textarea {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes content-enter-above {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes step-forward {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes step-back {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes success-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -448,13 +516,26 @@ textarea {
   }
 }
 
+/* Movimento reduzido é mais suave, não zero. O antigo "tudo em 1ms" tirava
+   também os fades e congelava os spinners, e o carregamento parecia travado.
+   Aqui as entradas perdem o deslocamento e ficam só no fade; cor e opacidade
+   continuam; gavetas e botão flutuante usam motion-reduce: no próprio
+   componente; spinners seguem girando, porque indicam trabalho em curso. */
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --animate-content-enter: fade-in var(--motion-fast) var(--ease-out) both;
+    --animate-content-enter-above: fade-in var(--motion-fast) var(--ease-out)
+      both;
+    --animate-panel-enter: fade-in var(--motion-normal) var(--ease-out) both;
+    --animate-dialog-in: fade-in var(--motion-normal) var(--ease-out) both;
+    --animate-step-forward: fade-in var(--motion-normal) var(--ease-out) both;
+    --animate-step-back: fade-in var(--motion-normal) var(--ease-out) both;
+    --animate-success-pop: fade-in var(--motion-normal) var(--ease-out) both;
+  }
+
   *,
   *::before,
   *::after {
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
-    transition-duration: 1ms !important;
   }
 }

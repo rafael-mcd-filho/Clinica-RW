@@ -180,7 +180,7 @@ export function EmpresasTable({
         </Select>
       </section>
 
-      <section className="app-list-table-lg animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+      <section className="app-list-table-lg overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
         <div className="max-h-[calc(100vh-18rem)] overflow-y-auto">
           <div className="app-list-row sticky top-0 z-10 hidden grid-cols-[1.45fr_1fr_0.55fr_0.55fr_5rem] items-center gap-4 border-b border-border bg-muted px-5 py-3 lg:grid">
             <div className="app-list-cell">
@@ -262,9 +262,13 @@ export function EmpresasTable({
                         {statusLabel[org.status] ?? org.status}
                       </Badge>
                     </div>
-                    <span className="app-list-cell text-sm tabular-nums lg:justify-self-center">
+                    {/* Ocupa a coluna inteira, como no cabeçalho: com
+                        justify-self-center a célula encolhia até a data, e a
+                        divisória (border-right da célula) ficava 15px antes
+                        da do cabeçalho. O CSS da tabela já centraliza. */}
+                    <div className="app-list-cell text-sm tabular-nums">
                       {formatDate(org.created_at)}
-                    </span>
+                    </div>
                     <div className="app-list-cell flex justify-end">
                       <DropdownMenu
                         triggerLabel={`Ações de ${org.name}`}

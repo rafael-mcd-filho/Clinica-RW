@@ -11,6 +11,8 @@ export function PageHeader({
   backLabel = "Voltar",
   breadcrumbs,
   className,
+  description,
+  icon: Icon,
   title,
 }: {
   actions?: React.ReactNode;
@@ -22,34 +24,48 @@ export function PageHeader({
   icon?: PhosphorIcon;
   title: React.ReactNode;
 }) {
-  const hasVisibleControls = Boolean(
-    backHref || breadcrumbs?.length || actions,
-  );
-
-  if (!hasVisibleControls) {
-    return <h1 className="sr-only">{title}</h1>;
-  }
-
   return (
-    <header className={cn("grid min-w-0 gap-2", className)}>
-      <h1 className="sr-only">{title}</h1>
+    <header className={cn("grid min-w-0 gap-3", className)}>
       {breadcrumbs?.length ? <Breadcrumb items={breadcrumbs} /> : null}
-      {backHref || actions ? (
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           {backHref ? (
-            <Button asChild variant="secondary" size="icon">
+            <Button
+              asChild
+              variant="secondary"
+              size="icon"
+              className="mt-0.5 shrink-0"
+            >
               <Link href={backHref} aria-label={backLabel}>
                 <ArrowLeft className="size-4" aria-hidden="true" />
               </Link>
             </Button>
           ) : null}
-          {actions ? (
-            <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto sm:justify-end">
-              {actions}
-            </div>
+          {Icon ? (
+            <span
+              className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-muted text-primary"
+              aria-hidden="true"
+            >
+              <Icon className="size-5" />
+            </span>
           ) : null}
+          <div className="min-w-0">
+            <h1 className="truncate text-display font-semibold text-foreground">
+              {title}
+            </h1>
+            {description ? (
+              <p className="mt-0.5 max-w-prose text-body-sm text-muted-foreground">
+                {description}
+              </p>
+            ) : null}
+          </div>
         </div>
-      ) : null}
+        {actions ? (
+          <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+            {actions}
+          </div>
+        ) : null}
+      </div>
     </header>
   );
 }

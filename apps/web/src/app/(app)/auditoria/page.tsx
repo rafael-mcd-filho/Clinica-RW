@@ -7,6 +7,7 @@ import {
 } from "./audit-log-table";
 import { ClockCounterClockwise as History } from "@phosphor-icons/react/dist/ssr";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DateRangePickerInput } from "@/components/ui/date-picker-input";
 import { Select } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
@@ -61,12 +62,14 @@ function buildHref(params: {
   organizationId: string;
   dateFrom: string;
   dateTo: string;
+  hideImpersonation: boolean;
   page: number;
 }) {
   const search = new URLSearchParams();
   if (params.organizationId) search.set("empresa", params.organizationId);
   if (params.dateFrom) search.set("de", params.dateFrom);
   if (params.dateTo) search.set("ate", params.dateTo);
+  if (params.hideImpersonation) search.set("ocultar_impersonacao", "1");
   if (params.page > 1) search.set("pagina", String(params.page));
   const query = search.toString();
   return query ? `/auditoria?${query}` : "/auditoria";
@@ -82,6 +85,7 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
   const organizationId = firstParam(params.empresa) ?? "";
   const dateFrom = normalizeDate(firstParam(params.de));
   const dateTo = normalizeDate(firstParam(params.ate));
+  const hideImpersonation = firstParam(params.ocultar_impersonacao) === "1";
   const requestedPage = Number(firstParam(params.pagina) ?? "1");
   const currentPage =
     Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
@@ -121,6 +125,9 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
   if (dateTo) {
     query = query.lte("created_at", endOfLocalDayIso(dateTo));
   }
+  if (hideImpersonation) {
+    query = query.not("action", "like", "impersonation.%");
+  }
 
   const { data: auditRows, error, count } = await query.returns<AuditRow[]>();
   const total = count ?? 0;
@@ -131,6 +138,7 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
         organizationId: validOrganization,
         dateFrom,
         dateTo,
+        hideImpersonation,
         page: totalPages,
       }),
     );
@@ -186,7 +194,7 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
       : "Plataforma",
     actorUserId: audit.actor_user_id,
     actorName: audit.actor_user_id
-      ? (actorNames.get(audit.actor_user_id) ?? "Usuario")
+      ? (actorNames.get(audit.actor_user_id) ?? "Usuário")
       : "Sistema",
     action: audit.action,
     resourceType: audit.resource_type,
@@ -201,12 +209,14 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
     organizationId: validOrganization,
     dateFrom,
     dateTo,
+    hideImpersonation,
     page: Math.max(1, safePage - 1),
   });
   const nextHref = buildHref({
     organizationId: validOrganization,
     dateFrom,
     dateTo,
+    hideImpersonation,
     page: safePage + 1,
   });
 
@@ -239,7 +249,7 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
         </label>
 
         <label className="grid gap-2 text-sm font-medium">
-          Periodo
+          Período
           <DateRangePickerInput
             fromName="de"
             toName="ate"
@@ -248,17 +258,28 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
           />
         </label>
 
-        <Button type="submit">Filtrar</Button>
-        <Button asChild type="button" variant="secondary">
+        <Button type="submit" size="lg">
+          Filtrar
+        </Button>
+        <Button asChild type="button" variant="secondary" size="lg">
           <Link href="/auditoria">Limpar</Link>
         </Button>
+
+        <div className="md:col-span-full">
+          <Checkbox
+            name="ocultar_impersonacao"
+            value="1"
+            defaultChecked={hideImpersonation}
+            label="Ocultar início/fim de impersonação de suporte"
+          />
+        </div>
       </form>
 
-      <section className="app-list-table-lg animate-panel-enter overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+      <section className="app-list-table-lg overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
         <div className="app-list-row hidden grid-cols-[1.35fr_0.95fr_0.9fr_0.65fr_5rem] gap-4 border-b border-border bg-muted px-5 py-3 text-xs font-semibold text-foreground lg:grid">
           <span className="app-list-cell">Evento</span>
           <span className="app-list-cell">Empresa</span>
-          <span className="app-list-cell">Responsavel</span>
+          <span className="app-list-cell">Responsável</span>
           <span className="app-list-cell">Data</span>
           <span className="app-list-cell">Detalhes</span>
         </div>
@@ -295,11 +316,11 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
                 </Button>
               )}
               <span className="px-2 text-xs tabular-nums">
-                Pagina {safePage} de {totalPages}
+                Página {safePage} de {totalPages}
               </span>
               {safePage < totalPages ? (
                 <Button asChild variant="secondary" size="sm">
-                  <Link href={nextHref}>Proxima</Link>
+                  <Link href={nextHref}>Próxima</Link>
                 </Button>
               ) : (
                 <Button
@@ -309,7 +330,7 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
                   disabled
                   className="cursor-not-allowed"
                 >
-                  Proxima
+                  Próxima
                 </Button>
               )}
             </div>

@@ -1,8 +1,10 @@
 import { AppShell, type AppShellNavItem } from "@/components/layout/app-shell";
 import { cookies } from "next/headers";
 import { getRequestContext, hasAnyPermission } from "@/lib/auth/context";
+import { resolveUserRoleLabel } from "@/lib/auth/role-label";
 import { requireAuthenticatedUser } from "@/lib/auth/session";
 import { getPlatformSettings } from "@/lib/platform/settings";
+import { loadUserAvatarUrls } from "@/lib/storage/user-avatars";
 
 const superAdminNavItems: AppShellNavItem[] = [
   { href: "/dashboard", label: "Painel", icon: "dashboard" },
@@ -28,6 +30,9 @@ export default async function AppLayout({
     getPlatformSettings(),
     cookies(),
   ]);
+  const avatarUrls = await loadUserAvatarUrls(
+    context.effectiveUser ? [context.effectiveUser.id] : [],
+  );
   const navItems = context.isSuperAdmin
     ? superAdminNavItems
     : getCompanyNavItems(context.permissionCodes);
@@ -61,10 +66,16 @@ export default async function AppLayout({
       navItems={navItems}
       brandName={platformSettings.app_name}
       brandLogoUrl={platformSettings.logo_url}
+      brandFullLogoUrl={platformSettings.logo_full_url}
       sidebarSubtitle={sidebarSubtitle}
       userName={userName}
       userSubtitle={userSubtitle}
       userRole={userRole}
+      userAvatarUrl={
+        context.effectiveUser
+          ? (avatarUrls.get(context.effectiveUser.id) ?? null)
+          : null
+      }
       patientSearchEnabled={patientSearchEnabled}
       todayRailEnabled={todayRailEnabled}
       initialSidebarPinned={
@@ -87,36 +98,6 @@ export default async function AppLayout({
   );
 }
 
-function resolveUserRoleLabel(permissionCodes: Set<string>) {
-  if (hasAnyPermission(permissionCodes, ["config.geral", "config.usuarios"])) {
-    return "Administrador";
-  }
-  if (
-    hasAnyPermission(permissionCodes, [
-      "clinico.ver_prontuario",
-      "clinico.ver_prontuario_proprios",
-      "clinico.preencher_prontuario",
-    ])
-  ) {
-    return "Profissional clínico";
-  }
-  if (
-    hasAnyPermission(permissionCodes, [
-      "financeiro.ver_geral",
-      "financeiro.gerenciar_contas_pagar",
-    ])
-  ) {
-    return "Financeiro";
-  }
-  if (permissionCodes.has("atendimento.ver")) {
-    return "Atendimento";
-  }
-  if (permissionCodes.has("agenda.ver")) {
-    return "Agenda e recepção";
-  }
-  return "Equipe da clínica";
-}
-
 function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
   const navItems: AppShellNavItem[] = [
     { href: "/dashboard", label: "Painel", icon: "dashboard" },
@@ -125,7 +106,7 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
   if (hasAnyPermission(permissionCodes, ["atendimento.ver"])) {
     navItems.push({
       href: "/atendimento",
-      label: "Atendimento",
+      label: "Conversas",
       icon: "atendimento",
     });
   }
@@ -135,6 +116,19 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       href: "/agenda",
       label: "Agenda",
       icon: "agenda",
+    });
+  }
+
+  if (
+    hasAnyPermission(permissionCodes, [
+      "clinico.ver_prontuario",
+      "clinico.ver_prontuario_proprios",
+    ])
+  ) {
+    navItems.push({
+      href: "/prontuario",
+      label: "Prontuário",
+      icon: "prontuario",
     });
   }
 
@@ -258,6 +252,14 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
         label: "Financeiro",
         icon: "financeiro",
       });
+    }
+
+    // Comissão por profissional exige também o financeiro completo, a mesma
+    // regra do cálculo no banco (commission_report).
+    if (
+      canViewFinancialReports &&
+      permissionCodes.has("financeiro.ver_geral")
+    ) {
       reportChildren.push({
         href: "/relatorios/comissoes",
         label: "Comissões",

@@ -400,7 +400,11 @@ function CalendarPopover({
   id: string;
   panelRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  const [position, setPosition] = useState({ left: 16, top: 16 });
+  const [position, setPosition] = useState({
+    left: 16,
+    top: 16,
+    above: false,
+  });
 
   useLayoutEffect(() => {
     function placePopover() {
@@ -437,6 +441,7 @@ function CalendarPopover({
             window.innerHeight - panelRect.height - viewportPadding,
           ),
         ),
+        above: openAbove,
       });
     }
 
@@ -459,7 +464,15 @@ function CalendarPopover({
       aria-label={ariaLabel}
       data-date-picker-popover
       style={{ left: position.left, top: position.top }}
-      className="pointer-events-auto fixed z-[70] max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-border bg-popover p-3 shadow-[var(--shadow-lg)]"
+      // Mesma entrada do Select e dos menus: era o único painel flutuante
+      // que surgia de estalo. A posição sai no layout effect, antes do
+      // primeiro quadro, então a animação já começa do lado certo.
+      className={cn(
+        "pointer-events-auto fixed z-[70] max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-border bg-popover p-3 shadow-[var(--shadow-lg)]",
+        position.above
+          ? "animate-content-enter-above"
+          : "animate-content-enter",
+      )}
     >
       {children}
     </div>,

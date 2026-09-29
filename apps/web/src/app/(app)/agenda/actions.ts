@@ -103,13 +103,19 @@ function friendlyError(message: string, code?: string) {
     return "Forma de pagamento invalida.";
   }
   if (message.includes("foreign key")) {
-    return "Um dos cadastros vinculados à solicitação é inválido.";
+    return "Um dos cadastros vinculados não é mais válido. Atualize a página e revise o agendamento.";
   }
   if (message.includes("Not allowed to create clinical encounter")) {
     return "Seu perfil nao possui permissao para iniciar atendimento clinico.";
   }
   if (message.includes("Professional scope denied")) {
     return "Seu perfil so pode iniciar atendimentos do proprio profissional.";
+  }
+  if (message.includes("Appointment cannot start a clinical encounter")) {
+    return "Este agendamento não pode iniciar um atendimento clínico no status atual.";
+  }
+  if (message.includes("Clinical template version not found")) {
+    return "A ficha clínica selecionada não está mais disponível.";
   }
   // O que não é específico da agenda cai no tradutor geral de erro de banco,
   // em vez de vazar o texto cru do Postgres para dentro do formulário.
@@ -119,16 +125,14 @@ function friendlyError(message: string, code?: string) {
 /** Indexa o preço de convênio por `${convênio}:${procedimento}`, que é como o
     formulário procura. Tabela inativa não entra. */
 function buildInsurancePriceMap(
-  rows:
-    | Array<{
-        procedure_id: string;
-        price: number | string;
-        price_tables:
-          | { health_insurance_id: string | null; active: boolean }
-          | Array<{ health_insurance_id: string | null; active: boolean }>
-          | null;
-      }>
-    | null,
+  rows: Array<{
+    procedure_id: string;
+    price: number | string;
+    price_tables:
+      | { health_insurance_id: string | null; active: boolean }
+      | Array<{ health_insurance_id: string | null; active: boolean }>
+      | null;
+  }> | null,
 ): Record<string, number> {
   const map: Record<string, number> = {};
   for (const row of rows ?? []) {
@@ -1203,7 +1207,8 @@ export async function loadWaitlistCandidatesForAppointment(
     p_start_at: appointment.start_at,
     p_limit: 10,
   });
-  if (error) return { ok: false, error: friendlyError(error.message, error.code) };
+  if (error)
+    return { ok: false, error: friendlyError(error.message, error.code) };
 
   return { ok: true, data: (data ?? []) as WaitlistCandidate[] };
 }
@@ -1247,7 +1252,10 @@ export async function loadWaitlistFormData(): Promise<{
   return {
     ok: true,
     data: {
-      procedures: (procedures.data ?? []) as Array<{ id: string; name: string }>,
+      procedures: (procedures.data ?? []) as Array<{
+        id: string;
+        name: string;
+      }>,
       professionals: (professionals.data ?? []) as Array<{
         id: string;
         name: string;
@@ -1512,10 +1520,11 @@ export async function changeAppointmentStatus(
   const context = await requireAgendaPermission("agenda.editar_agendamento");
   if (!context?.organization) return { error: "Acesso negado." };
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("transition_appointment_status", {
+  const { error } = await supabase.rpc("transition_appointment_status_v2", {
     p_appointment_id: appointmentId,
     p_to_status: nextStatus,
     p_reason: nextStatus === "cancelled" ? "Cancelado pela agenda" : null,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
   });
   if (error) return { error: friendlyError(error.message, error.code) };
   revalidatePath("/agenda");
@@ -1544,7 +1553,9 @@ export async function startAppointmentEncounter(
     return { error: "Acesso negado." };
   }
 
-  const supabase = createSupabaseAdminClient();
+  const templateVersionId = String(formData.get("template_version_id") ?? "");
+
+  const supabase = await createSupabaseServerClient();
   const { data: appointment } = await supabase
     .from("appointments")
     .select("id, patient_id, professional_id, status")
@@ -1558,95 +1569,20 @@ export async function startAppointmentEncounter(
     }>();
   if (!appointment) return { error: "Agendamento não encontrado." };
 
-  const { data: professional } = await supabase
-    .from("professionals")
-    .select("id, user_id")
-    .eq("id", appointment.professional_id)
-    .eq("organization_id", context.organization.id)
-    .eq("active", true)
-    .maybeSingle<{ id: string; user_id: string | null }>();
-  if (!professional) return { error: "Profissional nao encontrado." };
-
-  if (
-    !context.permissionCodes.has("clinico.ver_prontuario") &&
-    professional.user_id !== context.effectiveUser?.id
-  ) {
-    return {
-      error: "Seu perfil so pode iniciar atendimentos do proprio profissional.",
-    };
-  }
-
-  const { data: existingEncounter } = await supabase
-    .from("encounters")
-    .select("id")
-    .eq("appointment_id", appointment.id)
-    .eq("organization_id", context.organization.id)
-    .maybeSingle<{ id: string }>();
-
-  if (existingEncounter?.id) {
-    await markAppointmentInProgressIfPossible(
-      appointment.id,
-      appointment.status,
-    );
-    revalidatePath("/agenda");
-    redirect(buildAgendaEncounterHref(existingEncounter.id, returnTo));
-  }
-
-  const { data: template } = await supabase
-    .from("clinical_templates")
-    .select("id, name")
-    .eq("organization_id", context.organization.id)
-    .eq("status", "active")
-    .order("is_default", { ascending: false })
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle<{ id: string; name: string }>();
-  if (!template) {
-    return { error: "Nenhum template clínico ativo foi encontrado." };
-  }
-
-  const { data: templateVersion } = await supabase
-    .from("clinical_template_versions")
-    .select("id, version_number, schema")
-    .eq("organization_id", context.organization.id)
-    .eq("template_id", template.id)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ id: string; version_number: number; schema: unknown }>();
-  if (!templateVersion) {
-    return { error: "Nenhuma versão de template clínico foi encontrada." };
-  }
-
-  const { data: encounter, error } = await supabase
-    .from("encounters")
-    .insert({
-      organization_id: context.organization.id,
-      patient_id: appointment.patient_id,
-      professional_id: appointment.professional_id,
-      appointment_id: appointment.id,
-      template_version_id: templateVersion.id,
-      created_by_user_id: context.effectiveUser?.id ?? null,
-    })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (error || !encounter) {
-    const { data: duplicate } = await supabase
-      .from("encounters")
-      .select("id")
-      .eq("appointment_id", appointment.id)
-      .eq("organization_id", context.organization.id)
-      .maybeSingle<{ id: string }>();
-
-    if (duplicate?.id) {
-      await markAppointmentInProgressIfPossible(
-        appointment.id,
-        appointment.status,
-      );
-      revalidatePath("/agenda");
-      redirect(buildAgendaEncounterHref(duplicate.id, returnTo));
-    }
-
+  const { data: encounterId, error } = await supabase.rpc(
+    "start_clinical_encounter_v2",
+    {
+      p_patient_id: appointment.patient_id,
+      p_professional_id: appointment.professional_id,
+      p_template_version_id: z.string().uuid().safeParse(templateVersionId)
+        .success
+        ? templateVersionId
+        : null,
+      p_appointment_id: appointment.id,
+      p_impersonation_session_id: context.impersonation?.id ?? null,
+    },
+  );
+  if (error || !encounterId) {
     return {
       error: friendlyError(
         error?.message ?? "Não foi possível iniciar o atendimento.",
@@ -1655,67 +1591,10 @@ export async function startAppointmentEncounter(
     };
   }
 
-  const { error: entryError } = await supabase
-    .from("encounter_entries")
-    .insert({
-      organization_id: context.organization.id,
-      encounter_id: encounter.id,
-      template_snapshot: {
-        template_id: template.id,
-        template_version_id: templateVersion.id,
-        name: template.name,
-        version_number: templateVersion.version_number,
-        schema: templateVersion.schema,
-      },
-    });
-
-  if (entryError) {
-    await supabase
-      .from("encounters")
-      .delete()
-      .eq("id", encounter.id)
-      .eq("organization_id", context.organization.id);
-
-    return {
-      error: friendlyError(
-        entryError.message ?? "Nao foi possivel iniciar o atendimento.",
-        entryError.code,
-      ),
-    };
-  }
-
-  await markAppointmentInProgressIfPossible(appointment.id, appointment.status);
   revalidatePath("/agenda");
   revalidatePath("/prontuario");
-  redirect(buildAgendaEncounterHref(encounter.id, returnTo));
-}
-
-async function markAppointmentInProgressIfPossible(
-  appointmentId: string,
-  currentStatus: string,
-) {
-  const context = await requireAgendaPermission("agenda.editar_agendamento");
-  if (!context?.organization) return;
-  if (!["scheduled", "confirmed", "waiting"].includes(currentStatus)) {
-    return;
-  }
-
-  const supabase = await createSupabaseServerClient();
-  const transitions =
-    currentStatus === "scheduled"
-      ? ["waiting", "in_progress"]
-      : currentStatus === "confirmed"
-        ? ["waiting", "in_progress"]
-        : ["in_progress"];
-
-  for (const nextStatus of transitions) {
-    const { error } = await supabase.rpc("transition_appointment_status", {
-      p_appointment_id: appointmentId,
-      p_to_status: nextStatus,
-      p_reason: "Atendimento iniciado pela agenda",
-    });
-    if (error) return;
-  }
+  revalidatePath(`/pacientes/${appointment.patient_id}`);
+  redirect(buildAgendaEncounterHref(String(encounterId), returnTo));
 }
 
 export async function confirmOnlineBookingRequest(
@@ -1871,7 +1750,9 @@ export async function loadAppointmentFormData(): Promise<{
     // no banco na hora de gravar.
     supabase
       .from("price_table_items")
-      .select("procedure_id, price, price_tables!inner(health_insurance_id, active)")
+      .select(
+        "procedure_id, price, price_tables!inner(health_insurance_id, active)",
+      )
       .eq("organization_id", organizationId),
   ]);
 

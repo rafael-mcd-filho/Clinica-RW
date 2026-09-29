@@ -23,14 +23,27 @@ import {
   CaretLeft as ChevronLeft,
   CaretRight as ChevronRight,
   Check,
+  ArrowRight,
+  Funnel,
   Clock as Clock3,
   FileText,
+  Buildings,
+  Copy,
+  CreditCard,
+  CurrencyDollar,
+  Door,
+  IdentificationCard,
+  Info,
+  Lightning,
+  PencilSimple,
+  Printer,
+  ShieldCheck,
+  WhatsappLogo,
   ListPlus,
   EnvelopeSimple as Mail,
   Phone,
   Plus,
   ArrowsClockwise as RefreshCw,
-  MagnifyingGlass as Search,
   SlidersHorizontal,
   Stethoscope,
   UserCheck,
@@ -50,13 +63,22 @@ import {
   updateAppointmentPrice,
 } from "./actions";
 import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
+import detailsStyles from "./appointment-details.module.css";
+import {
+  appointmentStatusLabels as statusLabel,
+  appointmentStatusDescriptions,
+  availableAppointmentStatuses,
+} from "@/lib/agenda/status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AddToWaitlistModal } from "@/components/agenda/add-to-waitlist-modal";
+import { AgendaCalendarCaption } from "@/components/agenda/calendar-caption";
 import { AppointmentFormModal } from "@/components/agenda/appointment-form-modal";
 import { WaitlistSuggestionModal } from "@/components/agenda/waitlist-suggestion-modal";
 import { Input, MultiSelect, Select } from "@/components/ui/field";
+import { AgendaPatientSearch } from "./agenda-patient-search";
 import { Modal } from "@/components/ui/modal";
 import { DatePickerInput } from "@/components/ui/date-picker-input";
 import { ConfirmDialog } from "@/components/ui/dialog";
@@ -143,6 +165,14 @@ export type AgendaData = {
     status: string;
     started_at: string;
   }>;
+  clinicalTemplates: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    is_default: boolean;
+    version_id: string;
+    version_number: number;
+  }>;
   availability: Array<{
     id: string;
     schedule_id: string;
@@ -211,16 +241,7 @@ function useAgendaTimeZone() {
   return useContext(AgendaTimeZoneContext);
 }
 const weekTimelineStepMinutes = 30;
-const weekTimelineRowHeight = 40;
-const statusLabel: Record<string, string> = {
-  scheduled: "Agendado",
-  confirmed: "Confirmado",
-  waiting: "Aguardando",
-  in_progress: "Em atendimento",
-  attended: "Atendido",
-  no_show: "Faltou",
-  cancelled: "Cancelado",
-};
+const weekTimelineRowHeight = 76;
 export function AgendaBoard({
   data,
   initialDate,
@@ -285,6 +306,9 @@ export function AgendaBoard({
           data={data}
           date={initialDate}
           view={initialView}
+          canCreate={canCreate}
+          canExtra={canExtra}
+          canCreatePatient={canCreatePatient}
           canEdit={canEdit}
           canViewPatient={canViewPatient}
           canViewClinical={canViewClinical}
@@ -346,13 +370,17 @@ function AgendaFloatingActions({
   return (
     <div
       ref={containerRef}
-      className="fixed bottom-6 right-[calc(1.5rem+var(--today-rail-offset,0rem))] z-50 flex flex-col items-end gap-3 transition-[right] duration-[var(--motion-drawer)] ease-[var(--ease-out)]"
+      // Acompanha a gaveta "Atendimentos do dia" deslocando (translate), não
+      // animando `right`, que recalculava o layout a cada quadro.
+      className="fixed bottom-6 right-6 z-50 flex translate-x-[calc(var(--today-rail-offset,0rem)*-1)] flex-col items-end gap-3 transition-[translate] duration-[var(--motion-drawer)] ease-[var(--ease-out)] motion-reduce:transition-none"
     >
       <div
         id={menuId}
         aria-hidden={!expanded}
+        // translate/scale são propriedades próprias no Tailwind 4: com
+        // `transform` na lista, elas pulavam direto e só a opacidade animava.
         className={cn(
-          "flex origin-bottom flex-col items-end gap-2 transition-[opacity,transform] duration-[var(--motion-normal)] ease-[var(--ease-out)]",
+          "flex origin-bottom flex-col items-end gap-2 transition-[opacity,translate,scale] duration-[var(--motion-normal)] ease-[var(--ease-out)] motion-reduce:transition-opacity",
           expanded
             ? "pointer-events-auto translate-y-0 scale-100 opacity-100"
             : "pointer-events-none translate-y-3 scale-95 opacity-0",
@@ -415,6 +443,9 @@ function AgendaCalendarView({
   data,
   date,
   view,
+  canCreate,
+  canExtra,
+  canCreatePatient,
   canEdit,
   canViewPatient,
   canViewClinical,
@@ -423,6 +454,9 @@ function AgendaCalendarView({
   data: AgendaData;
   date: string;
   view: AgendaView;
+  canCreate: boolean;
+  canExtra: boolean;
+  canCreatePatient: boolean;
   canEdit: boolean;
   canViewPatient: boolean;
   canViewClinical: boolean;
@@ -443,6 +477,12 @@ function AgendaCalendarView({
   const [insuranceIds, setInsuranceIds] = useState<string[]>([]);
   const [patientQuery, setPatientQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [newAppointmentSlot, setNewAppointmentSlot] = useState<{
+    date: string;
+    time: string;
+  } | null>(null);
+  const moreFiltersId = useId();
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<
     string | null
   >(null);
@@ -633,6 +673,13 @@ function AgendaCalendarView({
     [data.timeZone, filteredBlocks],
   );
   const agendaReturnTo = buildAgendaReturnTo(date, view);
+  const candidateSchedules = data.schedules.filter(
+    (item) =>
+      item.active &&
+      (!professionalIds.length ||
+        professionalIds.includes(item.professional_id)) &&
+      (!unitIds.length || unitIds.includes(item.unit_id)),
+  );
 
   function navigateAgenda(nextDate: string, nextView: AgendaView) {
     const params = new URLSearchParams(searchParams.toString());
@@ -658,20 +705,29 @@ function AgendaCalendarView({
   }
 
   return (
-    <div className="grid min-w-0 gap-4 xl:grid-cols-[17rem_minmax(0,1fr)] xl:items-start">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[17.5rem_minmax(0,1fr)] xl:items-start">
       <AgendaSidebar
         date={date}
+        view={view}
         dayCounts={data.dayCounts}
         open={sidebarOpen}
         canClear={activeFilterCount > 0 || patientQuery.trim().length > 0}
         onClearFilters={clearFilters}
         onSelectDate={(nextDate) => navigateAgenda(nextDate, view)}
+        moreFiltersOpen={moreFiltersOpen}
+        moreFiltersId={moreFiltersId}
+        onToggleMoreFilters={() => setMoreFiltersOpen((value) => !value)}
+        moreFilterCount={
+          [specialtyIds, procedureIds, unitIds, insuranceIds].filter(
+            (items) => items.length,
+          ).length
+        }
       >
         <FilterField label="Status">
           <MultiSelect
             value={statusValues}
             onValueChange={setStatusValues}
-            allLabel="Todos"
+            allLabel="Todos os status"
             aria-label="Filtrar status"
             options={Object.entries(statusLabel).map(([value, label]) => ({
               value,
@@ -683,7 +739,7 @@ function AgendaCalendarView({
           <MultiSelect
             value={professionalIds}
             onValueChange={setProfessionalIds}
-            allLabel="Todos"
+            allLabel="Todos os profissionais"
             aria-label="Filtrar profissionais"
             options={data.professionals.map((item) => ({
               value: item.id,
@@ -691,60 +747,62 @@ function AgendaCalendarView({
             }))}
           />
         </FilterField>
-        <FilterField label="Especialidade">
-          <MultiSelect
-            value={specialtyIds}
-            onValueChange={setSpecialtyIds}
-            allLabel="Todas"
-            aria-label="Filtrar especialidades"
-            options={data.specialties.map((item) => ({
-              value: item.id,
-              label: item.name,
-            }))}
-          />
-        </FilterField>
-        <FilterField label="Procedimento">
-          <MultiSelect
-            value={procedureIds}
-            onValueChange={setProcedureIds}
-            allLabel="Todos"
-            aria-label="Filtrar procedimentos"
-            options={data.procedures.map((item) => ({
-              value: item.id,
-              label: item.name,
-            }))}
-          />
-        </FilterField>
-        <FilterField label="Unidade">
-          <MultiSelect
-            value={unitIds}
-            onValueChange={setUnitIds}
-            allLabel="Todas"
-            aria-label="Filtrar unidades"
-            options={data.units.map((item) => ({
-              value: item.id,
-              label: item.name,
-            }))}
-          />
-        </FilterField>
-        <FilterField label="Convênio">
-          <MultiSelect
-            value={insuranceIds}
-            onValueChange={setInsuranceIds}
-            allLabel="Todos"
-            aria-label="Filtrar convenios"
-            options={data.insurances.map((item) => ({
-              value: item.id,
-              label: item.name,
-            }))}
-          />
-        </FilterField>
+        <div id={moreFiltersId} hidden={!moreFiltersOpen} className="space-y-4">
+          <FilterField label="Especialidade">
+            <MultiSelect
+              value={specialtyIds}
+              onValueChange={setSpecialtyIds}
+              allLabel="Todas"
+              aria-label="Filtrar especialidades"
+              options={data.specialties.map((item) => ({
+                value: item.id,
+                label: item.name,
+              }))}
+            />
+          </FilterField>
+          <FilterField label="Procedimento">
+            <MultiSelect
+              value={procedureIds}
+              onValueChange={setProcedureIds}
+              allLabel="Todos"
+              aria-label="Filtrar procedimentos"
+              options={data.procedures.map((item) => ({
+                value: item.id,
+                label: item.name,
+              }))}
+            />
+          </FilterField>
+          <FilterField label="Unidade">
+            <MultiSelect
+              value={unitIds}
+              onValueChange={setUnitIds}
+              allLabel="Todas"
+              aria-label="Filtrar unidades"
+              options={data.units.map((item) => ({
+                value: item.id,
+                label: item.name,
+              }))}
+            />
+          </FilterField>
+          <FilterField label="Convênio">
+            <MultiSelect
+              value={insuranceIds}
+              onValueChange={setInsuranceIds}
+              allLabel="Todos"
+              aria-label="Filtrar convenios"
+              options={data.insurances.map((item) => ({
+                value: item.id,
+                label: item.name,
+              }))}
+            />
+          </FilterField>
+        </div>
       </AgendaSidebar>
 
-      <div className="order-1 grid min-w-0 gap-4 xl:order-2">
+      <div className="order-2 min-w-0 rounded-xl border border-border bg-card shadow-[var(--shadow-soft)]">
         <Card
           aria-busy={navigationPending}
-          className="bg-card/95 shadow-[var(--shadow-hover)] backdrop-blur md:sticky md:top-[calc(var(--app-sticky-offset,0rem)+0.5rem)] md:z-10"
+          className="rounded-none rounded-t-xl border-0 border-b bg-card shadow-none"
         >
           <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
             <div className="flex min-w-0 items-center gap-1">
@@ -761,25 +819,25 @@ function AgendaCalendarView({
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Periodo anterior"
+                aria-label="Período anterior"
                 disabled={navigationPending}
                 onClick={() => moveDate(-1)}
               >
-                <ChevronLeft className="size-4" />
+                <ChevronLeft className="size-4" aria-hidden="true" />
               </Button>
-              <p className="min-w-0 truncate px-1 text-sm font-semibold first-letter:uppercase">
-                {rangeLabel}
-              </p>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Proximo periodo"
+                aria-label="Próximo período"
                 disabled={navigationPending}
                 onClick={() => moveDate(1)}
               >
-                <ChevronRight className="size-4" />
+                <ChevronRight className="size-4" aria-hidden="true" />
               </Button>
+              <p className="min-w-0 px-2 text-base font-semibold tracking-tight first-letter:uppercase sm:text-xl">
+                {rangeLabel}
+              </p>
               {navigationPending ? (
                 <RefreshCw
                   className="size-4 animate-spin text-muted-foreground"
@@ -788,22 +846,35 @@ function AgendaCalendarView({
               ) : null}
             </div>
 
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-              <div className="relative min-w-0 flex-1 sm:max-w-64">
-                <Search
-                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <Input
-                  value={patientQuery}
-                  onChange={(event) => setPatientQuery(event.target.value)}
-                  placeholder="Buscar paciente"
-                  className="w-full pl-9"
-                  aria-label="Buscar paciente na agenda"
-                />
-              </div>
-              <Badge variant="neutral" className="hidden lg:inline-flex">
-                {filteredAppointments.length} agendamentos
+            {/* Com base zero este grupo cabia "ao lado" da navegação mesmo sem
+                espaço: no celular a busca virava só a lupa, "Filtros" cobria o
+                período e a visão saía cortada. A base de 22rem faz o grupo
+                descer de linha quando não cabe, e a base da busca faz o mesmo
+                dentro dele. */}
+            <div className="flex min-w-0 flex-1 basis-[22rem] flex-wrap items-center justify-end gap-2">
+              {/* Filtra a tela na hora e procura a pessoa em outras datas. */}
+              <AgendaPatientSearch
+                value={patientQuery}
+                onChange={setPatientQuery}
+                timeZone={data.timeZone}
+                isInView={(dateKey) => dateInView(dateKey, date, view)}
+                visibleCount={filteredAppointments.length}
+                onOpenAppointment={(result) => {
+                  navigateAgenda(
+                    localDateKey(result.startAt, data.timeZone),
+                    view,
+                  );
+                  setSelectedAppointmentId(result.id);
+                }}
+              />
+              <Badge
+                variant="neutral"
+                className="hidden rounded-full border-0 bg-muted/70 px-2.5 py-1 text-xs font-normal lg:inline-flex"
+              >
+                {filteredAppointments.length}{" "}
+                {filteredAppointments.length === 1
+                  ? "agendamento"
+                  : "agendamentos"}
               </Badge>
               {filteredBlocks.length ? (
                 <Badge variant="neutral" className="hidden lg:inline-flex">
@@ -834,8 +905,8 @@ function AgendaCalendarView({
                   navigateAgenda(date, nextView as AgendaView)
                 }
                 disabled={navigationPending}
-                aria-label="Visao da agenda"
-                className="w-36 shrink-0"
+                aria-label="Visão da agenda"
+                className="w-28 shrink-0"
               >
                 <option value="day">Diária</option>
                 <option value="week">Semanal</option>
@@ -855,11 +926,15 @@ function AgendaCalendarView({
             procedure={procedure}
             schedule={schedule}
             canEdit={canEdit}
+            onSelectSlot={canCreate ? setNewAppointmentSlot : undefined}
             onSelectAppointment={setSelectedAppointmentId}
           />
         ) : view === "week" ? (
           <WeekAgenda
             date={date}
+            dayCounts={data.dayCounts}
+            onSelectSlot={canCreate ? setNewAppointmentSlot : undefined}
+            hasFilters={activeFilterCount > 0 || patientQuery.trim().length > 0}
             appointmentsByDay={appointmentsByDay}
             blocksByDay={blocksByDay}
             patient={patient}
@@ -882,8 +957,24 @@ function AgendaCalendarView({
         )}
       </div>
 
+      {newAppointmentSlot ? (
+        <AppointmentFormModal
+          open
+          onClose={() => setNewAppointmentSlot(null)}
+          data={data}
+          defaultStart={newAppointmentSlot}
+          defaultScheduleId={
+            candidateSchedules.length === 1
+              ? candidateSchedules[0].id
+              : undefined
+          }
+          canExtra={canExtra}
+          canCreatePatient={canCreatePatient}
+        />
+      ) : null}
       {selectedAppointment ? (
         <AppointmentDetailsModal
+          key={selectedAppointment.id}
           appointment={selectedAppointment}
           patient={patient.get(selectedAppointment.patient_id)}
           professional={professional.get(selectedAppointment.professional_id)}
@@ -901,6 +992,7 @@ function AgendaCalendarView({
               : undefined
           }
           paymentMethods={data.paymentMethods}
+          clinicalTemplates={data.clinicalTemplates}
           encounter={encounterByAppointment.get(selectedAppointment.id)}
           canEdit={canEdit}
           canViewPatient={canViewPatient}
@@ -921,18 +1013,28 @@ function AgendaSidebar({
   canClear,
   children,
   date,
+  view,
   dayCounts,
   onClearFilters,
   onSelectDate,
   open,
+  moreFiltersOpen,
+  moreFiltersId,
+  moreFilterCount,
+  onToggleMoreFilters,
 }: {
   canClear: boolean;
   children: React.ReactNode;
   date: string;
+  view: AgendaView;
   dayCounts: Record<string, number>;
   onClearFilters: () => void;
   onSelectDate: (nextDate: string) => void;
   open: boolean;
+  moreFiltersOpen: boolean;
+  moreFiltersId: string;
+  moreFilterCount: number;
+  onToggleMoreFilters: () => void;
 }) {
   const selectedDay = useMemo(() => calendarDateFromKey(date), [date]);
   const density = useMemo(() => buildDayDensity(dayCounts), [dayCounts]);
@@ -940,17 +1042,18 @@ function AgendaSidebar({
   return (
     <div
       className={cn(
-        "order-2 min-w-0 content-start gap-4 xl:sticky xl:top-[calc(var(--app-sticky-offset,0rem)+0.5rem)] xl:order-1 xl:grid xl:max-h-[calc(100svh-var(--app-sticky-offset,0rem)-1.5rem)] xl:overflow-y-auto xl:pr-1",
+        "order-1 min-w-0 content-start gap-4 xl:sticky xl:top-[calc(var(--app-sticky-offset,0rem)+0.5rem)] xl:grid xl:max-h-[calc(100svh-var(--app-sticky-offset,0rem)-1.5rem)] xl:overflow-y-auto xl:pr-1",
         open ? "grid" : "hidden",
       )}
     >
-      <Card className="relative overflow-hidden">
-        <CardContent className="p-3">
+      <Card className="relative rounded-xl shadow-none">
+        <CardContent className="p-4">
           <AgendaDayDensityContext.Provider value={density}>
             <DayPicker
               mode="single"
               locale={ptBR}
               weekStartsOn={1}
+              navLayout="around"
               showOutsideDays
               // O mês exibido segue o dia selecionado, então as setas do mini
               // calendário movem o próprio período da agenda — é assim que a
@@ -963,49 +1066,48 @@ function AgendaSidebar({
               onSelect={(nextDay) => {
                 if (nextDay) onSelectDate(calendarKeyFromDate(nextDay));
               }}
-              // A ocupação do dia é o único realce além do dia selecionado:
-              // pinta a célula e o botão transparente deixa o tom aparecer.
+              // O fundo da semana conecta o período; cada botão mostra sua ocupação.
               modifiers={{
-                loadLow: (day) => densityOf(density, day) === "low",
-                loadMedium: (day) => densityOf(density, day) === "medium",
-                loadHigh: (day) => densityOf(density, day) === "high",
+                visiblePeriod: (day) =>
+                  dateInView(calendarKeyFromDate(day), date, view),
               }}
               modifiersClassNames={{
-                loadLow: densityCellClass.low,
-                loadMedium: densityCellClass.medium,
-                loadHigh: densityCellClass.high,
+                visiblePeriod: "bg-primary-muted text-primary-strong",
               }}
               formatters={{ formatWeekdayName: calendarWeekdayLabel }}
-              components={{ DayButton: AgendaDayButton }}
+              components={{
+                DayButton: AgendaDayButton,
+                MonthCaption: AgendaCalendarCaption,
+              }}
               classNames={{
                 root: "relative w-full",
                 caption_label:
                   "text-sm font-semibold first-letter:uppercase text-foreground",
                 chevron: "size-4 fill-current",
-                day: "h-9 w-8 rounded-md p-0 text-center text-sm",
+                day: "h-9 w-8 p-0 text-center text-sm first:rounded-l-lg last:rounded-r-lg",
                 day_button: "",
-                month_caption:
-                  "mb-1 flex min-h-8 items-center justify-center text-center",
+                month: "relative",
+                month_caption: "mr-14 mb-2 flex min-h-8 items-center text-left",
                 month_grid: "w-full table-fixed border-collapse",
                 months: "grid gap-2",
                 nav: "absolute inset-x-0 top-0 flex justify-between",
                 button_next:
-                  "flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40",
+                  "absolute right-0 top-0 flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40",
                 button_previous:
-                  "flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40",
+                  "absolute right-7 top-0 flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40",
                 weekday:
                   "h-7 w-8 p-0 text-center text-caption font-medium uppercase text-muted-foreground",
               }}
             />
           </AgendaDayDensityContext.Provider>
 
-          <div className="mt-2 flex items-center justify-center gap-3 border-t border-border pt-2 text-caption text-muted-foreground">
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-2.5 text-caption text-secondary-foreground">
             {densityLegend.map((item) => (
               <span key={item.level} className="flex items-center gap-1">
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "size-2.5 rounded-sm border border-border",
+                    "size-2 rounded-full",
                     densityCellClass[item.level],
                   )}
                 />
@@ -1016,22 +1118,46 @@ function AgendaSidebar({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="grid gap-3 p-4">
+      <Card className="rounded-xl shadow-none">
+        <CardContent className="grid gap-4 p-4">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold">Filtros</p>
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <Funnel className="size-4" weight="fill" aria-hidden="true" />
+              Filtros
+            </p>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              disabled={!canClear}
-              onClick={onClearFilters}
-              className="h-7 px-2 text-control text-primary hover:bg-primary-muted hover:text-primary"
+              aria-expanded={moreFiltersOpen}
+              aria-controls={moreFiltersId}
+              onClick={onToggleMoreFilters}
+              className="h-7 px-0 text-xs font-normal text-primary hover:bg-transparent hover:text-primary"
             >
-              Limpar filtros
+              {moreFiltersOpen ? "Menos filtros" : "Mais filtros"}
+              {moreFilterCount > 0 ? (
+                <span className="rounded-full bg-primary-muted px-1.5">
+                  {moreFilterCount}
+                </span>
+              ) : null}
+              <ArrowRight
+                className={cn("size-3.5", moreFiltersOpen && "rotate-90")}
+                aria-hidden="true"
+              />
             </Button>
           </div>
           {children}
+          {canClear ? (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              onClick={onClearFilters}
+              className="h-auto justify-self-start p-0 text-caption"
+            >
+              Limpar filtros
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     </div>
@@ -1047,9 +1173,15 @@ const AgendaDayDensityContext = createContext<DayDensity>({
 });
 
 const densityCellClass: Record<DensityLevel, string> = {
-  low: "bg-success-muted",
-  medium: "bg-warning-muted",
-  high: "bg-destructive-muted",
+  low: "bg-success",
+  medium: "bg-warning",
+  high: "bg-destructive",
+};
+
+const densityDayClass: Record<DensityLevel, string> = {
+  low: "bg-success-muted text-success-foreground hover:bg-success/25",
+  medium: "bg-warning-muted text-warning-foreground hover:bg-warning/30",
+  high: "bg-destructive-muted text-destructive-foreground hover:bg-destructive/25",
 };
 
 const densityLegend: Array<{ level: DensityLevel; label: string }> = [
@@ -1078,16 +1210,9 @@ function densityLevelOf(count: number, scale: number): DensityLevel | null {
   return "high";
 }
 
-function densityOf(density: DayDensity, day: Date) {
-  return densityLevelOf(
-    density.counts[calendarKeyFromDate(day)] ?? 0,
-    density.scale,
-  );
-}
-
 // Mesmo botão do react-day-picker (inclusive o foco por teclado). O estilo
 // fica todo aqui porque o `cn` resolve os conflitos entre selecionado, hoje e
-// dia de fora do mês; a contagem do dia vai só no title.
+// dia de fora do mês. O dia selecionado mantém azul e um ponto de ocupação.
 function AgendaDayButton({
   day,
   modifiers,
@@ -1098,6 +1223,11 @@ function AgendaDayButton({
   const density = useContext(AgendaDayDensityContext);
   const ref = useRef<HTMLButtonElement>(null);
   const count = density.counts[calendarKeyFromDate(day.date)] ?? 0;
+  const level = densityLevelOf(count, density.scale);
+  const occupancyLabel = level
+    ? densityLegend.find((item) => item.level === level)?.label
+    : "Sem agendamentos";
+  const description = `${count} ${count === 1 ? "agendamento" : "agendamentos"} · ${occupancyLabel}`;
 
   useEffect(() => {
     if (modifiers.focused) ref.current?.focus();
@@ -1107,17 +1237,29 @@ function AgendaDayButton({
     <button
       ref={ref}
       {...props}
-      title={`${count} ${count === 1 ? "agendamento" : "agendamentos"}`}
+      title={description}
+      aria-label={`${props["aria-label"] ?? day.date.toLocaleDateString("pt-BR")} · ${description}`}
       className={cn(
-        "flex size-full items-center justify-center rounded-md transition-colors duration-[var(--motion-fast)] hover:bg-muted",
+        "relative flex size-full items-center justify-center rounded-lg transition-colors duration-[var(--motion-fast)] hover:bg-primary-muted focus-visible:outline-2 focus-visible:outline-primary",
         modifiers.today && "font-semibold text-primary",
         modifiers.outside && "text-muted-foreground/50",
+        level && densityDayClass[level],
+        modifiers.visiblePeriod && level && "ring-1 ring-inset ring-primary/20",
         modifiers.selected &&
           "bg-primary font-semibold text-primary-foreground hover:bg-primary",
         className,
       )}
     >
       {children}
+      {modifiers.selected && level ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "absolute bottom-1 size-1 rounded-full",
+            densityCellClass[level],
+          )}
+        />
+      ) : null}
     </button>
   );
 }
@@ -1148,6 +1290,7 @@ function DayAgenda({
   procedure,
   schedule,
   canEdit,
+  onSelectSlot,
   onSelectAppointment,
 }: {
   date: string;
@@ -1158,6 +1301,7 @@ function DayAgenda({
   procedure: Map<string, AgendaData["procedures"][number]>;
   schedule: Map<string, AgendaData["schedules"][number]>;
   canEdit: boolean;
+  onSelectSlot?: (slot: { date: string; time: string }) => void;
   onSelectAppointment: (appointmentId: string) => void;
 }) {
   const timeZone = useAgendaTimeZone();
@@ -1275,6 +1419,12 @@ function DayAgenda({
                     style={{ top: slot.top }}
                   />
                 ))}
+                <TimelineSlotButtons
+                  date={date}
+                  slots={slots}
+                  endMinute={period.endMinute}
+                  onSelectSlot={onSelectSlot}
+                />
                 {items.map((item) =>
                   item.type === "block" ? (
                     <TimelineBlockItem
@@ -1299,7 +1449,7 @@ function DayAgenda({
                   ),
                 )}
                 {!items.length ? (
-                  <div className="absolute inset-x-6 top-8 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                  <div className="pointer-events-none absolute inset-x-6 top-8 rounded-lg border border-dashed border-border bg-card/90 px-4 py-8 text-center text-sm text-muted-foreground">
                     Sem agendamentos neste turno.
                   </div>
                 ) : null}
@@ -1314,6 +1464,9 @@ function DayAgenda({
 
 function WeekAgenda({
   date,
+  dayCounts,
+  hasFilters,
+  onSelectSlot,
   appointmentsByDay,
   blocksByDay,
   patient,
@@ -1323,6 +1476,9 @@ function WeekAgenda({
   onSelectAppointment,
 }: {
   date: string;
+  dayCounts: Record<string, number>;
+  hasFilters: boolean;
+  onSelectSlot?: (slot: { date: string; time: string }) => void;
   appointmentsByDay: Map<string, AgendaData["appointments"]>;
   blocksByDay: Map<string, AgendaData["blocks"]>;
   patient: Map<string, AgendaData["patients"][number]>;
@@ -1333,6 +1489,10 @@ function WeekAgenda({
 }) {
   const timeZone = useAgendaTimeZone();
   const days = weekDays(date);
+  const density = buildDayDensity(dayCounts);
+  const isEmpty =
+    !Array.from(appointmentsByDay.values()).some((items) => items.length) &&
+    !Array.from(blocksByDay.values()).some((items) => items.length);
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone,
   }).format(new Date());
@@ -1351,17 +1511,52 @@ function WeekAgenda({
       weekTimelineStepMinutes) *
     weekTimelineRowHeight;
 
+  // Em notebook (~1366px) a semana não cabe inteira e o fim de semana fica
+  // atrás da rolagem lateral — inclusive "hoje", num sábado. Ao abrir ou
+  // trocar de data, a grade rola até o dia selecionado se ele estiver fora.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const column = scroller?.querySelector<HTMLElement>(
+      `[data-week-day="${date}"]`,
+    );
+    const gutter = scroller?.querySelector<HTMLElement>("[data-week-gutter]");
+    if (!scroller || !column) return;
+    const gutterWidth = gutter?.offsetWidth ?? 0;
+    const visibleStart = scroller.scrollLeft + gutterWidth;
+    const visibleEnd = scroller.scrollLeft + scroller.clientWidth;
+    const columnEnd = column.offsetLeft + column.offsetWidth;
+    if (column.offsetLeft < visibleStart || columnEnd > visibleEnd) {
+      scroller.scrollLeft = Math.max(0, columnEnd - scroller.clientWidth);
+    }
+  }, [date]);
+
   return (
-    <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <div className="min-w-[980px]">
-          <div className="grid grid-cols-[4.5rem_repeat(7,minmax(7.5rem,1fr))] border-b border-border bg-card">
-            <div className="border-r border-border" />
+    <Card className="overflow-hidden rounded-none rounded-b-xl border-0 shadow-none">
+      {/* relative: é a referência do offsetLeft das colunas lido acima. */}
+      <div
+        ref={scrollerRef}
+        role="region"
+        aria-label="Agenda semanal; role horizontalmente para ver os demais dias"
+        tabIndex={0}
+        className="relative max-h-[max(32rem,calc(100svh-var(--app-sticky-offset,0rem)-7rem))] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:-outline-offset-2"
+      >
+        <div className="min-w-[1050px]">
+          <div className="sticky top-0 z-50 grid grid-cols-[4.5rem_repeat(7,minmax(7.5rem,1fr))] border-b border-border bg-card">
+            {/* Coluna de horários presa à esquerda: rolando até o fim de
+                semana, as horas continuam à vista. */}
+            <div
+              data-week-gutter
+              className="sticky left-0 z-30 border-r border-border bg-card"
+            />
             {days.map((day) => {
               const dayKey = dateKey(day);
+              const count = dayCounts[dayKey] ?? 0;
+              const densityLevel = densityLevelOf(count, density.scale);
               return (
                 <div
                   key={dayKey}
+                  data-week-day={dayKey}
                   className={`border-r border-border px-3 py-3 text-center last:border-r-0 ${
                     dayKey === today ? "bg-primary-muted/60" : ""
                   }`}
@@ -1373,18 +1568,27 @@ function WeekAgenda({
                   >
                     {weekdayLong(day)}
                   </p>
-                  <p className="mt-0.5 text-sm font-medium">
+                  <p className="mt-0.5 text-sm font-semibold">
                     {formatDayMonth(dayKey)}
                   </p>
+                  <span
+                    title={`${count} agendamentos · ${densityLegend.find((item) => item.level === densityLevel)?.label ?? "Sem agendamentos"}`}
+                    className={cn(
+                      "mx-auto mt-1.5 block size-2 rounded-full",
+                      densityLevel
+                        ? densityCellClass[densityLevel]
+                        : "bg-border-strong",
+                    )}
+                  />
                 </div>
               );
             })}
           </div>
           <div
-            className="grid grid-cols-[4.5rem_repeat(7,minmax(7.5rem,1fr))]"
+            className="relative grid grid-cols-[4.5rem_repeat(7,minmax(7.5rem,1fr))]"
             style={{ height: totalHeight }}
           >
-            <div className="relative border-r border-border bg-card">
+            <div className="sticky left-0 z-30 border-r border-border bg-card">
               {slots
                 .filter((slot) => slot.minute < timelineRange.endMinute)
                 .map((slot) => (
@@ -1427,6 +1631,12 @@ function WeekAgenda({
                       style={{ top: slot.top }}
                     />
                   ))}
+                  <TimelineSlotButtons
+                    date={dayKey}
+                    slots={slots}
+                    endMinute={timelineRange.endMinute}
+                    onSelectSlot={onSelectSlot}
+                  />
                   {items.map((item) =>
                     item.type === "block" ? (
                       <TimelineBlockItem
@@ -1451,21 +1661,78 @@ function WeekAgenda({
                       />
                     ),
                   )}
-                  {dayKey === today ? (
-                    <NowIndicator
-                      startMinute={timelineRange.startMinute}
-                      endMinute={timelineRange.endMinute}
-                      timeZone={timeZone}
-                    />
-                  ) : null}
                 </div>
               );
             })}
+            {days.some((day) => dateKey(day) === today) ? (
+              <NowIndicator
+                startMinute={timelineRange.startMinute}
+                endMinute={timelineRange.endMinute}
+                timeZone={timeZone}
+              />
+            ) : null}
+            {isEmpty ? (
+              <div className="pointer-events-none absolute inset-x-0 top-28 z-10 flex justify-center pl-[4.5rem]">
+                <div
+                  role="status"
+                  className="max-w-sm rounded-xl border border-border bg-card/95 px-7 py-5 text-center shadow-[var(--shadow-soft)]"
+                >
+                  <CalendarClock
+                    className="mx-auto mb-2 size-6 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <p className="text-sm font-medium">
+                    {hasFilters
+                      ? "Nenhum agendamento com estes filtros"
+                      : "Nenhum agendamento nesta semana"}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {hasFilters
+                      ? "Ajuste os filtros para ver outros atendimentos."
+                      : onSelectSlot
+                        ? "Clique em um horário para criar um agendamento."
+                        : "Os atendimentos aparecerão aqui quando forem agendados."}
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
     </Card>
   );
+}
+
+function TimelineSlotButtons({
+  date,
+  slots,
+  endMinute,
+  onSelectSlot,
+}: {
+  date: string;
+  slots: ReturnType<typeof buildTimelineSlots>;
+  endMinute: number;
+  onSelectSlot?: (slot: { date: string; time: string }) => void;
+}) {
+  if (!onSelectSlot) return null;
+  return slots
+    .filter((slot) => slot.minute < endMinute)
+    .map((slot) => (
+      <Button
+        key={slot.minute}
+        type="button"
+        variant="ghost"
+        aria-label={`Agendar em ${formatFullDay(date)} às ${slot.label}`}
+        onClick={() => onSelectSlot({ date, time: slot.label })}
+        className="group absolute inset-x-1 h-auto gap-1.5 rounded-md border border-dashed border-transparent px-1 py-0 text-caption font-normal text-primary hover:border-primary/60 hover:bg-primary-muted/70 hover:text-primary focus-visible:border-primary focus-visible:bg-primary-muted focus-visible:outline-none active:translate-y-0"
+        style={{ top: slot.top + 2, height: weekTimelineRowHeight - 4 }}
+      >
+        <span className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
+          <Plus className="size-4 shrink-0" aria-hidden="true" />
+          <span>Clique para agendar</span>
+        </span>
+      </Button>
+    ));
 }
 
 function currentMinuteInTimeZone(timeZone: string) {
@@ -1510,11 +1777,14 @@ function NowIndicator({
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-x-0 z-20"
+      className="pointer-events-none absolute inset-x-0 z-40"
       style={{ top }}
     >
-      <div className="relative border-t-2 border-destructive">
-        <span className="absolute -top-[5px] left-0 size-2 rounded-full bg-destructive" />
+      <div className="relative ml-[4.5rem] border-t-2 border-destructive">
+        <span className="absolute -top-[5px] -left-1 size-2 rounded-full bg-destructive" />
+        <span className="absolute -left-12 -top-3 rounded-md bg-destructive px-1.5 py-0.5 text-caption font-semibold tabular-nums text-white">
+          {minutesToTimeLabel(minute)}
+        </span>
       </div>
     </div>
   );
@@ -1565,60 +1835,85 @@ function TimelineAppointmentItem({
 }) {
   const timeZone = useAgendaTimeZone();
   const patientName = patient?.social_name || patient?.full_name || "Paciente";
-  const scheduleColor = schedule?.color ?? defaultScheduleColor;
-  const colors = timelineScheduleColor(scheduleColor);
+  const tone =
+    appointment.status === "cancelled" || appointment.status === "no_show"
+      ? "destructive"
+      : appointment.status === "waiting"
+        ? "warning"
+        : appointment.status === "confirmed" ||
+            appointment.status === "attended"
+          ? "success"
+          : "primary";
   const width = `calc(${100 / item.laneCount}% - 6px)`;
   const left = `calc(${(100 / item.laneCount) * item.lane}% + 3px)`;
+  const summary = `${formatTime(appointment.start_at, timeZone)} - ${formatTime(
+    appointment.end_at,
+    timeZone,
+  )} · ${patientName} · ${statusLabel[appointment.status] ?? appointment.status} · ${procedure?.name ?? "Procedimento"} · ${professional?.name ?? schedule?.name ?? ""}`;
 
   return (
     <div
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
+      aria-label={onSelect ? summary : undefined}
       onClick={onSelect}
       onKeyDown={(event) => handleAppointmentCardKeyDown(event, onSelect)}
-      className={`absolute z-10 overflow-hidden rounded-md px-2 py-1 text-xs shadow-[var(--shadow-soft)] ${
-        onSelect
-          ? "cursor-pointer transition-shadow duration-[var(--motion-fast)] hover:shadow-[var(--shadow-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          : ""
-      }`}
+      className={cn(
+        "absolute z-10 overflow-hidden rounded-md border px-2 py-1 text-xs",
+        onSelect &&
+          "cursor-pointer transition-shadow duration-[var(--motion-fast)] hover:shadow-[var(--shadow-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+      )}
       style={{
         top: item.top,
         height: item.height,
         left,
         width,
-        backgroundColor: colors.background,
-        borderLeft: `3px solid ${scheduleColor}`,
-        color: colors.text,
+        backgroundColor: `color-mix(in srgb, var(--${tone}) 7%, var(--card))`,
+        borderColor: `color-mix(in srgb, var(--${tone}) 18%, var(--card))`,
+        borderLeft: `3px solid var(--${tone})`,
       }}
-      title={`${formatTime(appointment.start_at, timeZone)} - ${formatTime(
-        appointment.end_at,
-        timeZone,
-      )} · ${patientName}`}
+      title={summary}
     >
-      <p className="truncate font-semibold leading-tight" title={patientName}>
-        {patientName}
-      </p>
-      {item.height >= 52 ? (
-        <p className="mt-0.5 truncate text-caption font-normal leading-tight opacity-80">
-          {procedure?.name ?? "Procedimento"}
-          {professional ? ` · ${professional.name}` : ""}
-        </p>
-      ) : null}
-      {item.height >= 34 ? (
-        <div className="mt-0.5 flex items-center gap-1">
-          <span className="truncate text-caption font-medium tabular-nums opacity-70">
-            {formatTime(appointment.start_at, timeZone)} -{" "}
+      {item.height >= 44 ? (
+        <div className="mb-0.5 flex min-w-0 items-center justify-between gap-1">
+          <span className="shrink-0 text-caption leading-tight tabular-nums text-secondary-foreground">
+            {formatTime(appointment.start_at, timeZone)} –{" "}
             {formatTime(appointment.end_at, timeZone)}
           </span>
-          {appointment.status === "confirmed" ||
-          appointment.status === "attended" ? (
-            <Check className="size-3 shrink-0 opacity-70" aria-hidden="true" />
-          ) : null}
+          <span
+            className="truncate rounded-full px-1.5 py-0.5 text-caption font-medium leading-none"
+            style={{
+              backgroundColor: `var(--${tone}-muted)`,
+              color: `var(--${tone === "primary" ? "primary-strong" : `${tone}-foreground`})`,
+            }}
+          >
+            {statusLabel[appointment.status] ?? appointment.status}
+          </span>
         </div>
       ) : null}
-      {canEdit && item.height >= 96 ? (
+      <p className="truncate font-semibold leading-tight text-foreground">
+        {patientName}
+      </p>
+      {item.height >= 60 ? (
+        <p className="mt-0.5 flex min-w-0 items-center gap-1 text-caption leading-tight text-muted-foreground">
+          <span
+            className="size-1 shrink-0 rounded-full bg-muted-foreground/50"
+            aria-hidden="true"
+          />
+          <span className="truncate">{procedure?.name ?? "Procedimento"}</span>
+        </p>
+      ) : null}
+      {item.height >= 72 ? (
+        <p className="mt-0.5 flex min-w-0 items-center gap-1 text-caption leading-tight text-muted-foreground">
+          <UserRound className="size-3 shrink-0" aria-hidden="true" />
+          <span className="truncate">
+            {professional?.name ?? schedule?.name ?? "Profissional"}
+          </span>
+        </p>
+      ) : null}
+      {canEdit && item.height >= 120 ? (
         <div
-          className="mt-2 rounded bg-white/60 p-1"
+          className="mt-2 rounded bg-card/60 p-1"
           onClick={(event) => event.stopPropagation()}
         >
           <StatusActions
@@ -1788,7 +2083,11 @@ function MonthAgenda({
             ? `Agenda de ${formatFullDay(detailsDay)}`
             : "Agenda do dia"
         }
-        description={`${detailsAppointments.length} agendamentos e ${detailsBlocks.length} bloqueios.`}
+        description={`${detailsAppointments.length} ${
+          detailsAppointments.length === 1 ? "agendamento" : "agendamentos"
+        } e ${detailsBlocks.length} ${
+          detailsBlocks.length === 1 ? "bloqueio" : "bloqueios"
+        }.`}
         className="max-w-2xl"
       >
         <div className="grid gap-3">
@@ -1939,6 +2238,7 @@ function AppointmentDetailsModal({
   room,
   insurance,
   paymentMethods,
+  clinicalTemplates,
   encounter,
   canEdit,
   canViewPatient,
@@ -1956,6 +2256,7 @@ function AppointmentDetailsModal({
   room?: AgendaData["rooms"][number];
   insurance?: AgendaData["insurances"][number];
   paymentMethods: AgendaData["paymentMethods"];
+  clinicalTemplates: AgendaData["clinicalTemplates"];
   encounter?: AgendaData["encounters"][number];
   canEdit: boolean;
   canViewPatient: boolean;
@@ -1964,234 +2265,596 @@ function AppointmentDetailsModal({
   returnTo: string;
   onClose: () => void;
 }) {
+  const [editingPrice, setEditingPrice] = useState(false);
   const timeZone = useAgendaTimeZone();
   const patientName = patient?.social_name || patient?.full_name || "Paciente";
   const appointmentStatus =
     statusLabel[appointment.status] ?? appointment.status;
   const canStartClinicalEncounter =
-    canStartEncounter && !encounter && appointment.status === "waiting";
+    canStartEncounter &&
+    ["confirmed", "waiting", "in_progress"].includes(appointment.status) &&
+    encounter?.status !== "finalized";
+  const modalFooter = (
+    <div className="flex w-full flex-col justify-between gap-3 sm:flex-row sm:items-end">
+      <div className="flex flex-wrap gap-2">
+        {canViewPatient && patient ? (
+          <Button asChild variant="secondary">
+            <Link href={`/pacientes/${patient.id}`}>
+              <UserRound className="size-4" aria-hidden="true" />
+              Ver paciente
+            </Link>
+          </Button>
+        ) : null}
+        {canViewClinical && encounter?.status === "finalized" ? (
+          <Button asChild variant="secondary">
+            <Link href={buildAgendaEncounterHref(encounter.id, returnTo)}>
+              <FileText className="size-4" aria-hidden="true" />
+              Abrir prontuário
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        {canEdit ? (
+          <StatusActions
+            appointmentId={appointment.id}
+            status={appointment.status}
+            startAt={appointment.start_at}
+            hideInProgressAction={canStartClinicalEncounter}
+            hideAttendedAction={
+              canStartEncounter && encounter?.status === "draft"
+            }
+            fullLabels
+          />
+        ) : null}
+        {canStartClinicalEncounter ? (
+          <StartEncounterForm
+            appointmentId={appointment.id}
+            returnTo={returnTo}
+            templates={clinicalTemplates}
+            continuing={encounter?.status === "draft"}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
 
   return (
     <Modal
       open
       onClose={onClose}
       title="Detalhes do agendamento"
-      description={`${patientName} - ${appointmentStatus}`}
-      className="max-w-3xl"
+      description={`${patientName} · ${appointmentStatus}`}
+      className={cn(
+        "max-w-6xl [&>header]:border-b-0 [&>header]:pb-0 [&>header]:pt-6 [&>header]:sm:px-6 [&>header_h2]:text-display",
+        detailsStyles.details,
+      )}
+      footer={modalFooter}
     >
-      <div className="grid gap-5">
-        <section className="grid gap-4 rounded-lg border border-border bg-card p-4">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-            <div className="flex min-w-0 items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-primary">
-                <UserRound className="size-5" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <h3 className="truncate font-semibold">{patientName}</h3>
-                {patient?.social_name ? (
-                  <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                    Nome civil: {patient.full_name}
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
+        <div className="grid min-w-0 gap-4">
+          <section className="rounded-xl border border-border bg-card p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-4">
+                <Avatar name={patientName} size="lg" />
+                <div className="min-w-0">
+                  <h3 className="break-words text-heading font-semibold">
+                    {patientName}
+                  </h3>
+                  {patient?.social_name ? (
+                    <p className="mt-0.5 text-caption text-muted-foreground">
+                      Nome civil: {patient.full_name}
+                    </p>
+                  ) : null}
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-body-sm text-muted-foreground">
+                    <span>Prontuário</span>
+                    <span className="font-mono font-semibold uppercase text-primary">
+                      #{patient?.id.slice(0, 8).toUpperCase() ?? "---"}
+                    </span>
+                    {patient ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Copiar número do prontuário"
+                        className="size-6 text-primary"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(
+                              patient.id.slice(0, 8).toUpperCase(),
+                            );
+                            toast.success("Número do prontuário copiado.");
+                          } catch {
+                            toast.error(
+                              "Não foi possível copiar o número do prontuário.",
+                            );
+                          }
+                        }}
+                      >
+                        <Copy className="size-3.5" aria-hidden="true" />
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <Badge
+                variant={
+                  appointment.status === "cancelled" ||
+                  appointment.status === "no_show"
+                    ? "destructive"
+                    : appointment.status === "confirmed" ||
+                        appointment.status === "attended"
+                      ? "success"
+                      : appointment.status === "waiting"
+                        ? "warning"
+                        : "primary"
+                }
+                className="gap-2 rounded-full px-3 py-2"
+              >
+                <CalendarClock className="size-4" aria-hidden="true" />
+                {appointmentStatus}
+              </Badge>
+            </div>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <SummaryItem
+                label="CPF"
+                icon={IdentificationCard}
+                value={patient?.cpf ? formatCPF(patient.cpf) : "Não informado"}
+              />
+              <SummaryItem
+                label="Telefone"
+                icon={Phone}
+                value={
+                  patient?.phone || patient?.whatsapp ? (
+                    <a
+                      className="hover:text-primary hover:underline"
+                      href={`tel:${patient.phone || patient.whatsapp}`}
+                    >
+                      {formatPhoneBR(patient.phone || patient.whatsapp || "")}
+                    </a>
+                  ) : (
+                    "Não informado"
+                  )
+                }
+              />
+              <SummaryItem
+                label="WhatsApp"
+                icon={WhatsappLogo}
+                value={
+                  patient?.whatsapp ? (
+                    <a
+                      className="hover:text-primary hover:underline"
+                      href={`https://wa.me/${patient.whatsapp.replace(/\D/g, "")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {formatPhoneBR(patient.whatsapp)}
+                    </a>
+                  ) : (
+                    "Não informado"
+                  )
+                }
+              />
+              <SummaryItem
+                label="E-mail"
+                icon={Mail}
+                value={
+                  patient?.email ? (
+                    <a
+                      className="hover:text-primary hover:underline"
+                      href={`mailto:${patient.email}`}
+                    >
+                      <EmailText email={patient.email} />
+                    </a>
+                  ) : (
+                    "Não informado"
+                  )
+                }
+              />
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-5">
+            <DetailsSectionHeading
+              icon={CalendarClock}
+              title="Resumo do atendimento"
+            />
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary-muted/60 p-4">
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-primary">
+                  <CalendarClock className="size-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-body-sm font-medium">
+                    {formatFullDay(
+                      localDateKey(appointment.start_at, timeZone),
+                    )}
                   </p>
-                ) : null}
-                <p className="mt-1 font-mono text-xs font-semibold uppercase text-primary">
-                  Prontuario #{patient?.id.slice(0, 8).toUpperCase() ?? "---"}
+                  <p className="mt-1 text-body-sm tabular-nums text-muted-foreground">
+                    {formatTime(appointment.start_at, timeZone)} –{" "}
+                    {formatTime(appointment.end_at, timeZone)} ·{" "}
+                    {Math.round(
+                      (new Date(appointment.end_at).getTime() -
+                        new Date(appointment.start_at).getTime()) /
+                        60000,
+                    )}{" "}
+                    min
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onClose}
+                className="text-primary"
+              >
+                <CalendarClock className="size-4" aria-hidden="true" />
+                Ver na agenda
+              </Button>
+            </div>
+            <div className="mt-5 grid gap-x-4 gap-y-5 sm:grid-cols-2 xl:grid-cols-3">
+              <SummaryItem
+                label="Procedimento"
+                value={procedure?.name ?? "Procedimento"}
+                icon={Stethoscope}
+              />
+              <SummaryItem
+                label="Profissional"
+                value={professional?.name ?? "Não informado"}
+                icon={UserRound}
+              />
+              <SummaryItem
+                label="Agenda"
+                value={schedule?.name ?? "Agenda"}
+                icon={CalendarClock}
+              />
+              <SummaryItem
+                label="Unidade"
+                value={unit?.name ?? "Não informada"}
+                icon={Buildings}
+              />
+              <SummaryItem
+                label="Sala"
+                value={room?.name ?? "Não informada"}
+                icon={Door}
+              />
+              <SummaryItem
+                label="Convênio"
+                value={insurance?.name ?? "Sem convênio"}
+                icon={ShieldCheck}
+              />
+            </div>
+            {appointment.is_extra ? (
+              <Badge variant="warning" className="mt-4">
+                Encaixe
+              </Badge>
+            ) : null}
+            <div className="mt-5 flex items-start gap-3 border-t border-border pt-4">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-muted text-primary">
+                <FileText className="size-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h4 className="text-body-sm font-medium">Observações</h4>
+                <p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-muted/60 p-3 text-body-sm text-secondary-foreground">
+                  {appointment.notes || "Nenhuma observação registrada."}
                 </p>
               </div>
             </div>
-            <Badge
-              variant={
-                appointment.status === "cancelled"
-                  ? "neutral"
-                  : appointment.status === "attended"
-                    ? "success"
-                    : appointment.status === "no_show"
-                      ? "warning"
-                      : "primary"
-              }
-            >
-              {appointmentStatus}
-            </Badge>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryItem
-              label="CPF"
-              value={patient?.cpf ? formatCPF(patient.cpf) : "Nao informado"}
-            />
-            <SummaryItem
-              label="Telefone"
-              value={
-                patient?.phone ? (
-                  <a
-                    className="hover:text-primary hover:underline"
-                    href={`tel:${patient.phone}`}
-                  >
-                    {formatPhoneBR(patient.phone)}
-                  </a>
-                ) : patient?.whatsapp ? (
-                  <a
-                    className="hover:text-primary hover:underline"
-                    href={`tel:${patient.whatsapp}`}
-                  >
-                    {formatPhoneBR(patient.whatsapp)}
-                  </a>
-                ) : (
-                  "Nao informado"
-                )
-              }
-              icon={Phone}
-            />
-            <SummaryItem
-              label="WhatsApp"
-              value={
-                patient?.whatsapp ? (
-                  <a
-                    className="hover:text-primary hover:underline"
-                    href={`https://wa.me/${patient.whatsapp.replace(/\D/g, "")}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {formatPhoneBR(patient.whatsapp)}
-                  </a>
-                ) : (
-                  "Nao informado"
-                )
-              }
-              icon={Phone}
-            />
-            <SummaryItem
-              label="E-mail"
-              value={
-                patient?.email ? (
-                  <a
-                    className="hover:text-primary hover:underline"
-                    href={`mailto:${patient.email}`}
-                  >
-                    {patient.email}
-                  </a>
-                ) : (
-                  "Nao informado"
-                )
-              }
-              icon={Mail}
-            />
-          </div>
-        </section>
-
-        <section className="grid gap-4 rounded-lg border border-border bg-card p-4">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <CalendarClock className="size-5" aria-hidden="true" />
-            </span>
-            <div>
-              <h3 className="font-semibold">Agendamento atual</h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {formatAppointmentDateTime(
-                  appointment.start_at,
-                  appointment.end_at,
-                  timeZone,
-                )}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <SummaryItem
-              label="Procedimento"
-              value={procedure?.name ?? "Procedimento"}
-            />
-            <SummaryItem
-              label="Profissional"
-              value={professional?.name ?? "Nao informado"}
-            />
-            <SummaryItem label="Agenda" value={schedule?.name ?? "Agenda"} />
-            <SummaryItem
-              label="Unidade"
-              value={unit?.name ?? "Nao informada"}
-            />
-            <SummaryItem label="Sala" value={room?.name ?? "Nao informada"} />
-            <SummaryItem
-              label="Convenio"
-              value={insurance?.name ?? "Particular"}
-            />
-            <SummaryItem
-              label="Valor"
-              value={
-                appointment.price === null || appointment.price === undefined
-                  ? "Nao informado"
-                  : formatMoney(appointment.price)
-              }
-              hint={appointmentPriceHint(appointment)}
-            />
-          </div>
-
-          {canEdit ? (
-            <AppointmentPriceForm
-              appointmentId={appointment.id}
-              price={appointment.price ?? null}
-              listPrice={appointment.list_price ?? null}
-              priceNote={appointment.price_note ?? null}
-            />
-          ) : null}
-
-          {canEdit ? (
-            <PaymentMethodForm
-              appointmentId={appointment.id}
-              paymentMethodId={appointment.payment_method_id}
-              paymentMethods={paymentMethods}
-            />
-          ) : null}
-
-          {appointment.notes ? (
-            <div className="rounded-md border border-dashed border-border bg-background px-3 py-2">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">
-                Observacoes
-              </p>
-              <p className="mt-1 whitespace-pre-wrap text-sm">
-                {appointment.notes}
-              </p>
-            </div>
-          ) : null}
-        </section>
-
-        <div className="flex flex-col justify-between gap-3 border-t border-border pt-4 sm:flex-row sm:items-center">
-          <div className="flex flex-wrap gap-2">
-            {canViewPatient && patient ? (
-              <Button asChild variant="secondary">
-                <Link href={`/pacientes/${patient.id}`}>
-                  <UserRound className="size-4" aria-hidden="true" />
-                  Ver paciente
-                </Link>
-              </Button>
-            ) : null}
-            {canViewClinical && encounter ? (
-              <Button asChild variant="secondary">
-                <Link href={buildAgendaEncounterHref(encounter.id, returnTo)}>
-                  <FileText className="size-4" aria-hidden="true" />
-                  Abrir prontuario
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            {canEdit ? (
-              <StatusActions
-                appointmentId={appointment.id}
-                status={appointment.status}
-                startAt={appointment.start_at}
-                hideInProgressAction={canStartClinicalEncounter}
-              />
-            ) : null}
-            {canStartClinicalEncounter ? (
-              <StartEncounterForm
-                appointmentId={appointment.id}
-                returnTo={returnTo}
-              />
-            ) : null}
-          </div>
+          </section>
         </div>
+
+        <section className="min-w-0 rounded-xl border border-border bg-card p-5">
+          <DetailsSectionHeading
+            icon={CreditCard}
+            title="Financeiro e ações"
+            description="Informações de pagamento e ações do agendamento."
+          />
+          <div className="mt-5 rounded-lg bg-success-muted/40 p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success-muted text-success-foreground">
+                <CurrencyDollar className="size-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-body-sm text-secondary-foreground">
+                  Valor do atendimento
+                </p>
+                <p className="mt-1 text-display font-semibold tabular-nums">
+                  {appointment.price == null
+                    ? "Não informado"
+                    : formatMoney(appointment.price)}
+                </p>
+                {appointment.list_price != null ? (
+                  <p className="mt-1 text-caption text-muted-foreground">
+                    Preço de tabela: {formatMoney(appointment.list_price)}
+                  </p>
+                ) : null}
+                {appointmentPriceHint(appointment) ? (
+                  <p className="mt-1 text-caption text-muted-foreground">
+                    {appointmentPriceHint(appointment)}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            {canEdit ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                aria-expanded={editingPrice}
+                onClick={() => setEditingPrice((value) => !value)}
+                className="mt-3 text-primary"
+              >
+                <PencilSimple className="size-3.5" aria-hidden="true" />
+                {editingPrice ? "Fechar edição" : "Editar valor"}
+              </Button>
+            ) : null}
+          </div>
+          {canEdit && editingPrice ? (
+            <div className="mt-3">
+              <AppointmentPriceForm
+                appointmentId={appointment.id}
+                price={appointment.price ?? null}
+                listPrice={appointment.list_price ?? null}
+                priceNote={appointment.price_note ?? null}
+                onSaved={() => setEditingPrice(false)}
+              />
+            </div>
+          ) : null}
+          <div className="mt-5">
+            {canEdit ? (
+              <PaymentMethodForm
+                appointmentId={appointment.id}
+                paymentMethodId={appointment.payment_method_id}
+                paymentMethods={paymentMethods}
+              />
+            ) : null}
+            <p className={canEdit ? detailsStyles.printOnly : "text-body-sm"}>
+              Forma de pagamento:{" "}
+              {paymentMethods.find(
+                (method) => method.id === appointment.payment_method_id,
+              )?.name ?? "Não selecionada"}
+            </p>
+          </div>
+          <div className="mt-5 border-t border-border pt-5">
+            <AppointmentStatusSelector
+              appointment={appointment}
+              canEdit={canEdit}
+              startThroughEncounter={canStartClinicalEncounter}
+              finishThroughEncounter={
+                canStartEncounter && encounter?.status === "draft"
+              }
+            />
+          </div>
+          <div
+            className={cn(
+              "mt-5 border-t border-border pt-4",
+              detailsStyles.screenOnly,
+            )}
+          >
+            <h4 className="mb-3 flex items-center gap-2 text-body-sm font-medium">
+              <Lightning className="size-4 text-primary" aria-hidden="true" />
+              Ações rápidas
+            </h4>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => window.print()}
+              className="w-full"
+            >
+              <Printer className="size-4 text-primary" aria-hidden="true" />
+              Imprimir
+            </Button>
+          </div>
+        </section>
       </div>
     </Modal>
+  );
+}
+
+function DetailsSectionHeading({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-muted text-primary">
+        <Icon className="size-5" aria-hidden="true" />
+      </span>
+      <div className="min-w-0">
+        <h3 className="text-heading-sm font-semibold">{title}</h3>
+        {description ? (
+          <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AppointmentStatusSelector({
+  appointment,
+  canEdit,
+  startThroughEncounter,
+  finishThroughEncounter,
+}: {
+  appointment: AgendaData["appointments"][number];
+  canEdit: boolean;
+  startThroughEncounter: boolean;
+  finishThroughEncounter: boolean;
+}) {
+  const timeZone = useAgendaTimeZone();
+  const [selection, setSelection] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string>();
+  const [pending, startTransition] = useTransition();
+  const [waitlistCandidates, setWaitlistCandidates] = useState<
+    WaitlistCandidate[] | null
+  >(null);
+  const options = availableAppointmentStatuses(appointment.status, {
+    startThroughEncounter,
+    finishThroughEncounter,
+  });
+  const selectedStatus =
+    selection?.from === appointment.status && options.includes(selection.to)
+      ? selection.to
+      : appointment.status;
+  const hasChange = selectedStatus !== appointment.status;
+  const destructive =
+    selectedStatus === "cancelled" || selectedStatus === "no_show";
+
+  async function applyStatus() {
+    if (!canEdit || !hasChange || !options.includes(selectedStatus))
+      return false;
+    setError(undefined);
+    try {
+      const result = await changeAppointmentStatus(
+        appointment.id,
+        selectedStatus,
+        initialState,
+      );
+      if (result.error) {
+        setError(result.error);
+        toast.error(result.error);
+        return false;
+      }
+      if (result.success) toast.success(result.success);
+      setSelection(null);
+      if (destructive) {
+        const candidates = await loadWaitlistCandidatesForAppointment(
+          appointment.id,
+        );
+        if (candidates.ok && candidates.data?.length)
+          setWaitlistCandidates(candidates.data);
+      }
+      return true;
+    } catch {
+      setError("Não foi possível atualizar o status. Tente novamente.");
+      return false;
+    }
+  }
+
+  return (
+    <div className="grid gap-3">
+      <label
+        className={cn(
+          "grid gap-2 text-body-sm font-medium",
+          detailsStyles.screenOnly,
+        )}
+      >
+        Status do agendamento
+        <Select
+          value={selectedStatus}
+          onValueChange={(to) => {
+            setSelection({ from: appointment.status, to });
+            setError(undefined);
+          }}
+          disabled={!canEdit || !options.length || pending || confirming}
+          aria-label="Status do agendamento"
+          className="h-11 font-medium text-primary"
+        >
+          <option value={appointment.status}>
+            {statusLabel[appointment.status] ?? appointment.status}
+          </option>
+          {options.map((status) => (
+            <option key={status} value={status}>
+              {statusLabel[status]}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <p className={detailsStyles.printOnly}>
+        Status: {statusLabel[appointment.status] ?? appointment.status}
+      </p>
+      <div className="flex items-start gap-2 rounded-lg bg-primary-muted/70 p-3 text-body-sm leading-relaxed text-secondary-foreground">
+        <Info
+          className="mt-0.5 size-4 shrink-0 text-primary"
+          aria-hidden="true"
+        />
+        <p>
+          {appointmentStatusDescriptions[appointment.status] ??
+            "Status atual do agendamento."}
+          {finishThroughEncounter
+            ? " Conclua o prontuário para finalizar o atendimento."
+            : startThroughEncounter && appointment.status !== "in_progress"
+              ? " Use Iniciar atendimento para abrir a ficha clínica."
+              : ""}
+        </p>
+      </div>
+      {canEdit && hasChange ? (
+        <Button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            if (destructive || selectedStatus === "attended")
+              setConfirming(true);
+            else
+              startTransition(async () => {
+                await applyStatus();
+              });
+          }}
+        >
+          {pending ? "Atualizando..." : "Aplicar status"}
+        </Button>
+      ) : null}
+      {error ? (
+        <p role="alert" className="text-caption text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <ConfirmDialog
+        open={confirming && hasChange}
+        onClose={() => {
+          setConfirming(false);
+          setError(undefined);
+        }}
+        title={
+          selectedStatus === "cancelled"
+            ? "Cancelar agendamento?"
+            : selectedStatus === "no_show"
+              ? "Registrar falta?"
+              : "Finalizar atendimento?"
+        }
+        description={
+          selectedStatus === "cancelled"
+            ? "O agendamento será cancelado e deixará de ocupar este horário."
+            : selectedStatus === "no_show"
+              ? "O atendimento será marcado como falta no histórico do paciente."
+              : "O agendamento será marcado como atendido. Confirme apenas após concluir o atendimento."
+        }
+        confirmLabel={
+          selectedStatus === "cancelled"
+            ? "Cancelar agendamento"
+            : selectedStatus === "no_show"
+              ? "Registrar falta"
+              : "Finalizar atendimento"
+        }
+        pendingLabel="Atualizando..."
+        destructive={destructive}
+        error={error}
+        onConfirm={async () => {
+          const success = await applyStatus();
+          if (success) setConfirming(false);
+          return success;
+        }}
+      />
+      {waitlistCandidates ? (
+        <WaitlistSuggestionModal
+          candidates={waitlistCandidates}
+          slotLabel={formatSlotLabel(appointment.start_at, timeZone)}
+          onClose={() => setWaitlistCandidates(null)}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -2215,16 +2878,21 @@ function PaymentMethodForm({
   return (
     <form
       action={action}
-      className="grid gap-3 rounded-md border border-border bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2"
     >
       <label className="grid gap-2 text-sm font-medium">
-        Forma de pagamento do agendamento
+        <span className="flex items-center gap-2">
+          <CreditCard className="size-4 text-primary" aria-hidden="true" />
+          Forma de pagamento
+        </span>
         <Select
           name="payment_method_id"
           defaultValue={paymentMethodId ?? ""}
+          disabled={pending}
+          aria-label="Forma de pagamento do agendamento"
           allowEmptyOption
         >
-          <option value="">Nao selecionada</option>
+          <option value="">Não selecionada</option>
           {paymentMethods.map((method) => (
             <option key={method.id} value={method.id}>
               {method.name}
@@ -2232,7 +2900,7 @@ function PaymentMethodForm({
           ))}
         </Select>
       </label>
-      <Button type="submit" variant="secondary" disabled={pending}>
+      <Button type="submit" variant="secondary" size="lg" disabled={pending}>
         {pending ? "Salvando..." : "Salvar"}
       </Button>
     </form>
@@ -2242,9 +2910,13 @@ function PaymentMethodForm({
 function StartEncounterForm({
   appointmentId,
   returnTo,
+  templates,
+  continuing,
 }: {
   appointmentId: string;
   returnTo: string;
+  templates: AgendaData["clinicalTemplates"];
+  continuing: boolean;
 }) {
   const boundAction = startAppointmentEncounter.bind(null, appointmentId);
   const [state, action, pending] = useActionState(boundAction, initialState);
@@ -2254,12 +2926,66 @@ function StartEncounterForm({
   }, [state]);
 
   return (
-    <form action={action}>
+    <form
+      action={action}
+      className="flex flex-col gap-2 sm:flex-row sm:items-end"
+    >
       <input type="hidden" name="return_to" value={returnTo} readOnly />
-      <Button type="submit" disabled={pending}>
+      {continuing ? (
+        <div className="min-w-56 rounded-md border border-border bg-muted px-3 py-2">
+          <p className="text-sm font-medium">Ficha clínica já criada</p>
+          <p className="text-xs text-muted-foreground">
+            O conteúdo existente será preservado.
+          </p>
+          <input type="hidden" name="template_version_id" value="" />
+        </div>
+      ) : (
+        <label className="grid min-w-56 gap-1.5 text-sm font-medium">
+          Ficha clínica
+          <Select
+            name="template_version_id"
+            defaultValue={
+              templates.find((template) => template.is_default)?.version_id ??
+              templates[0]?.version_id ??
+              ""
+            }
+            required
+            disabled={pending}
+          >
+            {!templates.length ? (
+              <option value="">Nenhuma ficha disponível</option>
+            ) : null}
+            {templates.map((template) => (
+              <option key={template.version_id} value={template.version_id}>
+                {template.name}
+              </option>
+            ))}
+          </Select>
+          {!templates.length ? (
+            <span className="text-xs font-normal text-destructive">
+              Ative uma ficha clínica nas configurações para iniciar.
+            </span>
+          ) : null}
+        </label>
+      )}
+      <Button
+        type="submit"
+        disabled={pending || (!continuing && !templates.length)}
+      >
         <Stethoscope className="size-4" aria-hidden="true" />
-        {pending ? "Iniciando..." : "Iniciar atendimento"}
+        {pending
+          ? continuing
+            ? "Abrindo..."
+            : "Iniciando..."
+          : continuing
+            ? "Continuar atendimento"
+            : "Iniciar atendimento"}
       </Button>
+      {state.error ? (
+        <p className="text-sm text-destructive sm:self-center" role="alert">
+          {state.error}
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -2277,18 +3003,37 @@ function SummaryItem({
   icon?: React.ComponentType<{ className?: string }>;
 }) {
   return (
-    <div className="min-w-0 border-b border-border/70 px-1 pb-2">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
-        {Icon ? <Icon className="size-3.5" aria-hidden="true" /> : null}
-        {label}
-      </p>
-      <p className="mt-1 break-words text-sm font-medium">{value}</p>
-      {hint ? (
-        <p className="mt-0.5 break-words text-xs text-muted-foreground">
-          {hint}
-        </p>
+    <div className="flex min-w-0 items-start gap-2.5">
+      {Icon ? (
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-muted text-primary">
+          <Icon className="size-4" aria-hidden="true" />
+        </span>
       ) : null}
+      <div className="min-w-0">
+        <p className="text-caption text-muted-foreground">{label}</p>
+        <p className="mt-1 break-words text-body-sm font-medium">{value}</p>
+        {hint ? (
+          <p className="mt-0.5 break-words text-xs text-muted-foreground">
+            {hint}
+          </p>
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+// Numa coluna estreita o e-mail quebrava no meio do domínio ("exam|ple.com");
+// o <wbr> dá ao navegador um ponto de quebra melhor, logo depois do @, sem
+// inserir caractere nenhum no texto copiado.
+function EmailText({ email }: { email: string }) {
+  const at = email.lastIndexOf("@");
+  if (at === -1) return email;
+  return (
+    <>
+      {email.slice(0, at + 1)}
+      <wbr />
+      {email.slice(at + 1)}
+    </>
   );
 }
 
@@ -2330,17 +3075,32 @@ function AppointmentPriceForm({
   price,
   listPrice,
   priceNote,
+  onSaved,
 }: {
   appointmentId: string;
   price: number | string | null;
   listPrice: number | string | null;
   priceNote: string | null;
+  onSaved?: () => void;
 }) {
-  const boundAction = updateAppointmentPrice.bind(null, appointmentId);
+  const boundAction = async (
+    previousState: AgendaActionState,
+    formData: FormData,
+  ) => {
+    const result = await updateAppointmentPrice(
+      appointmentId,
+      previousState,
+      formData,
+    );
+    if (result.success) {
+      toast.success(result.success);
+      onSaved?.();
+    }
+    return result;
+  };
   const [state, action, pending] = useActionState(boundAction, initialState);
 
   useEffect(() => {
-    if (state.success) toast.success(state.success);
     if (state.error) toast.error(state.error);
   }, [state]);
 
@@ -2354,7 +3114,7 @@ function AppointmentPriceForm({
   return (
     <form
       action={action}
-      className="grid gap-3 rounded-md border border-border bg-muted/20 p-3 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-end"
+      className="grid gap-3 rounded-lg border border-border bg-muted/20 p-3"
     >
       <label className="grid gap-2 text-sm font-medium">
         Valor do agendamento
@@ -2378,7 +3138,7 @@ function AppointmentPriceForm({
           placeholder={tableLabel ?? "Ex.: valor combinado."}
         />
       </label>
-      <Button type="submit" variant="secondary" disabled={pending}>
+      <Button type="submit" variant="secondary" size="lg" disabled={pending}>
         {pending ? "Salvando..." : "Salvar"}
       </Button>
     </form>
@@ -2393,17 +3153,6 @@ function handleAppointmentCardKeyDown(
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
   onSelect();
-}
-
-function formatAppointmentDateTime(
-  startAt: string,
-  endAt: string,
-  timeZone: string,
-) {
-  return `${formatFullDay(localDateKey(startAt, timeZone))}, ${formatTime(
-    startAt,
-    timeZone,
-  )} - ${formatTime(endAt, timeZone)}`;
 }
 
 function BlockCard({
@@ -2430,7 +3179,7 @@ function BlockCard({
       </div>
       {!compact ? (
         <p className="mt-1 text-xs text-muted-foreground">
-          {block.reason || schedule?.name || "Horario bloqueado"}
+          {block.reason || schedule?.name || "Horário bloqueado"}
         </p>
       ) : null}
     </div>
@@ -2858,33 +3607,44 @@ function StatusActions({
   status,
   startAt,
   hideInProgressAction = false,
+  hideAttendedAction = false,
+  fullLabels = false,
 }: {
   appointmentId: string;
   status: string;
   startAt: string;
   hideInProgressAction?: boolean;
+  hideAttendedAction?: boolean;
+  /** No rodapé do modal, "Cancelar" sozinho lê como "fechar a janela" e
+      "Faltou" descreve em vez de agir: lá os botões dizem o que fazem. Nos
+      cards da grade não há espaço. */
+  fullLabels?: boolean;
 }) {
   if (["attended", "no_show", "cancelled"].includes(status)) return null;
+  const cancelLabel = fullLabels ? "Cancelar agendamento" : "Cancelar";
+  const noShowLabel = fullLabels ? "Registrar falta" : "Faltou";
   const actions =
     status === "scheduled"
       ? [
           ["confirmed", "Confirmar", Check],
-          ["cancelled", "Cancelar", X],
+          ["cancelled", cancelLabel, X],
         ]
       : status === "confirmed"
         ? [
             ["waiting", "Check-in", UserCheck],
-            ["cancelled", "Cancelar", X],
+            ["cancelled", cancelLabel, X],
           ]
         : status === "waiting"
           ? [
               ["in_progress", "Iniciar", Clock3],
-              ["no_show", "Faltou", X],
+              ["no_show", noShowLabel, X],
             ]
           : [["attended", "Finalizar", Check]];
-  const visibleActions = hideInProgressAction
-    ? actions.filter(([next]) => next !== "in_progress")
-    : actions;
+  const visibleActions = actions.filter(
+    ([next]) =>
+      !(hideInProgressAction && next === "in_progress") &&
+      !(hideAttendedAction && next === "attended"),
+  );
   return (
     <div className="flex flex-wrap justify-end gap-2">
       <RescheduleForm appointmentId={appointmentId} startAt={startAt} />
@@ -2978,11 +3738,11 @@ function StatusActionForm({
         <Button
           type="button"
           size="sm"
-          variant={destructive ? "ghost" : "primary"}
+          variant={destructive ? "destructive-ghost" : "primary"}
           disabled={pending}
           onClick={() => setConfirming(true)}
         >
-          {Icon ? <Icon className="size-3.5" /> : null}
+          {Icon ? <Icon className="size-3.5" aria-hidden="true" /> : null}
           {label}
         </Button>
         <ConfirmDialog
@@ -3117,9 +3877,10 @@ function RescheduleForm({
           type="button"
           variant="ghost"
           size="icon"
+          aria-label="Fechar remarcação"
           onClick={() => setOpen(false)}
         >
-          <X className="size-4" />
+          <X className="size-4" aria-hidden="true" />
         </Button>
       </CardHeader>
       <CardContent>
@@ -3300,7 +4061,9 @@ function formatRangeLabel(date: string, view: "day" | "week" | "month") {
   }
   const start = weekStart(base);
   const end = addDays(start, 6);
-  return `${formatDayMonth(dateKey(start))} - ${formatDayMonth(dateKey(end))}`;
+  const startYear = start.getUTCFullYear();
+  const endYear = end.getUTCFullYear();
+  return `${formatDayMonth(dateKey(start))}${startYear !== endYear ? ` ${startYear}` : ""} – ${formatDayMonth(dateKey(end))} ${endYear}`;
 }
 
 function weekdayShort(value: Date) {
@@ -3547,14 +4310,6 @@ function assignTimelineLanes(group: TimedWeekItem[]) {
   for (const item of group) {
     item.laneCount = laneCount;
   }
-}
-
-function timelineScheduleColor(color: string) {
-  return {
-    background: `color-mix(in srgb, ${color} 10%, white)`,
-    border: `color-mix(in srgb, ${color} 50%, white)`,
-    text: `color-mix(in srgb, ${color} 82%, black)`,
-  };
 }
 
 function minutesOfLocalDay(value: Date, timeZone: string) {

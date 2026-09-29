@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { defaultAgendaTimeZone } from "@/lib/agenda/range";
+import { zonedDateKey, zonedDayEndExclusive, zonedDayStart } from "./time-zone";
 
 export type AppointmentSummaryFilters = {
   from: string;
@@ -50,9 +52,7 @@ export type AppointmentSummaryData = {
 };
 
 type SearchParamsInput =
-  | URLSearchParams
-  | Record<string, string | string[] | undefined>
-  | undefined;
+  URLSearchParams | Record<string, string | string[] | undefined> | undefined;
 
 type AppointmentRow = {
   id: string;
@@ -89,7 +89,7 @@ export const appointmentStatusOptions = [
   { value: "waiting", label: "Aguardando" },
   { value: "in_progress", label: "Em atendimento" },
   { value: "attended", label: "Consulta realizada" },
-  { value: "no_show", label: "Nao compareceu" },
+  { value: "no_show", label: "Não compareceu" },
   { value: "cancelled", label: "Cancelado" },
 ];
 
@@ -98,18 +98,19 @@ export const paymentStatusOptions = [
   { value: "pending", label: "Pendente" },
   { value: "partial", label: "Parcial" },
   { value: "cancelled", label: "Cancelado/baixado" },
-  { value: "none", label: "Sem cobranca" },
+  { value: "none", label: "Sem cobrança" },
 ];
 
 export function resolveAppointmentSummaryFilters(
   input: SearchParamsInput,
+  timeZone = defaultAgendaTimeZone,
 ): AppointmentSummaryFilters {
-  const today = new Date();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const today = zonedDateKey(new Date(), timeZone);
+  const monthStart = `${today.slice(0, 7)}-01`;
 
   return {
-    from: normalizeDateParam(readParam(input, "from"), toDateInput(monthStart)),
-    to: normalizeDateParam(readParam(input, "to"), toDateInput(today)),
+    from: normalizeDateParam(readParam(input, "from"), monthStart),
+    to: normalizeDateParam(readParam(input, "to"), today),
     unitId: normalizeIdParam(readParam(input, "unit_id")),
     patientQuery: (readParam(input, "patient") ?? "").trim().slice(0, 120),
     healthInsuranceId: normalizeIdParam(
@@ -152,10 +153,13 @@ export async function buildAppointmentSummaryData({
   filters,
   organizationId,
   supabase,
+  timeZone,
 }: {
   filters: AppointmentSummaryFilters;
   organizationId: string;
   supabase: SupabaseClient;
+  /** Fuso da clínica: o "-03:00" fixo errava quem não está nele. */
+  timeZone: string;
 }): Promise<AppointmentSummaryData> {
   let appointmentsQuery = supabase
     .from("appointments")
@@ -163,8 +167,8 @@ export async function buildAppointmentSummaryData({
       "id, patient_id, procedure_id, health_insurance_id, unit_id, payment_method_id, status, start_at, end_at, price, patients(full_name, social_name), procedures(name, base_price), health_insurances(name), units(name), payment_methods(name)",
     )
     .eq("organization_id", organizationId)
-    .gte("start_at", startOfDayIso(filters.from))
-    .lte("start_at", endOfDayIso(filters.to))
+    .gte("start_at", zonedDayStart(filters.from, timeZone).toISOString())
+    .lt("start_at", zonedDayEndExclusive(filters.to, timeZone).toISOString())
     .order("start_at", { ascending: true })
     .limit(1000);
 
@@ -253,14 +257,16 @@ export async function buildAppointmentSummaryData({
       const startAt = new Date(appointment.start_at);
       return {
         id: appointment.id,
-        date: formatDate(startAt),
-        time: formatTime(startAt),
+        date: formatDate(startAt, timeZone),
+        time: formatTime(startAt, timeZone),
         patientName:
           appointment.patients?.social_name ||
           appointment.patients?.full_name ||
           "Paciente",
         serviceName: appointment.procedures?.name ?? "Procedimento",
-        insuranceName: appointment.health_insurances?.name ?? "Particular",
+        // "Sem convênio", como no painel e nos relatórios: "Particular"
+        // colidia com um convênio cadastrado com esse nome.
+        insuranceName: appointment.health_insurances?.name ?? "Sem convênio",
         unitName: appointment.units?.name ?? "Unidade",
         price: resolvePrice(appointment, receivable),
         source: onlineAppointmentIds.has(appointment.id)
@@ -271,7 +277,7 @@ export async function buildAppointmentSummaryData({
         paymentStatus,
         paymentStatusLabel: paymentStatusLabel(paymentStatus),
         paymentMethodName:
-          appointment.payment_methods?.name ?? "Nao selecionada",
+          appointment.payment_methods?.name ?? "Não selecionada",
       };
     })
     .filter(
@@ -309,12 +315,12 @@ export async function buildAppointmentSummaryData({
 export function appointmentRowsToCsv(rows: AppointmentSummaryRow[]) {
   const headers = [
     "Data",
-    "Horario",
+    "Horário",
     "Paciente",
-    "Servicos",
-    "Convenio",
+    "Serviços",
+    "Convênio",
     "Unidade",
-    "Preco",
+    "Preço",
     "Fonte da consulta",
     "Estado",
     "Pagamento",
@@ -431,32 +437,20 @@ function normalizeIdParam(value: string | undefined) {
     : "";
 }
 
-function toDateInput(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function startOfDayIso(date: string) {
-  return `${date}T00:00:00.000-03:00`;
-}
-
-function endOfDayIso(date: string) {
-  return `${date}T23:59:59.999-03:00`;
-}
-
-function formatDate(date: Date) {
+function formatDate(date: Date, timeZone: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-    timeZone: "America/Fortaleza",
+    timeZone,
   }).format(date);
 }
 
-function formatTime(date: Date) {
+function formatTime(date: Date, timeZone: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "America/Fortaleza",
+    timeZone,
   }).format(date);
 }
 

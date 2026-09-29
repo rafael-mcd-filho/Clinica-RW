@@ -108,7 +108,7 @@ export function OnlineBookingSettings({
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          As configuracoes de agendamento online ainda nao foram criadas para
+          As configurações de agendamento online ainda não foram criadas para
           esta empresa.
         </CardContent>
       </Card>
@@ -213,7 +213,7 @@ export function OnlineBookingSettings({
                   <input
                     name="public_slug"
                     defaultValue={settings.public_slug}
-                    className="h-10 min-w-0 flex-1 bg-transparent pr-3 text-control font-normal outline-none"
+                    className="h-10 w-full min-w-0 flex-1 bg-transparent pr-3 text-control font-normal outline-none"
                     required
                   />
                 </div>
@@ -300,11 +300,11 @@ export function OnlineBookingSettings({
                 <Input
                   name="profile_headline"
                   defaultValue={settings.profile_headline ?? ""}
-                  placeholder="Cirurgia toracica, pneumologia, estetica..."
+                  placeholder="Cirurgia torácica, pneumologia, estética..."
                 />
               </label>
               <label className="grid gap-2 text-sm font-medium">
-                Formacoes
+                Formações
                 <Input
                   name="education_count"
                   type="number"
@@ -331,11 +331,11 @@ export function OnlineBookingSettings({
                 />
               </label>
               <label className="grid gap-2 text-sm font-medium md:col-span-3">
-                Experiencia
+                Experiência
                 <Textarea
                   name="experience_text"
                   defaultValue={settings.experience_text ?? ""}
-                  placeholder="Formacao, residencia, areas de atuacao e diferenciais."
+                  placeholder="Formação, residência, áreas de atuação e diferenciais."
                   className="min-h-32"
                 />
               </label>
@@ -377,11 +377,11 @@ export function OnlineBookingSettings({
               <div className="md:col-span-3">
                 <SectionTitle
                   title="Planos e pagamentos"
-                  description="Defina o que aparece como aceito no perfil publico."
+                  description="Defina o que aparece como aceito no perfil público."
                 />
               </div>
               <label className="grid gap-2 text-sm font-medium">
-                Numero publico de planos aceitos
+                Número público de planos aceitos
                 <Input
                   name="accepted_plan_count"
                   type="number"
@@ -390,11 +390,11 @@ export function OnlineBookingSettings({
                 />
               </label>
               <label className="grid gap-2 text-sm font-medium md:col-span-2">
-                Observacao sobre planos
+                Observação sobre planos
                 <Input
                   name="accepted_plan_notes"
                   defaultValue={settings.accepted_plan_notes ?? ""}
-                  placeholder="A cobertura varia por local e servico."
+                  placeholder="A cobertura varia por local e serviço."
                 />
               </label>
               <CheckboxGrid
@@ -586,11 +586,12 @@ function ReviewsSettings({
       <CardHeader>
         <div className="flex items-center gap-2">
           <MessageSquare className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="font-semibold">Avaliacoes publicas</h2>
+          <h2 className="font-semibold">Avaliações públicas</h2>
           <Badge variant="neutral">{reviews.length}</Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          Cadastre depoimentos verificados e responda como clinica/profissional.
+          Cadastre depoimentos verificados e responda como clínica ou
+          profissional.
         </p>
       </CardHeader>
       <CardContent className="grid gap-5">
@@ -602,7 +603,7 @@ function ReviewsSettings({
             ))
           ) : (
             <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-              Nenhuma avaliacao cadastrada ainda.
+              Nenhuma avaliação cadastrada ainda.
             </div>
           )}
         </div>
@@ -639,14 +640,15 @@ function CreateReviewForm() {
         Data
         <DatePickerInput
           name="review_date"
-          defaultValue={new Date().toISOString().slice(0, 10)}
+          // Data local: o ISO em UTC já é "amanhã" depois das 21h no Brasil.
+          defaultValue={new Intl.DateTimeFormat("en-CA").format(new Date())}
           ariaLabel="Data da avaliação"
           panelAlign="end"
           required
         />
       </label>
       <label className="grid gap-2 text-sm font-medium">
-        Titulo
+        Título
         <Input name="title" placeholder="Destaque, atendimento..." />
       </label>
       <label className="grid gap-2 text-sm font-medium">
@@ -655,14 +657,14 @@ function CreateReviewForm() {
       </label>
       <label className="grid gap-2 text-sm font-medium">
         Tags mencionadas
-        <Input name="tags" placeholder="Atencioso, explicacoes detalhadas" />
+        <Input name="tags" placeholder="Atencioso, explicações detalhadas" />
       </label>
       <label className="grid gap-2 text-sm font-medium md:col-span-3">
         Depoimento
         <Textarea name="body" className="min-h-28" required />
       </label>
       <label className="grid gap-2 text-sm font-medium md:col-span-3">
-        Resposta publica
+        Resposta pública
         <Textarea name="professional_response" />
       </label>
       <div className="flex flex-wrap items-center gap-4 md:col-span-2">
@@ -671,7 +673,7 @@ function CreateReviewForm() {
       </div>
       <div className="flex justify-end md:col-span-1">
         <Button type="submit" disabled={pending}>
-          {pending ? "Salvando..." : "Cadastrar avaliacao"}
+          {pending ? "Salvando..." : "Cadastrar avaliação"}
         </Button>
       </div>
     </form>
@@ -712,8 +714,9 @@ function ReviewResponseForm({
             {!review.active ? <Badge variant="neutral">Oculta</Badge> : null}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {review.review_date}
-            {review.source_label ? ` - ${review.source_label}` : ""}
+            {/* A data vinha crua do banco ("2026-07-14"). */}
+            {formatReviewDate(review.review_date)}
+            {review.source_label ? ` · ${review.source_label}` : ""}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -745,7 +748,7 @@ function ReviewResponseForm({
         </div>
       ) : null}
       <label className="grid gap-2 text-sm font-medium">
-        Resposta publica
+        Resposta pública
         <Textarea
           name="professional_response"
           defaultValue={review.professional_response ?? ""}
@@ -758,4 +761,10 @@ function ReviewResponseForm({
       </div>
     </form>
   );
+}
+
+function formatReviewDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(value)) return value;
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return `${day}/${month}/${year}`;
 }

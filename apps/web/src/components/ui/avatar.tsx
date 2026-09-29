@@ -12,6 +12,7 @@ import { cn, initialsFromName } from "@/lib/utils";
  * sm = 36px — listas densas, células de tabela, header
  * md = 40px — item de conversa, cabeçalho de painel
  * lg = 64px — identificação principal de um contato/paciente
+ * xl = 96px — cabeçalho do próprio perfil
  *
  * Sem foto (ou com foto quebrada) cai para as iniciais. As iniciais são
  * `aria-hidden` porque o nome sempre aparece ao lado nos usos reais.
@@ -20,6 +21,7 @@ const sizes = {
   sm: { box: "size-9", text: "text-caption", pixels: 36 },
   md: { box: "size-10", text: "text-body-sm", pixels: 40 },
   lg: { box: "size-16", text: "text-heading", pixels: 64 },
+  xl: { box: "size-24", text: "text-2xl", pixels: 96 },
 } as const;
 
 const tones = {

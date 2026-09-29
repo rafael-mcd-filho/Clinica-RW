@@ -101,7 +101,7 @@ export function RecordsList({
                 {name}
               </Link>
               {record.social_name ? (
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="mt-0.5 text-caption text-muted-foreground">
                   {record.full_name}
                 </p>
               ) : null}
@@ -116,21 +116,21 @@ export function RecordsList({
           const record = row.original;
           return record.phone || record.whatsapp
             ? formatPhoneBR(record.phone ?? record.whatsapp ?? "")
-            : "Nao informado";
+            : "Não informado";
         },
       },
       {
         accessorFn: (row) => row.id.slice(0, 8),
-        header: "Codigo",
+        header: "Código",
         cell: ({ row }) => (
-          <span className="font-mono text-xs uppercase">
+          <span className="font-mono text-caption uppercase">
             {row.original.id.slice(0, 8)}
           </span>
         ),
       },
       {
         accessorFn: (row) => row.lastEncounterAt ?? "",
-        header: "Ultimo atendimento",
+        header: "Último atendimento",
         cell: ({ row }) => {
           const record = row.original;
           return (
@@ -143,7 +143,7 @@ export function RecordsList({
               {record.lastEncounterId ? (
                 <Link
                   href={`/prontuario/${record.lastEncounterId}`}
-                  className="w-fit text-xs font-medium text-primary hover:underline"
+                  className="w-fit text-caption font-medium text-primary hover:underline"
                 >
                   Ver atendimento
                 </Link>
@@ -174,17 +174,17 @@ export function RecordsList({
       },
       {
         accessorFn: (row) => row.lastInsuranceName ?? "Particular",
-        header: "Convenio",
+        header: "Convênio",
       },
       {
         id: "actions",
-        header: "Acao",
+        header: "Ação",
         enableSorting: false,
         cell: ({ row }) => (
           <div className="text-right">
             <Button asChild size="sm" variant="secondary">
               <Link href={`/pacientes/${row.original.id}`}>
-                <ExternalLink className="size-3.5" />
+                <ExternalLink className="size-3.5" aria-hidden="true" />
                 Abrir
               </Link>
             </Button>
@@ -231,13 +231,96 @@ export function RecordsList({
       </section>
 
       <DataTable
+        ariaLabel="Prontuários dos pacientes"
         columns={columns}
         data={filtered}
-        emptyTitle="Nenhum prontuario encontrado"
+        emptyTitle="Nenhum prontuário encontrado"
         emptyDescription="Ajuste a busca ou o filtro de profissional."
         pageSize={12}
+        renderMobileRow={(record) => (
+          <MedicalRecordMobileCard record={record} />
+        )}
       />
     </div>
+  );
+}
+
+function MedicalRecordMobileCard({ record }: { record: MedicalRecordRow }) {
+  const name = record.social_name || record.full_name;
+  const phone = record.phone || record.whatsapp;
+
+  return (
+    <article className="grid gap-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            href={`/pacientes/${record.id}`}
+            className="block truncate font-semibold hover:text-primary"
+          >
+            {name}
+          </Link>
+          {record.social_name ? (
+            <p className="truncate text-caption text-muted-foreground">
+              {record.full_name}
+            </p>
+          ) : null}
+          <p className="mt-1 text-body-sm text-muted-foreground">
+            {phone ? formatPhoneBR(phone) : "Telefone não informado"}
+          </p>
+        </div>
+        {record.lastEncounterStatus ? (
+          <Badge
+            variant={
+              record.lastEncounterStatus === "finalized" ? "success" : "warning"
+            }
+          >
+            {record.lastEncounterStatus === "finalized"
+              ? "Finalizado"
+              : "Rascunho"}
+          </Badge>
+        ) : null}
+      </div>
+
+      <dl className="grid grid-cols-2 gap-3 rounded-md bg-muted/40 p-3 text-body-sm">
+        <div>
+          <dt className="text-caption text-muted-foreground">Nascimento</dt>
+          <dd className="mt-0.5 font-medium">
+            {record.birth_date
+              ? formatDate(record.birth_date)
+              : "Não informado"}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-caption text-muted-foreground">
+            Último atendimento
+          </dt>
+          <dd className="mt-0.5 font-medium">
+            {record.lastEncounterAt
+              ? formatDate(record.lastEncounterAt)
+              : "Nenhum"}
+          </dd>
+        </div>
+        <div className="col-span-2">
+          <dt className="text-caption text-muted-foreground">Convênio</dt>
+          <dd className="mt-0.5 font-medium">
+            {record.lastInsuranceName ?? "Particular"}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button asChild size="sm" variant="secondary">
+          <Link href={`/pacientes/${record.id}`}>Abrir paciente</Link>
+        </Button>
+        {record.lastEncounterId ? (
+          <Button asChild size="sm">
+            <Link href={`/prontuario/${record.lastEncounterId}`}>
+              Abrir atendimento
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    </article>
   );
 }
 

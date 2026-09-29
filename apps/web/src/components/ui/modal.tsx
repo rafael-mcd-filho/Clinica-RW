@@ -39,7 +39,7 @@ export function Modal({
       }}
     >
       <Dialog.Portal>
-        <div className="fixed inset-0 z-50 grid place-items-center p-4">
+        <div className="fixed inset-0 z-50 grid place-items-center p-2 sm:p-4">
           <Dialog.Overlay className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
           <Dialog.Content
             data-select-portal-root
@@ -53,11 +53,11 @@ export function Modal({
               }
             }}
             className={cn(
-              "relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-lg)] outline-none data-[state=open]:animate-dialog-in",
+              "relative z-10 flex max-h-[calc(100dvh-1rem)] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-lg)] outline-none data-[state=open]:animate-dialog-in sm:max-h-[calc(100dvh-2rem)]",
               className,
             )}
           >
-            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4">
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-3.5 sm:px-5 sm:py-4">
               <div>
                 <Dialog.Title className="text-heading font-semibold">
                   {title}
@@ -83,11 +83,11 @@ export function Modal({
                 </Button>
               </Dialog.Close>
             </header>
-            <div className="min-w-0 overflow-x-hidden overflow-y-auto p-5">
+            <div className="min-w-0 overscroll-contain overflow-x-hidden overflow-y-auto p-4 sm:p-5">
               {children}
             </div>
             {footer ? (
-              <footer className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-4">
+              <footer className="shrink-0 border-t border-border px-4 py-3 sm:px-5 sm:py-4">
                 {footer}
               </footer>
             ) : null}

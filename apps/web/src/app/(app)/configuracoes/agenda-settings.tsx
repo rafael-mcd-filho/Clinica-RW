@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import {
   Prohibit as Ban,
-  CalendarDots as CalendarClock,
   CalendarDots as CalendarDays,
   PlusCircle as CirclePlus,
   Clock as Clock3,
+  Copy,
   Globe as Globe2,
   MapPin,
   DotsThreeVertical as MoreVertical,
@@ -24,16 +25,18 @@ import {
   updateScheduleBlock,
   type AgendaActionState,
 } from "../agenda/actions";
-import { defaultScheduleColor } from "@/lib/colors";
+import { categoricalColors, defaultScheduleColor } from "@/lib/colors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DatePickerInput } from "@/components/ui/date-picker-input";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input, Select } from "@/components/ui/field";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
 import { Modal } from "@/components/ui/modal";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 type Option = { id: string; name: string; active?: boolean };
 
@@ -86,6 +89,7 @@ type EditablePeriod = {
   start_time: string;
   end_time: string;
 };
+type PeriodsError = { weekday: number; message: string };
 
 const initialState: AgendaActionState = {};
 const weekdays = [
@@ -96,6 +100,28 @@ const weekdays = [
   { weekday: 5, label: "Sexta-feira", shortLabel: "Sex" },
   { weekday: 6, label: "Sábado", shortLabel: "Sáb" },
   { weekday: 0, label: "Domingo", shortLabel: "Dom" },
+];
+const editorTabs: Array<{
+  id: ScheduleEditorSection;
+  label: string;
+  icon: typeof CalendarDays;
+}> = [
+  { id: "general", label: "Dados gerais", icon: CalendarDays },
+  { id: "hours", label: "Horários", icon: Clock3 },
+  { id: "online", label: "Agendamento online", icon: Globe2 },
+  { id: "blocks", label: "Bloqueios", icon: Ban },
+];
+// Cores prontas da paleta do sistema; a personalizada continua possível.
+const schedulePalette: string[] = [
+  categoricalColors.blue,
+  categoricalColors.teal,
+  categoricalColors.violet,
+  categoricalColors.green,
+  categoricalColors.amber,
+  categoricalColors.pink,
+  categoricalColors.indigo,
+  categoricalColors.red,
+  categoricalColors.slate,
 ];
 
 export function AgendaSettings({
@@ -109,9 +135,6 @@ export function AgendaSettings({
   canBlock: boolean;
   initialScheduleId?: string;
 }) {
-  const formRef = useRef<HTMLFormElement>(null);
-  const confirmedDeactivationRef = useRef(false);
-  const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
   const [editor, setEditor] = useState<string | "new" | null>(() =>
     initialScheduleId &&
     data.schedules.some((schedule) => schedule.id === initialScheduleId)
@@ -120,6 +143,8 @@ export function AgendaSettings({
   );
   const [editorSection, setEditorSection] =
     useState<ScheduleEditorSection>("general");
+  // Momento da abertura da tela, para saber se um bloqueio já começou.
+  const [nowMs] = useState(() => Date.now());
   const selectedSchedule =
     editor && editor !== "new"
       ? data.schedules.find((schedule) => schedule.id === editor)
@@ -130,6 +155,11 @@ export function AgendaSettings({
   const onlineCount = data.schedules.filter(
     (schedule) => schedule.active && schedule.online_enabled,
   ).length;
+
+  function openNew() {
+    setEditorSection("general");
+    setEditor("new");
+  }
 
   return (
     <div className="grid gap-5">
@@ -147,56 +177,59 @@ export function AgendaSettings({
                   regras próprias para o agendamento online.
                 </HelpTooltip>
               </div>
+              {/* Resumo em uma linha: três cartões de número grande diziam
+                  pouco e ocupavam a tela. */}
               <p className="mt-1 text-sm text-muted-foreground">
-                Configure toda a operação de uma agenda em um único lugar.
+                {data.schedules.length
+                  ? `${data.schedules.length} ${data.schedules.length === 1 ? "agenda" : "agendas"} · ${activeCount} ${activeCount === 1 ? "ativa" : "ativas"} · ${onlineCount} no agendamento online`
+                  : "Configure toda a operação de uma agenda em um único lugar."}
               </p>
             </div>
           </div>
           {canConfigure ? (
-            <Button
-              type="button"
-              onClick={() => {
-                setEditorSection("general");
-                setEditor("new");
-              }}
-            >
+            <Button type="button" onClick={openNew}>
               <CirclePlus className="size-4" aria-hidden="true" />
               Nova agenda
             </Button>
           ) : null}
         </header>
 
-        <div className="grid gap-4 p-5">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Metric label="Agendas cadastradas" value={data.schedules.length} />
-            <Metric label="Ativas na operação" value={activeCount} />
-            <Metric label="Disponíveis online" value={onlineCount} />
-          </div>
-
-          <div className="grid gap-3">
-            {data.schedules.map((schedule) => (
-              <ScheduleCard
-                key={schedule.id}
-                schedule={schedule}
-                data={data}
-                canConfigure={canConfigure}
-                canBlock={canBlock}
-                onEdit={(section) => {
-                  setEditorSection(section);
-                  setEditor(schedule.id);
-                }}
+        <div className="grid gap-3 p-5">
+          {data.schedules.map((schedule) => (
+            <ScheduleCard
+              key={schedule.id}
+              schedule={schedule}
+              data={data}
+              nowMs={nowMs}
+              canConfigure={canConfigure}
+              canBlock={canBlock}
+              onEdit={(section) => {
+                setEditorSection(section);
+                setEditor(schedule.id);
+              }}
+            />
+          ))}
+          {!data.schedules.length ? (
+            <div className="grid justify-items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-5 py-10 text-center">
+              <CalendarDays
+                className="size-6 text-muted-foreground"
+                aria-hidden="true"
               />
-            ))}
-            {!data.schedules.length ? (
-              <div className="rounded-lg border border-dashed border-border bg-muted/20 px-5 py-10 text-center">
-                <CalendarClock className="mx-auto size-6 text-muted-foreground" />
-                <p className="mt-3 font-medium">Nenhuma agenda cadastrada</p>
+              <div>
+                <p className="font-medium">Nenhuma agenda cadastrada</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Crie uma agenda para definir profissional, unidade e horários.
+                  Uma agenda junta profissional, unidade e horários de
+                  atendimento. Crie a primeira para começar a marcar consultas.
                 </p>
               </div>
-            ) : null}
-          </div>
+              {canConfigure ? (
+                <Button type="button" variant="secondary" onClick={openNew}>
+                  <CirclePlus className="size-4" aria-hidden="true" />
+                  Nova agenda
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -207,7 +240,7 @@ export function AgendaSettings({
           schedule={selectedSchedule}
           canConfigure={canConfigure}
           canBlock={canBlock}
-          section={editor === "new" ? null : editorSection}
+          initialSection={editor === "new" ? "general" : editorSection}
           onClose={() => setEditor(null)}
         />
       ) : null}
@@ -215,24 +248,17 @@ export function AgendaSettings({
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md border border-border bg-muted/20 px-4 py-3">
-      <p className="text-display font-semibold tabular-nums">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
 function ScheduleCard({
   schedule,
   data,
+  nowMs,
   canConfigure,
   canBlock,
   onEdit,
 }: {
   schedule: ScheduleItem;
   data: AgendaSettingsData;
+  nowMs: number;
   canConfigure: boolean;
   canBlock: boolean;
   onEdit: (section: ScheduleEditorSection) => void;
@@ -254,9 +280,13 @@ function ScheduleCard({
       activeProcedureIds.has(item.procedure_id),
   ).length;
   const nextBlock = blocks[0];
+  const nextBlockOngoing = nextBlock
+    ? new Date(nextBlock.start_at).getTime() <= nowMs
+    : false;
+  const canOpen = canConfigure || canBlock;
 
   return (
-    <article className="rounded-lg border border-border bg-background px-3 py-3 transition-colors hover:bg-muted/15">
+    <article className="rounded-lg border border-border bg-background px-3 py-3">
       <div className="flex items-start gap-3">
         <span
           className="mt-1.5 size-2.5 shrink-0 rounded-full ring-2 ring-border"
@@ -267,7 +297,18 @@ function ScheduleCard({
           <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-semibold">{schedule.name}</h3>
+                {/* O nome abre a agenda: é onde o olho já está. */}
+                {canOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(canConfigure ? "general" : "blocks")}
+                    className="text-left font-semibold underline-offset-4 hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  >
+                    {schedule.name}
+                  </button>
+                ) : (
+                  <h3 className="font-semibold">{schedule.name}</h3>
+                )}
                 <Badge variant={schedule.active ? "success" : "neutral"}>
                   {schedule.active ? "Ativa" : "Inativa"}
                 </Badge>
@@ -280,7 +321,7 @@ function ScheduleCard({
                 >
                   {schedule.active && schedule.online_enabled
                     ? "Online"
-                    : "Fora do portal"}
+                    : "Online desligado"}
                 </Badge>
               </div>
               <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -294,55 +335,29 @@ function ScheduleCard({
                 </span>
               </div>
             </div>
-            {canConfigure || canBlock ? (
+            {canOpen ? (
               <DropdownMenu
                 trigger={<MoreVertical className="size-4" aria-hidden="true" />}
                 triggerLabel={`Ações de ${schedule.name}`}
               >
                 {(close) => (
                   <>
-                    {canConfigure ? (
-                      <>
+                    {editorTabs
+                      .filter((tab) =>
+                        tab.id === "blocks" ? canBlock : canConfigure,
+                      )
+                      .map((tab) => (
                         <DropdownMenuItem
-                          icon={Pencil}
+                          key={tab.id}
+                          icon={tab.id === "general" ? Pencil : tab.icon}
                           onSelect={() => {
                             close();
-                            onEdit("general");
+                            onEdit(tab.id);
                           }}
                         >
-                          Dados gerais
+                          {tab.label}
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          icon={Clock3}
-                          onSelect={() => {
-                            close();
-                            onEdit("hours");
-                          }}
-                        >
-                          Horários
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          icon={Globe2}
-                          onSelect={() => {
-                            close();
-                            onEdit("online");
-                          }}
-                        >
-                          Agendamento online
-                        </DropdownMenuItem>
-                      </>
-                    ) : null}
-                    {canBlock ? (
-                      <DropdownMenuItem
-                        icon={Ban}
-                        onSelect={() => {
-                          close();
-                          onEdit("blocks");
-                        }}
-                      >
-                        Bloqueios
-                      </DropdownMenuItem>
-                    ) : null}
+                      ))}
                   </>
                 )}
               </DropdownMenu>
@@ -351,7 +366,7 @@ function ScheduleCard({
 
           <div className="mt-3 grid gap-x-5 gap-y-2 border-t border-border/70 pt-2.5 text-sm md:grid-cols-3">
             <CardDetail
-              icon={CalendarClock}
+              icon={Clock3}
               label="Horários semanais"
               value={formatScheduleHours(rows)}
             />
@@ -361,12 +376,14 @@ function ScheduleCard({
               value={
                 schedule.online_enabled
                   ? `${schedule.min_notice_hours}h de antecedência · ${procedureCount} procedimento${procedureCount === 1 ? "" : "s"}`
-                  : "Agendamento online desativado"
+                  : "Agendamento online desligado"
               }
             />
             <CardDetail
               icon={Ban}
-              label="Próximo bloqueio"
+              label={
+                nextBlockOngoing ? "Bloqueio em andamento" : "Próximo bloqueio"
+              }
               value={
                 nextBlock
                   ? formatBlockInterval(
@@ -389,7 +406,7 @@ function CardDetail({
   label,
   value,
 }: {
-  icon: typeof CalendarClock;
+  icon: typeof CalendarDays;
   label: string;
   value: string;
 }) {
@@ -409,23 +426,27 @@ function ScheduleConfigurationEditor({
   schedule,
   canConfigure,
   canBlock,
-  section,
+  initialSection,
   onClose,
 }: {
   data: AgendaSettingsData;
   schedule?: ScheduleItem;
   canConfigure: boolean;
   canBlock: boolean;
-  section: ScheduleEditorSection | null;
+  initialSection: ScheduleEditorSection;
   onClose: () => void;
 }) {
   const scheduleRows = schedule
     ? data.availabilities.filter((row) => row.schedule_id === schedule.id)
     : [];
+  // Abas dentro da janela: antes cada item do menu abria só uma seção, e
+  // passar de Horários para Online exigia fechar e reabrir.
+  const [section, setSection] = useState<ScheduleEditorSection>(initialSection);
   const [active, setActive] = useState(schedule?.active ?? true);
   const [onlineEnabled, setOnlineEnabled] = useState(
     schedule?.online_enabled ?? false,
   );
+  const [color, setColor] = useState(schedule?.color ?? defaultScheduleColor);
   const formRef = useRef<HTMLFormElement>(null);
   const confirmedDeactivationRef = useRef(false);
   const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
@@ -461,10 +482,13 @@ function ScheduleConfigurationEditor({
     },
     initialState,
   );
-  const availabilityError = useMemo(() => validatePeriods(periods), [periods]);
+  const periodsError = useMemo(() => validatePeriods(periods), [periods]);
   const scheduleBlocks = schedule
     ? data.blocks.filter((block) => block.schedule_id === schedule.id)
     : [];
+  const visibleTabs = editorTabs.filter((tab) =>
+    tab.id === "blocks" ? canBlock : canConfigure,
+  );
   useToastState(state);
 
   function addPeriod(weekday: number) {
@@ -493,14 +517,87 @@ function ScheduleConfigurationEditor({
     );
   }
 
+  // Segunda a sexta costumam ser iguais: copiar um dia evita refazer tudo.
+  function copyDay(sourceWeekday: number, targets: number[]) {
+    setPeriods((current) => {
+      const source = current.filter(
+        (period) => period.weekday === sourceWeekday,
+      );
+      const kept = current.filter(
+        (period) =>
+          period.weekday === sourceWeekday || !targets.includes(period.weekday),
+      );
+      const copies = targets
+        .filter((weekday) => weekday !== sourceWeekday)
+        .flatMap((weekday) =>
+          source.map((period) => ({
+            ...period,
+            key: `${weekday}-${Date.now()}-${Math.random()}`,
+            weekday,
+          })),
+        );
+      return [...kept, ...copies];
+    });
+    toast.success(
+      targets.length >= 6
+        ? "Horários copiados para todos os dias."
+        : "Horários copiados para os dias úteis.",
+    );
+  }
+
   return (
     <Modal
       open
       onClose={onClose}
       title={schedule ? schedule.name : "Nova agenda profissional"}
-      description="Dados, expediente, publicação online e exceções da agenda."
-      className="max-w-6xl"
+      description={
+        schedule
+          ? "Dados, horários, publicação online e bloqueios desta agenda."
+          : "Comece pelos dados gerais; horários e online podem ser ajustados depois."
+      }
+      className="max-w-4xl"
     >
+      <div
+        role="tablist"
+        aria-label="Seções da agenda"
+        className="mb-4 flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border bg-muted p-1"
+      >
+        {visibleTabs.map((tab) => {
+          const disabled = tab.id === "blocks" && !schedule;
+          const selected = section === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              disabled={disabled}
+              title={
+                disabled
+                  ? "Salve a agenda para cadastrar bloqueios."
+                  : undefined
+              }
+              onClick={() => setSection(tab.id)}
+              className={cn(
+                "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-body-sm font-medium transition-[background-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50",
+                selected
+                  ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <tab.icon className="size-4" aria-hidden="true" />
+              {tab.label}
+              {tab.id === "hours" && periodsError ? (
+                <span
+                  className="size-1.5 rounded-full bg-destructive"
+                  aria-label="(com erro)"
+                />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
       <form
         ref={formRef}
         action={action}
@@ -543,13 +640,11 @@ function ScheduleConfigurationEditor({
           name="procedure_ids_payload"
           value={JSON.stringify([...selectedProcedures])}
         />
+        <input type="hidden" name="color" value={color} />
 
-        <EditorSection
-          hidden={section !== null && section !== "general"}
-          title="Dados gerais"
-          description="Identificação, profissional responsável e unidade de atendimento."
-          icon={CalendarDays}
-        >
+        {/* As seções continuam montadas (só escondidas): o formulário é um
+            só e salva tudo junto. */}
+        <section hidden={section !== "general"} className="grid gap-4">
           <div className="grid gap-4 md:grid-cols-2">
             <OptionSelect
               name="professional_id"
@@ -557,6 +652,8 @@ function ScheduleConfigurationEditor({
               options={data.professionals}
               defaultValue={schedule?.professional_id}
               disabled={!canConfigure || pending}
+              emptyHint="Cadastre um profissional em Configurações › Cadastros e operação › Equipe."
+              emptyHref="/configuracoes/cadastros?section=equipe"
             />
             <OptionSelect
               name="unit_id"
@@ -564,6 +661,8 @@ function ScheduleConfigurationEditor({
               options={data.units}
               defaultValue={schedule?.unit_id}
               disabled={!canConfigure || pending}
+              emptyHint="Cadastre uma unidade em Configurações › Cadastros e operação › Estrutura."
+              emptyHref="/configuracoes/cadastros?section=estrutura"
             />
             <label className="grid gap-2 text-sm font-medium">
               Nome da agenda
@@ -575,18 +674,60 @@ function ScheduleConfigurationEditor({
                 required
               />
             </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Cor na agenda
-              <input
-                name="color"
-                type="color"
-                defaultValue={schedule?.color ?? defaultScheduleColor}
-                disabled={!canConfigure || pending}
-                className="h-10 w-24 rounded-md border border-border bg-card p-1"
-              />
-            </label>
+            <fieldset className="grid gap-2">
+              <legend className="mb-2 text-sm font-medium">
+                Cor na agenda
+              </legend>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {schedulePalette.map((swatch) => (
+                  <button
+                    key={swatch}
+                    type="button"
+                    disabled={!canConfigure || pending}
+                    onClick={() => setColor(swatch)}
+                    aria-label={`Usar a cor ${swatch}`}
+                    aria-pressed={color === swatch}
+                    className={cn(
+                      "size-7 rounded-full ring-offset-2 ring-offset-card transition-[box-shadow,scale] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:scale-95",
+                      color === swatch ? "ring-2 ring-foreground" : "",
+                    )}
+                    style={{ backgroundColor: swatch }}
+                  />
+                ))}
+                {/* Cor fora da paleta aparece aqui, marcada. */}
+                <label
+                  className={cn(
+                    "relative size-7 cursor-pointer overflow-hidden rounded-full ring-offset-2 ring-offset-card",
+                    schedulePalette.includes(color)
+                      ? "border border-dashed border-border-strong"
+                      : "ring-2 ring-foreground",
+                  )}
+                  style={
+                    schedulePalette.includes(color)
+                      ? undefined
+                      : { backgroundColor: color }
+                  }
+                  title="Outra cor"
+                >
+                  <span className="sr-only">Escolher outra cor</span>
+                  <input
+                    type="color"
+                    value={color}
+                    disabled={!canConfigure || pending}
+                    onChange={(event) => setColor(event.target.value)}
+                    className="absolute inset-0 size-full cursor-pointer opacity-0"
+                  />
+                  {schedulePalette.includes(color) ? (
+                    <Plus
+                      className="absolute left-1/2 top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </label>
+              </div>
+            </fieldset>
           </div>
-          <div className="mt-4 rounded-md border border-border bg-muted/25 p-3">
+          <div className="rounded-md border border-border bg-muted/25 p-3">
             <Switch
               checked={active}
               disabled={!canConfigure || pending}
@@ -601,20 +742,20 @@ function ScheduleConfigurationEditor({
               são aceitos.
             </p>
           </div>
-        </EditorSection>
+        </section>
 
-        <EditorSection
-          hidden={section !== null && section !== "hours"}
-          title="Horários de atendimento"
-          description="Cadastre um ou mais períodos por dia. O espaço entre eles será a pausa de almoço ou outro intervalo."
-          icon={Clock3}
-        >
-          <label className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium">
+        <section hidden={section !== "hours"} className="grid gap-3">
+          <p className="text-sm text-muted-foreground">
+            Cadastre um ou mais períodos por dia. O espaço entre eles vira a
+            pausa de almoço ou outro intervalo.
+          </p>
+          <label className="flex flex-wrap items-center gap-2 text-sm font-medium">
             <span className="inline-flex items-center gap-1.5">
-              Intervalo entre opções
+              Intervalo entre horários
               <HelpTooltip>
-                Espaçamento entre os horários de início oferecidos. A duração do
-                procedimento continua sendo respeitada.
+                De quanto em quanto tempo os horários de início são oferecidos
+                (ex.: 30 min → 08:00, 08:30…). A duração do procedimento
+                continua sendo respeitada.
               </HelpTooltip>
             </span>
             <Input
@@ -625,7 +766,7 @@ function ScheduleConfigurationEditor({
               step="5"
               defaultValue={schedule?.slot_minutes ?? 30}
               disabled={!canConfigure || pending}
-              className="h-8 w-20"
+              className="w-24"
               required
             />
             <span className="text-xs font-normal text-muted-foreground">
@@ -640,9 +781,15 @@ function ScheduleConfigurationEditor({
                 periods={periods.filter(
                   (period) => period.weekday === day.weekday,
                 )}
+                error={
+                  periodsError?.weekday === day.weekday
+                    ? periodsError.message
+                    : undefined
+                }
                 disabled={!canConfigure || pending}
                 onAdd={() => addPeriod(day.weekday)}
                 onChange={updatePeriod}
+                onCopy={(targets) => copyDay(day.weekday, targets)}
                 onRemove={(key) =>
                   setPeriods((current) =>
                     current.filter((period) => period.key !== key),
@@ -651,18 +798,10 @@ function ScheduleConfigurationEditor({
               />
             ))}
           </div>
-          {availabilityError ? (
-            <p className="mt-3 text-sm text-destructive">{availabilityError}</p>
-          ) : null}
-        </EditorSection>
+        </section>
 
-        <EditorSection
-          hidden={section !== null && section !== "online"}
-          title="Agendamento online"
-          description="Defina se esta agenda aparece no portal e quais regras ela segue."
-          icon={Globe2}
-        >
-          <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/25 p-3 lg:flex-row lg:items-center lg:justify-between">
+        <section hidden={section !== "online"} className="grid gap-4">
+          <div className="grid gap-3 rounded-md border border-border bg-muted/25 p-3">
             <div>
               <Switch
                 checked={onlineEnabled}
@@ -671,11 +810,19 @@ function ScheduleConfigurationEditor({
                 onCheckedChange={setOnlineEnabled}
               />
               <p className="mt-1 pl-11 text-xs text-muted-foreground">
-                A publicação geral continua sendo controlada na tela de
-                Agendamento online.
+                {active
+                  ? "A publicação geral continua sendo controlada na tela de Agendamento online."
+                  : "Ative a agenda em Dados gerais para publicá-la online."}
               </p>
             </div>
-            <div className="grid shrink-0 gap-2 sm:grid-cols-3">
+            {/* As regras só valem com o online ligado: desligado, ficam
+                esmaecidas em vez de parecer editáveis à toa. */}
+            <div
+              className={cn(
+                "grid gap-3 transition-opacity duration-[var(--motion-fast)] sm:grid-cols-3",
+                !onlineEnabled && "opacity-60",
+              )}
+            >
               <NumberField
                 name="min_notice_hours"
                 label="Antecedência mínima"
@@ -684,6 +831,7 @@ function ScheduleConfigurationEditor({
                 max={720}
                 defaultValue={schedule?.min_notice_hours ?? 24}
                 disabled={!canConfigure || pending}
+                readOnly={!onlineEnabled}
               />
               <NumberField
                 name="max_days_ahead"
@@ -693,6 +841,7 @@ function ScheduleConfigurationEditor({
                 max={365}
                 defaultValue={schedule?.max_days_ahead ?? 30}
                 disabled={!canConfigure || pending}
+                readOnly={!onlineEnabled}
               />
               <NumberField
                 name="cancellation_notice_hours"
@@ -702,11 +851,12 @@ function ScheduleConfigurationEditor({
                 max={720}
                 defaultValue={schedule?.cancellation_notice_hours ?? 24}
                 disabled={!canConfigure || pending}
+                readOnly={!onlineEnabled}
               />
             </div>
           </div>
 
-          <div className="mt-4 border-t border-border pt-3">
+          <div>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h4 className="text-sm font-semibold">
                 Procedimentos oferecidos
@@ -716,93 +866,123 @@ function ScheduleConfigurationEditor({
               </p>
             </div>
             <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-              {data.procedures.map((procedure) => (
-                <div
-                  key={procedure.id}
-                  className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 py-2"
-                >
-                  <Checkbox
-                    checked={selectedProcedures.has(procedure.id)}
-                    disabled={!canConfigure || pending}
-                    aria-label={`Oferecer ${procedure.name}`}
-                    onChange={(event) => {
-                      setSelectedProcedures((current) => {
-                        const next = new Set(current);
-                        if (event.target.checked) next.add(procedure.id);
-                        else next.delete(procedure.id);
-                        return next;
-                      });
-                    }}
-                  />
-                  <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium">
-                      {procedure.name}
+              {data.procedures.map((procedure) => {
+                const checked = selectedProcedures.has(procedure.id);
+                return (
+                  // A linha inteira marca: antes só a caixinha de 16 px.
+                  <label
+                    key={procedure.id}
+                    className={cn(
+                      "flex min-w-0 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 transition-colors duration-[var(--motion-fast)]",
+                      checked
+                        ? "border-primary/40 bg-primary-muted/30"
+                        : "border-border bg-background hover:border-primary/30",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!canConfigure || pending}
+                      onChange={(event) => {
+                        setSelectedProcedures((current) => {
+                          const next = new Set(current);
+                          if (event.target.checked) next.add(procedure.id);
+                          else next.delete(procedure.id);
+                          return next;
+                        });
+                      }}
+                      className="size-4 shrink-0 accent-primary"
+                    />
+                    <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {procedure.name}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {procedure.duration_minutes} min
+                      </span>
                     </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {procedure.duration_minutes} min
-                    </span>
-                  </span>
-                </div>
-              ))}
+                  </label>
+                );
+              })}
               {!data.procedures.length ? (
                 <p className="text-sm text-muted-foreground">
-                  Nenhum procedimento ativo cadastrado.
+                  Nenhum procedimento ativo.{" "}
+                  <Link
+                    href="/configuracoes/cadastros?section=servicos"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Cadastrar procedimentos
+                  </Link>
                 </p>
               ) : null}
             </div>
           </div>
-        </EditorSection>
-
-        <EditorSection
-          hidden={section !== null && section !== "blocks"}
-          title="Bloqueios e exceções"
-          description="Bloqueios sempre prevalecem sobre os horários recorrentes e também removem o período do portal online."
-          icon={Ban}
-          action={
-            schedule && canBlock ? (
-              <BlockForm scheduleId={schedule.id} timeZone={data.timeZone} />
-            ) : null
-          }
-        >
-          {schedule ? (
-            <BlocksList
-              blocks={scheduleBlocks}
-              scheduleId={schedule.id}
-              timeZone={data.timeZone}
-              canBlock={canBlock}
-            />
-          ) : (
-            <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-              Salve a agenda antes de cadastrar bloqueios.
-            </p>
-          )}
-        </EditorSection>
+        </section>
 
         {state.error ? (
-          <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          >
             {state.error}
           </p>
         ) : null}
-
-        <div className="flex flex-col-reverse justify-end gap-2 border-t border-border pt-4 sm:flex-row">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancelar
-          </Button>
-          {canConfigure && section !== "blocks" ? (
-            <Button
-              type="submit"
-              disabled={pending || Boolean(availabilityError)}
+        {periodsError && section !== "hours" ? (
+          <p className="flex flex-wrap items-center gap-2 text-sm text-destructive">
+            {periodsError.message}
+            <button
+              type="button"
+              onClick={() => setSection("hours")}
+              className="font-medium underline underline-offset-4"
             >
-              <Save className="size-4" aria-hidden="true" />
-              {pending
-                ? "Salvando..."
-                : schedule
-                  ? "Salvar configuração"
-                  : "Criar agenda"}
+              Ver horários
+            </button>
+          </p>
+        ) : null}
+
+        {section !== "blocks" ? (
+          <div className="flex flex-col-reverse justify-end gap-2 border-t border-border pt-4 sm:flex-row">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancelar
             </Button>
-          ) : null}
-        </div>
+            {canConfigure ? (
+              <Button type="submit" disabled={pending || Boolean(periodsError)}>
+                <Save className="size-4" aria-hidden="true" />
+                {pending
+                  ? "Salvando..."
+                  : schedule
+                    ? "Salvar configuração"
+                    : "Criar agenda"}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </form>
+
+      {/* Bloqueios salvam na hora, fora do formulário da agenda. */}
+      {section === "blocks" && schedule ? (
+        <div className="grid gap-4">
+          <p className="text-sm text-muted-foreground">
+            Bloqueios sempre prevalecem sobre os horários da semana e também
+            tiram o período do agendamento online. Eles são salvos na hora.
+          </p>
+          {canBlock ? (
+            <BlockEditor scheduleId={schedule.id} timeZone={data.timeZone} />
+          ) : null}
+          <BlocksList
+            blocks={scheduleBlocks}
+            scheduleId={schedule.id}
+            timeZone={data.timeZone}
+            canBlock={canBlock}
+          />
+          <div className="flex justify-end border-t border-border pt-4">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Fechar
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <ConfirmDialog
         open={confirmingDeactivation}
         onClose={() => setConfirmingDeactivation(false)}
@@ -824,65 +1004,35 @@ function ScheduleConfigurationEditor({
   );
 }
 
-function EditorSection({
-  hidden,
-  title,
-  description,
-  icon: Icon,
-  action,
-  children,
-}: {
-  hidden?: boolean;
-  title: string;
-  description: string;
-  icon: typeof CalendarDays;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section
-      hidden={hidden}
-      className="rounded-lg border border-border bg-background"
-    >
-      <header className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-primary-muted text-primary">
-            <Icon className="size-4" aria-hidden="true" />
-          </span>
-          <div>
-            <h3 className="font-semibold">{title}</h3>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {description}
-            </p>
-          </div>
-        </div>
-        {action}
-      </header>
-      <div className="p-4">{children}</div>
-    </section>
-  );
-}
-
 function DayPeriodsEditor({
   day,
   periods,
+  error,
   disabled,
   onAdd,
   onChange,
+  onCopy,
   onRemove,
 }: {
   day: (typeof weekdays)[number];
   periods: EditablePeriod[];
+  error?: string;
   disabled: boolean;
   onAdd: () => void;
   onChange: (key: string, patch: Partial<EditablePeriod>) => void;
+  onCopy: (targets: number[]) => void;
   onRemove: (key: string) => void;
 }) {
   const orderedPeriods = [...periods].sort((left, right) =>
     left.start_time.localeCompare(right.start_time),
   );
   return (
-    <div className="grid min-h-14 gap-2 bg-background px-3 py-2 sm:grid-cols-[8.5rem_minmax(0,1fr)_auto] sm:items-center">
+    <div
+      className={cn(
+        "grid min-h-14 gap-2 px-3 py-2 sm:grid-cols-[8.5rem_minmax(0,1fr)_auto] sm:items-center",
+        error ? "bg-destructive/5" : "bg-background",
+      )}
+    >
       <div className="flex items-center gap-2">
         <span className="grid size-7 place-items-center rounded bg-muted text-caption font-semibold sm:hidden">
           {day.shortLabel}
@@ -890,63 +1040,104 @@ function DayPeriodsEditor({
         <p className="hidden text-sm font-medium sm:block">{day.label}</p>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-wrap gap-2">
-        {orderedPeriods.length ? (
-          orderedPeriods.map((period, index) => (
-            <div
-              key={period.key}
-              className="flex min-w-0 items-center gap-1 rounded-md border border-border bg-card p-1 shadow-[var(--shadow-soft)]"
-            >
-              <label className="sr-only" htmlFor={`${period.key}-start`}>
-                Início do período {index + 1} de {day.label}
-              </label>
-              <Input
-                id={`${period.key}-start`}
-                type="time"
-                value={period.start_time}
-                disabled={disabled}
-                onChange={(event) =>
-                  onChange(period.key, { start_time: event.target.value })
-                }
-                required
-                className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-control shadow-none"
-              />
-              <span className="text-xs text-muted-foreground">–</span>
-              <label className="sr-only" htmlFor={`${period.key}-end`}>
-                Fim do período {index + 1} de {day.label}
-              </label>
-              <Input
-                id={`${period.key}-end`}
-                type="time"
-                value={period.end_time}
-                disabled={disabled}
-                onChange={(event) =>
-                  onChange(period.key, { end_time: event.target.value })
-                }
-                required
-                className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-control shadow-none"
-              />
-              <Button
-                type="button"
-                variant="destructive-ghost"
-                size="icon-sm"
-                disabled={disabled}
-                onClick={() => onRemove(period.key)}
-                aria-label={`Remover período ${index + 1} de ${day.label}`}
-                className="size-8 shrink-0"
+      <div className="grid min-w-0 gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+          {orderedPeriods.length ? (
+            orderedPeriods.map((period, index) => (
+              <div
+                key={period.key}
+                className={cn(
+                  "flex min-w-0 animate-content-enter items-center gap-1 rounded-md border bg-card p-1 shadow-[var(--shadow-soft)]",
+                  error ? "border-destructive/60" : "border-border",
+                )}
               >
-                <Trash2 className="size-3.5" aria-hidden="true" />
-              </Button>
-            </div>
-          ))
-        ) : (
-          <span className="self-center text-xs text-muted-foreground">
-            Sem atendimento
-          </span>
-        )}
+                <label className="sr-only" htmlFor={`${period.key}-start`}>
+                  Início do período {index + 1} de {day.label}
+                </label>
+                <Input
+                  id={`${period.key}-start`}
+                  type="time"
+                  value={period.start_time}
+                  disabled={disabled}
+                  aria-invalid={Boolean(error)}
+                  onChange={(event) =>
+                    onChange(period.key, { start_time: event.target.value })
+                  }
+                  required
+                  className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-control shadow-none"
+                />
+                <span className="text-xs text-muted-foreground">–</span>
+                <label className="sr-only" htmlFor={`${period.key}-end`}>
+                  Fim do período {index + 1} de {day.label}
+                </label>
+                <Input
+                  id={`${period.key}-end`}
+                  type="time"
+                  value={period.end_time}
+                  disabled={disabled}
+                  aria-invalid={Boolean(error)}
+                  onChange={(event) =>
+                    onChange(period.key, { end_time: event.target.value })
+                  }
+                  required
+                  className="h-8 w-[7.25rem] min-w-0 border-0 px-2 text-control shadow-none"
+                />
+                <Button
+                  type="button"
+                  variant="destructive-ghost"
+                  size="icon-sm"
+                  disabled={disabled}
+                  onClick={() => onRemove(period.key)}
+                  aria-label={`Remover período ${index + 1} de ${day.label}`}
+                  className="size-8 shrink-0"
+                >
+                  <Trash2 className="size-3.5" aria-hidden="true" />
+                </Button>
+              </div>
+            ))
+          ) : (
+            <span className="self-center text-xs text-muted-foreground">
+              Sem atendimento
+            </span>
+          )}
+        </div>
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-1">
+        {orderedPeriods.length ? (
+          <DropdownMenu
+            trigger={<Copy className="size-4" aria-hidden="true" />}
+            triggerLabel={`Copiar horários de ${day.label}`}
+          >
+            {(close) => (
+              <>
+                <DropdownMenuItem
+                  icon={Copy}
+                  onSelect={() => {
+                    close();
+                    onCopy([1, 2, 3, 4, 5]);
+                  }}
+                >
+                  Copiar para os dias úteis
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  icon={Copy}
+                  onSelect={() => {
+                    close();
+                    onCopy([0, 1, 2, 3, 4, 5, 6]);
+                  }}
+                >
+                  Copiar para todos os dias
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenu>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -970,6 +1161,7 @@ function NumberField({
   max,
   defaultValue,
   disabled,
+  readOnly,
 }: {
   name: string;
   label: string;
@@ -978,9 +1170,11 @@ function NumberField({
   max: number;
   defaultValue: number;
   disabled: boolean;
+  /** Somente leitura (e não desativado): o valor continua indo no envio. */
+  readOnly?: boolean;
 }) {
   return (
-    <label className="grid gap-1 text-xs font-medium">
+    <label className="grid gap-1.5 text-sm font-medium">
       {label}
       <div className="flex items-center gap-1.5">
         <Input
@@ -990,8 +1184,10 @@ function NumberField({
           max={max}
           defaultValue={defaultValue}
           disabled={disabled}
+          readOnly={readOnly}
+          aria-readonly={readOnly || undefined}
           required
-          className="h-8 w-20 min-w-0 px-2"
+          className="w-24 min-w-0 read-only:bg-muted/40"
         />
         <span className="text-xs font-normal text-muted-foreground">
           {suffix}
@@ -1012,6 +1208,8 @@ function BlocksList({
   timeZone: string;
   canBlock: boolean;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   if (!blocks.length) {
     return (
       <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
@@ -1021,43 +1219,68 @@ function BlocksList({
   }
   return (
     <div className="grid gap-2">
-      {blocks.map((block) => (
-        <div
-          key={block.id}
-          className="flex flex-col gap-3 rounded-md border border-border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div className="min-w-0">
-            <p className="text-sm font-medium">
-              {formatBlockInterval(block.start_at, block.end_at, timeZone)}
-            </p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {block.reason || "Sem motivo informado"}
-            </p>
-          </div>
-          {canBlock ? (
-            <div className="flex shrink-0 gap-1">
-              <BlockForm
-                block={block}
-                scheduleId={scheduleId}
-                timeZone={timeZone}
-              />
-              <DeleteBlockButton block={block} timeZone={timeZone} />
+      {blocks.map((block) =>
+        editingId === block.id ? (
+          <BlockEditor
+            key={block.id}
+            block={block}
+            scheduleId={scheduleId}
+            timeZone={timeZone}
+            initiallyOpen
+            onDone={() => setEditingId(null)}
+          />
+        ) : (
+          <div
+            key={block.id}
+            className="flex flex-col gap-3 rounded-md border border-border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                {formatBlockInterval(block.start_at, block.end_at, timeZone)}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {block.reason || "Sem motivo informado"}
+              </p>
             </div>
-          ) : null}
-        </div>
-      ))}
+            {canBlock ? (
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon-sm"
+                  aria-label="Editar bloqueio"
+                  title="Editar"
+                  onClick={() => setEditingId(block.id)}
+                >
+                  <Pencil className="size-4" aria-hidden="true" />
+                </Button>
+                <DeleteBlockButton block={block} timeZone={timeZone} />
+              </div>
+            ) : null}
+          </div>
+        ),
+      )}
     </div>
   );
 }
 
-function BlockForm({
+/**
+ * Criar ou editar bloqueio no próprio lugar (antes era uma janela dentro da
+ * janela). Com "dia inteiro" só as datas aparecem; o fim vira o início do
+ * dia seguinte por baixo.
+ */
+function BlockEditor({
   scheduleId,
   timeZone,
   block,
+  initiallyOpen = false,
+  onDone,
 }: {
   scheduleId: string;
   timeZone: string;
   block?: BlockItem;
+  initiallyOpen?: boolean;
+  onDone?: () => void;
 }) {
   const initialStart = block
     ? toLocalDateTime(block.start_at, timeZone)
@@ -1065,10 +1288,24 @@ function BlockForm({
   const initialEnd = block
     ? toLocalDateTime(block.end_at, timeZone)
     : defaultLocalDateTime(2, timeZone);
-  const [open, setOpen] = useState(false);
-  const [startAt, setStartAt] = useState(initialStart);
-  const [endAt, setEndAt] = useState(initialEnd);
-  const [allDay, setAllDay] = useState(false);
+  const initialAllDay = Boolean(
+    block &&
+    initialStart.slice(11) === "00:00" &&
+    initialEnd.slice(11) === "00:00",
+  );
+  const [open, setOpen] = useState(initiallyOpen);
+  const [formKey, setFormKey] = useState(0);
+  const [startDate, setStartDate] = useState(initialStart.slice(0, 10));
+  const [startTime, setStartTime] = useState(initialStart.slice(11, 16));
+  // Em dia inteiro, o fim guardado é 00:00 do dia seguinte; na tela, o último
+  // dia bloqueado.
+  const [endDate, setEndDate] = useState(
+    initialAllDay
+      ? previousDate(initialEnd.slice(0, 10))
+      : initialEnd.slice(0, 10),
+  );
+  const [endTime, setEndTime] = useState(initialEnd.slice(11, 16));
+  const [allDay, setAllDay] = useState(initialAllDay);
   const [clientError, setClientError] = useState<string>();
   const serverAction = block
     ? updateScheduleBlock.bind(null, block.id)
@@ -1076,127 +1313,158 @@ function BlockForm({
   const [state, action, pending] = useActionState(
     async (previousState: AgendaActionState, formData: FormData) => {
       const result = await serverAction(previousState, formData);
-      if (result.success) setOpen(false);
+      if (result.success) {
+        close();
+      }
       return result;
     },
     initialState,
   );
   useToastState(state);
 
-  function setDayMode(checked: boolean) {
-    setAllDay(checked);
-    if (!checked) return;
-    const date =
-      startAt.slice(0, 10) || defaultLocalDateTime(0, timeZone).slice(0, 10);
-    setStartAt(`${date}T00:00`);
-    setEndAt(`${nextDate(date)}T00:00`);
+  const startAt = allDay ? `${startDate}T00:00` : `${startDate}T${startTime}`;
+  const endAt = allDay ? `${nextDate(endDate)}T00:00` : `${endDate}T${endTime}`;
+
+  function close() {
+    if (onDone) {
+      onDone();
+      return;
+    }
+    setOpen(false);
+    // Próximo "Novo bloqueio" começa limpo.
+    const nextStart = defaultLocalDateTime(1, timeZone);
+    const nextEnd = defaultLocalDateTime(2, timeZone);
+    setStartDate(nextStart.slice(0, 10));
+    setStartTime(nextStart.slice(11, 16));
+    setEndDate(nextEnd.slice(0, 10));
+    setEndTime(nextEnd.slice(11, 16));
+    setAllDay(false);
+    setClientError(undefined);
+    setFormKey((value) => value + 1);
   }
 
-  return (
-    <>
+  if (!open) {
+    return (
       <Button
         type="button"
         variant="secondary"
-        size={block ? "icon-sm" : "sm"}
+        className="w-fit"
         onClick={() => setOpen(true)}
-        aria-label={block ? "Editar bloqueio" : undefined}
       >
-        {block ? <Pencil className="size-4" /> : <Ban className="size-4" />}
-        {block ? null : "Novo bloqueio"}
+        <Ban className="size-4" aria-hidden="true" />
+        Novo bloqueio
       </Button>
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title={block ? "Editar bloqueio" : "Bloquear horário"}
-        description="O período ficará indisponível na agenda interna e no agendamento online."
-        className="max-w-2xl"
-      >
-        <form
-          action={action}
-          className="grid min-w-0 gap-4"
-          onSubmit={(event) => {
-            if (startAt && endAt && endAt <= startAt) {
-              event.preventDefault();
-              setClientError("O fim do bloqueio deve ser posterior ao início.");
-            } else {
-              setClientError(undefined);
-            }
-          }}
-        >
-          <input type="hidden" name="schedule_id" value={scheduleId} />
-          <div className="rounded-md border border-border bg-muted/20 p-3">
-            <Checkbox
-              checked={allDay}
-              label="Bloquear o dia inteiro"
-              onChange={(event) => setDayMode(event.target.checked)}
-            />
-          </div>
-          <label className="grid min-w-0 gap-2 text-sm font-medium">
-            Início do bloqueio
-            <Input
-              name="start_at"
-              type="datetime-local"
-              value={startAt}
-              onChange={(event) => {
-                setStartAt(event.target.value);
-                if (allDay && event.target.value) {
-                  setEndAt(
-                    `${nextDate(event.target.value.slice(0, 10))}T00:00`,
-                  );
-                }
+    );
+  }
+
+  return (
+    <form
+      key={formKey}
+      action={action}
+      className="grid min-w-0 animate-content-enter gap-4 rounded-md border border-border bg-muted/20 p-4"
+      onSubmit={(event) => {
+        if (!startDate || !endDate || endAt <= startAt) {
+          event.preventDefault();
+          setClientError(
+            allDay
+              ? "O último dia do bloqueio não pode ser antes do primeiro."
+              : "O fim do bloqueio deve ser depois do início.",
+          );
+        } else {
+          setClientError(undefined);
+        }
+      }}
+    >
+      <input type="hidden" name="schedule_id" value={scheduleId} />
+      <input type="hidden" name="start_at" value={startAt} />
+      <input type="hidden" name="end_at" value={endAt} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">
+          {block ? "Editar bloqueio" : "Novo bloqueio"}
+        </p>
+        <Checkbox
+          checked={allDay}
+          label="Dia inteiro"
+          onChange={(event) => setAllDay(event.target.checked)}
+        />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2 text-sm font-medium">
+          {allDay ? "Primeiro dia" : "Início"}
+          <div className="flex min-w-0 gap-2">
+            <DatePickerInput
+              name="block_start_date"
+              ariaLabel={allDay ? "Primeiro dia" : "Data de início"}
+              value={startDate}
+              onValueChange={(value) => {
+                setStartDate(value);
+                if (value && endDate < value) setEndDate(value);
               }}
-              disabled={pending}
-              required
-              className="min-w-0 w-full"
+              className="min-w-0 flex-1"
             />
-          </label>
-          <label className="grid min-w-0 gap-2 text-sm font-medium">
-            Fim do bloqueio
-            <Input
-              name="end_at"
-              type="datetime-local"
-              value={endAt}
-              min={startAt}
-              onChange={(event) => setEndAt(event.target.value)}
-              disabled={pending}
-              required
-              className="min-w-0 w-full"
-            />
-          </label>
-          <label className="grid min-w-0 gap-2 text-sm font-medium">
-            Motivo
-            <Input
-              name="reason"
-              defaultValue={block?.reason ?? ""}
-              placeholder="Ex.: reunião, férias ou almoço"
-              disabled={pending}
-              className="min-w-0 w-full"
-            />
-          </label>
-          {clientError || state.error ? (
-            <p className="text-sm text-destructive">
-              {clientError || state.error}
-            </p>
-          ) : null}
-          <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setOpen(false)}
-            >
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending
-                ? "Salvando..."
-                : block
-                  ? "Salvar bloqueio"
-                  : "Bloquear horário"}
-            </Button>
+            {!allDay ? (
+              <Input
+                type="time"
+                aria-label="Hora de início"
+                value={startTime}
+                onChange={(event) => setStartTime(event.target.value)}
+                className="w-28 shrink-0"
+                required
+              />
+            ) : null}
           </div>
-        </form>
-      </Modal>
-    </>
+        </div>
+        <div className="grid gap-2 text-sm font-medium">
+          {allDay ? "Último dia" : "Fim"}
+          <div className="flex min-w-0 gap-2">
+            <DatePickerInput
+              name="block_end_date"
+              ariaLabel={allDay ? "Último dia" : "Data de fim"}
+              value={endDate}
+              onValueChange={setEndDate}
+              className="min-w-0 flex-1"
+            />
+            {!allDay ? (
+              <Input
+                type="time"
+                aria-label="Hora de fim"
+                value={endTime}
+                onChange={(event) => setEndTime(event.target.value)}
+                className="w-28 shrink-0"
+                required
+              />
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <label className="grid min-w-0 gap-2 text-sm font-medium">
+        Motivo
+        <Input
+          name="reason"
+          defaultValue={block?.reason ?? ""}
+          placeholder="Ex.: reunião, férias ou congresso"
+          disabled={pending}
+          className="min-w-0 w-full"
+        />
+      </label>
+      {clientError || state.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {clientError || state.error}
+        </p>
+      ) : null}
+      <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
+        <Button type="button" variant="ghost" onClick={close}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending
+            ? "Salvando..."
+            : block
+              ? "Salvar bloqueio"
+              : "Bloquear período"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -1252,12 +1520,17 @@ function OptionSelect({
   options,
   defaultValue = "",
   disabled,
+  emptyHint,
+  emptyHref,
 }: {
   name: string;
   label: string;
   options: Option[];
   defaultValue?: string;
   disabled: boolean;
+  /** Sem opções, diz onde cadastrar em vez de mostrar uma lista vazia. */
+  emptyHint?: string;
+  emptyHref?: string;
 }) {
   return (
     <label className="grid min-w-0 gap-2 text-sm font-medium">
@@ -1265,7 +1538,7 @@ function OptionSelect({
       <Select
         name={name}
         defaultValue={defaultValue}
-        disabled={disabled}
+        disabled={disabled || !options.length}
         required
         className="min-w-0 w-full"
       >
@@ -1281,6 +1554,17 @@ function OptionSelect({
           </option>
         ))}
       </Select>
+      {!options.length && emptyHint ? (
+        <span className="text-xs font-normal text-muted-foreground">
+          {emptyHref ? (
+            <Link href={emptyHref} className="text-primary hover:underline">
+              {emptyHint}
+            </Link>
+          ) : (
+            emptyHint
+          )}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -1291,20 +1575,30 @@ function useToastState(state: AgendaActionState) {
   }, [state.success]);
 }
 
-function validatePeriods(periods: EditablePeriod[]) {
+/** Primeiro problema encontrado, com o dia, para marcar a linha certa. */
+function validatePeriods(periods: EditablePeriod[]): PeriodsError | undefined {
   for (const day of weekdays) {
     const dayPeriods = periods
       .filter((period) => period.weekday === day.weekday)
       .sort((left, right) => left.start_time.localeCompare(right.start_time));
     for (const [index, period] of dayPeriods.entries()) {
       if (!period.start_time || !period.end_time) {
-        return `Preencha todos os horários de ${day.label.toLowerCase()}.`;
+        return {
+          weekday: day.weekday,
+          message: `Preencha todos os horários de ${day.label.toLowerCase()}.`,
+        };
       }
       if (period.start_time >= period.end_time) {
-        return `Em ${day.label.toLowerCase()}, o fim deve ser posterior ao início.`;
+        return {
+          weekday: day.weekday,
+          message: `Em ${day.label.toLowerCase()}, o fim deve ser depois do início.`,
+        };
       }
       if (index > 0 && period.start_time < dayPeriods[index - 1].end_time) {
-        return `Há períodos sobrepostos em ${day.label.toLowerCase()}.`;
+        return {
+          weekday: day.weekday,
+          message: `Há períodos sobrepostos em ${day.label.toLowerCase()}.`,
+        };
       }
     }
   }
@@ -1378,6 +1672,14 @@ function nextDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   if (![year, month, day].every(Number.isFinite)) return value;
   return new Date(Date.UTC(year, month - 1, day + 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
+function previousDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (![year, month, day].every(Number.isFinite)) return value;
+  return new Date(Date.UTC(year, month - 1, day - 1))
     .toISOString()
     .slice(0, 10);
 }

@@ -4,6 +4,7 @@ import {
   buildAppointmentSummaryData,
   resolveAppointmentSummaryFilters,
 } from "@/lib/reports/appointments-summary";
+import { loadReportTimeZone } from "@/lib/reports/time-zone";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -19,12 +20,14 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const filters = resolveAppointmentSummaryFilters(url.searchParams);
   const supabase = await createSupabaseServerClient();
+  const timeZone = await loadReportTimeZone(supabase, context.organization.id);
+  const filters = resolveAppointmentSummaryFilters(url.searchParams, timeZone);
   const data = await buildAppointmentSummaryData({
     filters,
     organizationId: context.organization.id,
     supabase,
+    timeZone,
   });
   const csv = appointmentRowsToCsv(data.rows);
 

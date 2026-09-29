@@ -197,6 +197,64 @@ Fonte: `text-control font-medium` (14px, peso 500) em todos os tamanhos.
 Tamanhos: `sm` (h-8) · `md` (h-9, default) · `lg` (h-10, página pública/CTAs) ·
 `icon` (36px) · `icon-sm` (32px, ações de linha de tabela).
 
+Botão na mesma linha de campos de formulário (filtros, "Aplicar período",
+"Salvar" ao lado de um select) usa `lg`: campos têm h-10, e no `md` o botão
+fica 4px mais baixo, alinhado só pela base.
+
+### Modal e diálogos (`components/ui/modal.tsx` e `dialog.tsx`)
+
+- Cabeçalho e rodapé ficam fora da área rolável. O usuário continua vendo o
+  contexto e a próxima ação mesmo em formulários longos.
+- A altura máxima usa `dvh`, respeitando a barra dinâmica dos navegadores móveis.
+- No celular, ações ficam empilhadas e ocupam a largura disponível; a ação
+  principal aparece acima da secundária. A partir de `sm`, voltam para uma linha.
+- Fechar pelo botão, Escape ou interação permitida devolve o foco pelo Radix.
+- Erros de formulário usam `FormError`, com `role="alert"` e foco para tornar a
+  falha imediatamente perceptível.
+
+### Menus de ações (`components/ui/dropdown-menu.tsx`)
+
+- O gatilho sempre recebe um nome acessível e expõe `aria-expanded` e
+  `aria-controls`.
+- Setas abrem e percorrem os itens; Home e End vão ao primeiro e ao último;
+  Escape fecha e devolve o foco; Tab segue a navegação normal.
+- O menu abre para o lado com espaço e a entrada acompanha essa origem. O
+  movimento é substituído por fade quando `prefers-reduced-motion` está ativo.
+- Ações destrutivas usam cor semântica e texto explícito. Ícone sozinho é aceito
+  apenas no gatilho compacto, com `aria-label`.
+
+### Formulários
+
+- Todo campo tem `id` estável e `label` associado por `htmlFor`.
+- Ajuda e erro são ligados ao controle por `aria-describedby`; estado inválido
+  expõe `aria-invalid`.
+- Placeholder descreve formato ou exemplo. Ele não substitui o rótulo.
+- Campos editáveis usam 16px no celular para evitar zoom automático; controles,
+  botões e tabelas continuam na escala operacional de 14px.
+- Cancelamento ou troca de modelo que descarte texto digitado exige confirmação.
+
+### Estados da interface
+
+- Carregamento de tabelas usa skeleton e `aria-busy`; carregamento de ações muda
+  o texto do botão e bloqueia nova submissão.
+- Estado vazio usa `EmptyState` com explicação e ação quando existe recuperação
+  possível. Uma tabela vazia não mostra paginação `0–0 de 0`.
+- Erro recuperável oferece uma ação contextual, como tentar novamente, limpar
+  filtros ou abrir a configuração necessária.
+- Toast confirma resultado global; erro de campo ou formulário também permanece
+  junto do conteúdo que precisa de correção.
+
+### Responsividade e densidade
+
+- A interface operacional ocupa a largura disponível; limites de leitura ficam
+  em textos longos, não na agenda ou em tabelas de trabalho.
+- Tabelas permanecem completas a partir do breakpoint definido pelo componente.
+  Em telas menores, listas críticas usam cartões com os mesmos dados e ações.
+- Regiões que precisam de rolagem horizontal recebem nome acessível, foco por
+  teclado, indicação visual de foco e `overscroll-contain`.
+- Nenhuma ação essencial depende de hover. Alvos recorrentes usam no mínimo 36px;
+  ações principais em celular usam 40–44px quando o contexto pede mais conforto.
+
 ### Badge (`components/ui/badge.tsx`)
 
 Variantes: `neutral` · `primary` · `success` · `warning` · `destructive`.

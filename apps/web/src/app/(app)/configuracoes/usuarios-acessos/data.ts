@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { CompanyAccessData } from "./types";
+import { loadUserAvatarUrls } from "@/lib/storage/user-avatars";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type UserRow = {
@@ -162,6 +163,7 @@ export async function loadCompanyAccessData(
     profilePermissionsResult,
     overridesResult,
     scopesResult,
+    avatarUrls,
   ] = await Promise.all([
     userIds.length
       ? supabase
@@ -192,6 +194,8 @@ export async function loadCompanyAccessData(
           .in("user_id", userIds)
           .returns<ScopeRow[]>()
       : Promise.resolve({ data: [] as ScopeRow[], error: null }),
+    // Usuários já filtrados pela empresa acima.
+    loadUserAvatarUrls(userIds),
   ]);
 
   const relationError = [
@@ -273,6 +277,7 @@ export async function loadCompanyAccessData(
         phone: user.phone,
         status: user.status,
         authUserId: user.auth_user_id,
+        avatarUrl: avatarUrls.get(user.id) ?? null,
         lastSignInAt: null,
         createdAt: user.created_at,
         profileIds: assignedProfileIds,

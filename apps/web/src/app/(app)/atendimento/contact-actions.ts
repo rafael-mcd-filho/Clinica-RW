@@ -1,10 +1,76 @@
 "use server";
 
 import { z } from "zod";
+import { revalidatePath } from "next/cache";
+import { databaseErrorMessage } from "@/lib/errors/database";
 import { getRequestContext, hasAnyPermission } from "@/lib/auth/context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const conversationIdSchema = z.string().uuid();
+
+export type CreateContactPatientState = { error?: string; patientId?: string };
+
+export async function createPatientFromContactAction(
+  contactId: string,
+  _state: CreateContactPatientState,
+  formData: FormData,
+): Promise<CreateContactPatientState> {
+  const context = await getRequestContext();
+  if (
+    !context.organization ||
+    !context.effectiveUser ||
+    !["atendimento.atender", "paciente.ver", "paciente.criar"].every((code) =>
+      context.permissionCodes.has(code),
+    )
+  ) {
+    return {
+      error: "Você não tem permissão para cadastrar e vincular pacientes.",
+    };
+  }
+  const parsed = z
+    .object({
+      contactId: z.string().uuid(),
+      name: z.string().trim().min(3).max(160),
+      email: z.union([z.string().trim().email().max(254), z.literal("")]),
+    })
+    .safeParse({
+      contactId,
+      name: formData.get("full_name"),
+      email: formData.get("email") ?? "",
+    });
+  if (!parsed.success)
+    return {
+      error: "Informe o nome completo e um e-mail válido, se preenchido.",
+    };
+
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc(
+    "create_patient_from_whatsapp_contact",
+    {
+      p_organization_id: context.organization.id,
+      p_contact_id: parsed.data.contactId,
+      p_full_name: parsed.data.name,
+      p_email: parsed.data.email || null,
+    },
+  );
+  if (error)
+    return {
+      error:
+        error.code === "23505"
+          ? "Já existe um paciente com este telefone. Busque pelo número em Vincular paciente e confira o cadastro."
+          : databaseErrorMessage(
+              error,
+              "Não foi possível criar o paciente. Tente novamente.",
+            ),
+    };
+  if (typeof data !== "string")
+    return {
+      error: "Não foi possível confirmar o cadastro. Atualize o contato.",
+    };
+  revalidatePath("/pacientes", "layout");
+  revalidatePath("/atendimento");
+  return { patientId: data };
+}
 const activeAppointmentStatuses = [
   "scheduled",
   "confirmed",
@@ -21,6 +87,7 @@ const mediaMessageTypes = [
 
 export type ContactPermissionView = {
   canViewPatient: boolean;
+  canCreatePatient: boolean;
   canViewAgenda: boolean;
   canCreateAppointment: boolean;
 };
@@ -191,6 +258,7 @@ export async function loadContactDetailsAction(
   const organizationId = context.organization.id;
   const permissions: ContactPermissionView = {
     canViewPatient: context.permissionCodes.has("paciente.ver"),
+    canCreatePatient: context.permissionCodes.has("paciente.criar"),
     canViewAgenda: context.permissionCodes.has("agenda.ver"),
     canCreateAppointment: context.permissionCodes.has(
       "agenda.criar_agendamento",

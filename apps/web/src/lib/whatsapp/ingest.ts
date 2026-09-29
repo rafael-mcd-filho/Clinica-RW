@@ -40,10 +40,10 @@ async function resolveInstance(
 }
 
 // O vínculo contato ⇄ paciente por telefone é do banco: o gatilho
-// link_whatsapp_contact_to_patient casa pelos últimos 8 dígitos (absorvendo
-// DDI e nono dígito) em todo insert, e o gatilho irmão em `patients` adota os
-// contatos soltos quando o cadastro chega depois. Ver a migration
-// 20260901130000_whatsapp_contact_patient_autolink.sql.
+// link_whatsapp_contact_to_patient compara DDD + número, normalizando o DDI
+// brasileiro e o nono dígito. Só vincula quando há um único paciente na clínica;
+// novas mensagens reavaliam contatos sem vínculo, respeitando desvínculos manuais.
+// Ver 20260927120000_contact_patient_identity.sql.
 
 /**
  * Registra uma mensagem recebida: garante contato (com auto-vínculo a paciente),
@@ -99,11 +99,15 @@ async function ingestMessage(
   if (input.waName) {
     contactPayload.wa_name = input.waName;
   }
-  const { data: contactRow } = await admin
+  const { data: contactRow, error: contactError } = await admin
     .from("whatsapp_contacts")
     .upsert(contactPayload, { onConflict: "organization_id,phone" })
     .select("id, patient_id")
     .single();
+  if (contactError || !contactRow)
+    throw new Error("Não foi possível registrar o contato da mensagem.", {
+      cause: contactError,
+    });
   const contact = contactRow as { id: string; patient_id: string | null };
 
   // Conversa (uma por contato+instância).

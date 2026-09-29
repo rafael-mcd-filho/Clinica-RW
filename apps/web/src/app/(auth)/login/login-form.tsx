@@ -1,11 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
-import { SignIn as LogIn } from "@phosphor-icons/react";
+import { useActionState, useState } from "react";
+import {
+  EnvelopeSimple,
+  Eye,
+  EyeSlash,
+  LockKey,
+  SignIn,
+} from "@phosphor-icons/react";
 import { signInWithPassword, type LoginState } from "./actions";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/field";
+import styles from "./login.module.css";
 
 const initialState: LoginState = {};
 
@@ -14,41 +19,74 @@ export function LoginForm() {
     signInWithPassword,
     initialState,
   );
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <form action={action} className="grid gap-4">
-      <label className="grid gap-2 text-sm font-medium">
-        E-mail
-        <Input required name="email" type="email" autoComplete="email" />
-      </label>
+    <form action={action} className={styles.form}>
+      <div className={styles.field}>
+        <label htmlFor="login-email" className={styles.label}>
+          E-mail
+        </label>
+        <div className={styles.inputWrap}>
+          <EnvelopeSimple className={styles.inputIcon} aria-hidden="true" />
+          <input
+            id="login-email"
+            className={styles.input}
+            required
+            name="email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="nome@clinica.com.br"
+          />
+        </div>
+      </div>
 
-      <label className="grid gap-2 text-sm font-medium">
-        Senha
-        <Input
-          required
-          name="password"
-          type="password"
-          autoComplete="current-password"
-        />
-      </label>
+      <div className={styles.field}>
+        <label htmlFor="login-password" className={styles.label}>
+          Senha
+        </label>
+        <div className={styles.inputWrap}>
+          <LockKey className={styles.inputIcon} aria-hidden="true" />
+          <input
+            id="login-password"
+            className={`${styles.input} ${styles.passwordInput}`}
+            required
+            name="password"
+            type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
+            placeholder="••••••••••"
+          />
+          <button
+            type="button"
+            className={styles.visibilityButton}
+            onClick={() => setShowPassword((visible) => !visible)}
+            aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+            aria-pressed={showPassword}
+          >
+            {showPassword ? (
+              <Eye aria-hidden="true" />
+            ) : (
+              <EyeSlash aria-hidden="true" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      <Link href="/esqueci-senha" className={styles.forgotLink}>
+        Esqueci minha senha
+      </Link>
 
       {state.error ? (
-        <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className={styles.error} role="alert">
           {state.error}
         </p>
       ) : null}
 
-      <Button type="submit" disabled={pending}>
-        <LogIn className="size-4" aria-hidden="true" />
-        {pending ? "Entrando..." : "Entrar"}
-      </Button>
-
-      <Link
-        href="/esqueci-senha"
-        className="text-center text-sm font-medium text-primary transition-colors duration-[var(--motion-fast)] hover:text-primary-hover"
-      >
-        Esqueci minha senha
-      </Link>
+      <button type="submit" disabled={pending} className={styles.submitButton}>
+        <SignIn aria-hidden="true" />
+        <span>{pending ? "Entrando..." : "Entrar"}</span>
+      </button>
     </form>
   );
 }

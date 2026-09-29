@@ -45,11 +45,13 @@ type MetricTone = "primary" | "success" | "warning" | "destructive" | "neutral";
 export type ReportsPanelView =
   "overview" | "operational" | "financial" | "clinical" | "professionals";
 
+// Tons -foreground nos ícones, como no painel: o verde e o vermelho base
+// ficavam claros demais sobre o fundo suave.
 const metricToneClass: Record<MetricTone, string> = {
   primary: "bg-primary-muted text-primary",
-  success: "bg-success-muted text-success",
+  success: "bg-success-muted text-success-foreground",
   warning: "bg-warning-muted text-warning-foreground",
-  destructive: "bg-destructive-muted text-destructive",
+  destructive: "bg-destructive-muted text-destructive-foreground",
   neutral: "bg-muted text-muted-foreground",
 };
 
@@ -79,7 +81,8 @@ function OverviewSection({ data }: { data: ReportData }) {
           metrics: [
             ["Agendamentos", String(data.operational.totalAppointments)],
             ["Atendidos", String(data.operational.attended)],
-            ["No-show", `${data.operational.noShowRate}%`],
+            // Mesmo termo do painel ("Taxa de faltas"), no lugar de "No-show".
+            ["Taxa de faltas", `${data.operational.noShowRate}%`],
           ] as Array<[string, string]>,
           title: "Atendimentos",
         }
@@ -132,8 +135,10 @@ function OverviewSection({ data }: { data: ReportData }) {
       </section>
 
       <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4">
-          <div>
+        {/* flex de verdade: com só `flex-row` o "Ver detalhes" caía embaixo
+            da descrição. */}
+        <CardHeader className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
             <h2 className="font-semibold">Desempenho por profissional</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Compare produção, agenda e resultados conforme suas permissões.
@@ -226,13 +231,13 @@ function OperationalSection({ data }: { data: ReportData }) {
         />
         <MetricCard
           icon={UserX}
-          label="No-show"
+          label="Taxa de faltas"
           value={`${report.noShowRate}%`}
           tone={report.noShowRate > 10 ? "warning" : "neutral"}
         />
         <MetricCard
           icon={Percent}
-          label="Ocupacao"
+          label="Ocupação"
           value={
             report.occupancyRate == null
               ? "Sem escala"
@@ -243,18 +248,30 @@ function OperationalSection({ data }: { data: ReportData }) {
       </section>
 
       <section className="grid gap-5 lg:grid-cols-2">
-        <BarChartCard title="Volume diario" data={report.dailyVolume} />
-        <BarChartCard title="Status da agenda" data={report.statusBreakdown} />
+        <BarChartCard
+          title="Volume diário"
+          data={report.dailyVolume}
+          kind="time"
+          seriesLabel="Agendamentos"
+        />
+        <BarChartCard
+          title="Status da agenda"
+          data={report.statusBreakdown}
+          kind="category"
+          seriesLabel="Agendamentos"
+        />
       </section>
 
       <section className="grid gap-5 lg:grid-cols-2">
         <BarChartCard
           title="Procedimentos realizados"
           data={report.procedureBreakdown.slice(0, 8)}
+          kind="category"
+          seriesLabel="Agendamentos"
         />
         <Card>
           <CardHeader>
-            <h2 className="font-semibold">Pacientes no periodo</h2>
+            <h2 className="font-semibold">Pacientes no período</h2>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -269,7 +286,7 @@ function OperationalSection({ data }: { data: ReportData }) {
                 icon={UsersRound}
               />
               <InlineMetric
-                label="Tempo medio"
+                label="Tempo médio"
                 value={formatMinutes(report.averageDurationMinutes)}
                 icon={Clock3}
               />
@@ -309,7 +326,7 @@ function FinancialSection({ data }: { data: ReportData }) {
         />
         <MetricCard
           icon={AlertTriangle}
-          label="Inadimplencia"
+          label="Inadimplência"
           value={formatCurrency(report.overdueReceivable)}
           tone={report.overdueReceivable > 0 ? "destructive" : "neutral"}
         />
@@ -325,11 +342,15 @@ function FinancialSection({ data }: { data: ReportData }) {
         <BarChartCard
           title="Recebimentos por forma"
           data={report.paymentMethods.slice(0, 8)}
+          kind="category"
+          seriesLabel="Recebido"
           currency
         />
         <BarChartCard
-          title="Recebimentos por convenio"
+          title="Recebimentos por convênio"
           data={report.insuranceRevenue.slice(0, 8)}
+          kind="category"
+          seriesLabel="Recebido"
           currency
         />
       </section>
@@ -366,7 +387,7 @@ function ClinicalSection({ data }: { data: ReportData }) {
         />
         <MetricCard
           icon={Clock3}
-          label="Tempo ate finalizar"
+          label="Tempo até finalizar"
           value={formatHours(report.averageCompletionHours)}
           tone="neutral"
         />
@@ -376,10 +397,14 @@ function ClinicalSection({ data }: { data: ReportData }) {
         <BarChartCard
           title="CIDs mais atendidos"
           data={report.diagnoses.slice(0, 8)}
+          kind="category"
+          seriesLabel="Atendimentos"
         />
         <BarChartCard
-          title="Procedimentos clinicos"
+          title="Procedimentos clínicos"
           data={report.procedures.slice(0, 8)}
+          kind="category"
+          seriesLabel="Atendimentos"
         />
       </section>
     </div>
@@ -412,7 +437,7 @@ function ProfessionalsSection({ data }: { data: ReportData }) {
         },
         {
           accessorKey: "noShowRate",
-          header: "No-show",
+          header: "Taxa de faltas",
           cell: ({ row }) => `${row.original.noShowRate}%`,
         },
       );
@@ -455,16 +480,17 @@ function ProfessionalsSection({ data }: { data: ReportData }) {
           Desempenho por profissional
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Consulta, faturamento e producao clinica conforme as permissoes do
-          usuario.
+          Consultas, faturamento e produção clínica conforme as permissões do
+          usuário.
         </p>
       </div>
       <DataTable
+        ariaLabel="Desempenho por profissional"
         columns={columns}
         data={data.professionals}
         pageSize={8}
         emptyTitle="Nenhum dado por profissional"
-        emptyDescription="Os indicadores aparecem quando ha dados nos relatorios liberados."
+        emptyDescription="Os indicadores aparecem quando há dados nos relatórios liberados."
       />
     </section>
   );
@@ -496,7 +522,7 @@ function OperationalProfessionalsTable({
       },
       {
         accessorKey: "noShows",
-        header: "No-show",
+        header: "Faltas",
         cell: ({ row }) => row.original.noShows,
       },
       {
@@ -506,7 +532,7 @@ function OperationalProfessionalsTable({
       },
       {
         accessorKey: "occupancyRate",
-        header: "Ocupacao",
+        header: "Ocupação",
         cell: ({ row }) =>
           row.original.occupancyRate == null
             ? "Sem escala"
@@ -520,10 +546,11 @@ function OperationalProfessionalsTable({
     <section className="grid gap-3">
       <h2 className="text-heading-sm font-semibold">Agenda por profissional</h2>
       <DataTable
+        ariaLabel="Agenda por profissional"
         columns={columns}
         data={rows}
         pageSize={8}
-        emptyTitle="Nenhum agendamento no periodo"
+        emptyTitle="Nenhum agendamento no período"
         emptyDescription="Ajuste os filtros para analisar outro intervalo."
       />
     </section>
@@ -535,14 +562,16 @@ function FinancialDreTable({
 }: {
   report: NonNullable<ReportData["financial"]>;
 }) {
+  // Cor só onde ela diz algo: saída em vermelho e o resultado pelo sinal.
+  // Antes toda linha positiva saía verde, inclusive a inadimplência.
   const rows = [
     { label: "Receita recebida", value: report.revenue },
     { label: "Contas a receber geradas", value: report.receivable },
     { label: "Saldo aberto a receber", value: report.openReceivable },
-    { label: "Inadimplencia", value: report.overdueReceivable },
+    { label: "Inadimplência", value: report.overdueReceivable },
     { label: "Despesas pagas", value: -report.expenses },
     { label: "Repasses pendentes", value: -report.pendingPayouts },
-    { label: "Resultado do periodo", value: report.netResult },
+    { label: "Resultado do período", value: report.netResult, total: true },
   ];
   const columns = useMemo<ColumnDef<(typeof rows)[number]>[]>(
     () => [
@@ -550,7 +579,11 @@ function FinancialDreTable({
         accessorKey: "label",
         header: "Linha",
         cell: ({ row }) => (
-          <span className="font-medium">{row.original.label}</span>
+          <span
+            className={cn(row.original.total ? "font-semibold" : "font-medium")}
+          >
+            {row.original.label}
+          </span>
         ),
       },
       {
@@ -559,10 +592,13 @@ function FinancialDreTable({
         cell: ({ row }) => (
           <span
             className={cn(
-              "font-semibold tabular-nums",
+              "tabular-nums",
+              row.original.total ? "font-semibold" : "font-medium",
               row.original.value < 0
                 ? "text-destructive-foreground"
-                : "text-success-foreground",
+                : row.original.total && row.original.value > 0
+                  ? "text-success-foreground"
+                  : "text-foreground",
             )}
           >
             {formatCurrency(row.original.value)}
@@ -576,7 +612,14 @@ function FinancialDreTable({
   return (
     <section className="grid gap-3">
       <h2 className="text-heading-sm font-semibold">DRE simplificada</h2>
-      <DataTable columns={columns} data={rows} pageSize={8} />
+      {/* A ordem das linhas é a da DRE: ordenar por coluna não faz sentido. */}
+      <DataTable
+        ariaLabel="DRE simplificada"
+        columns={columns}
+        data={rows}
+        pageSize={8}
+        enableSorting={false}
+      />
     </section>
   );
 }
@@ -630,60 +673,140 @@ function InlineMetric({
   );
 }
 
+const chartTick = {
+  fill: "var(--muted-foreground)",
+  fontSize: "var(--text-caption)",
+};
+
+const chartTooltipStyle = {
+  backgroundColor: "var(--card)",
+  border: "1px solid var(--border)",
+  borderRadius: "0.5rem",
+  boxShadow: "var(--shadow-soft)",
+  color: "var(--foreground)",
+  fontSize: "var(--text-body)",
+};
+
+/**
+ * Uma série, uma cor. Duas formas conforme o dado:
+ * - "time": série diária em colunas; o eixo mostra só as datas que cabem
+ *   (com todas forçadas, 31 rótulos viravam "01/0702/0703/07...");
+ * - "category": categorias em barras horizontais, com o nome inteiro no
+ *   eixo. Em colunas, nomes longos se atropelavam ("CardiologiaExame de").
+ */
 function BarChartCard({
   currency,
   data,
+  kind,
+  seriesLabel,
   title,
 }: {
   currency?: boolean;
   data: Array<ReportPoint | ReportBreakdown>;
+  kind: "time" | "category";
+  /** Nome da série no tooltip; sem ele o Recharts mostra a chave "value". */
+  seriesLabel: string;
   title: string;
 }) {
   const hasData = data.some((item) => item.value > 0);
+  const horizontal = kind === "category";
+  const formatValue = (value: number) =>
+    currency ? compactCurrency(value) : String(value);
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader>
         <h2 className="font-semibold">{title}</h2>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
+        <div
+          className={horizontal ? "min-h-40" : "h-64"}
+          // Barras horizontais crescem com o número de categorias, para
+          // cada nome ter sua linha sem espremer as outras.
+          style={
+            horizontal && hasData
+              ? { height: Math.max(160, data.length * 36 + 36) }
+              : undefined
+          }
+        >
           {hasData ? (
             <ResponsiveContainer height="100%" width="100%">
-              <BarChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="label"
-                  interval={0}
-                  tick={{ fontSize: "var(--text-caption)" }}
-                  tickFormatter={(value: string) =>
-                    value.length > 12 ? `${value.slice(0, 12)}...` : value
-                  }
-                  tickLine={false}
+              <BarChart
+                accessibilityLayer
+                data={data}
+                layout={horizontal ? "vertical" : "horizontal"}
+                margin={{ bottom: 4, left: 0, right: 12, top: 8 }}
+              >
+                <CartesianGrid
+                  stroke="var(--border)"
+                  horizontal={!horizontal}
+                  vertical={horizontal}
                 />
-                <YAxis
-                  allowDecimals={false}
-                  tickLine={false}
-                  tickFormatter={(value: number) =>
-                    currency ? compactCurrency(value) : String(value)
-                  }
-                  width={currency ? 58 : 36}
-                />
+                {horizontal ? (
+                  <>
+                    <XAxis
+                      type="number"
+                      allowDecimals={false}
+                      axisLine={false}
+                      tick={chartTick}
+                      tickFormatter={formatValue}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="label"
+                      axisLine={false}
+                      tick={chartTick}
+                      tickFormatter={(value: string) =>
+                        value.length > 20 ? `${value.slice(0, 19)}…` : value
+                      }
+                      tickLine={false}
+                      width={140}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <XAxis
+                      dataKey="label"
+                      interval="preserveStartEnd"
+                      minTickGap={16}
+                      tick={chartTick}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      axisLine={false}
+                      tick={chartTick}
+                      tickFormatter={formatValue}
+                      tickLine={false}
+                      width={currency ? 64 : 36}
+                    />
+                  </>
+                )}
                 <Tooltip
-                  cursor={{ fill: "rgba(148, 163, 184, 0.14)" }}
+                  contentStyle={chartTooltipStyle}
+                  cursor={{
+                    fill: "color-mix(in srgb, var(--muted-foreground) 10%, transparent)",
+                  }}
                   formatter={(value) =>
                     currency ? formatCurrency(Number(value)) : Number(value)
                   }
+                  labelStyle={{ color: "var(--foreground)", fontWeight: 600 }}
                 />
+                {/* Sem animação, como no Painel: as barras cresciam por 400ms
+                    a cada "Aplicar", em dado que a pessoa está lendo. */}
                 <Bar
                   dataKey="value"
+                  name={seriesLabel}
                   fill="var(--primary)"
-                  radius={[4, 4, 0, 0]}
+                  maxBarSize={horizontal ? 20 : 32}
+                  radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                  isAnimationActive={false}
                 />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyState title="Sem dados para o periodo" />
+            <EmptyState title="Sem dados para o período" />
           )}
         </div>
       </CardContent>
@@ -707,8 +830,11 @@ function compactCurrency(value: number) {
   }).format(Number(value) || 0);
 }
 
+// Sem amostra é "—", não zero: "0min" e "0h" pareciam medições reais (o
+// "Tempo até finalizar" mostrava 0h com nenhum prontuário finalizado).
 function formatMinutes(value: number | null) {
-  if (value == null || !Number.isFinite(value) || value <= 0) return "0min";
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (value <= 0) return "0min";
   const rounded = Math.round(value);
   const hours = Math.floor(rounded / 60);
   const minutes = rounded % 60;
@@ -718,6 +844,7 @@ function formatMinutes(value: number | null) {
 }
 
 function formatHours(value: number | null) {
-  if (value == null || !Number.isFinite(value) || value <= 0) return "0h";
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (value <= 0) return "0h";
   return `${Math.round(value * 10) / 10}h`;
 }

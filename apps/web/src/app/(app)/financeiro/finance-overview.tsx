@@ -350,6 +350,8 @@ function CashFlowCard({ series }: { series: FinanceOverview["series"] }) {
                     cursor={{ fill: "var(--muted)" }}
                     content={<CashFlowTooltip />}
                   />
+                  {/* Sem animação, como no Painel: dado para ler não se move
+                      a cada troca de período. */}
                   <Bar
                     dataKey="cashIn"
                     stackId="flow"
@@ -357,6 +359,7 @@ function CashFlowCard({ series }: { series: FinanceOverview["series"] }) {
                     stroke="var(--card)"
                     strokeWidth={1}
                     maxBarSize={26}
+                    isAnimationActive={false}
                   />
                   <Bar
                     dataKey="expectedIn"
@@ -366,6 +369,7 @@ function CashFlowCard({ series }: { series: FinanceOverview["series"] }) {
                     strokeWidth={1}
                     maxBarSize={26}
                     radius={[4, 4, 0, 0]}
+                    isAnimationActive={false}
                   />
                   <Bar
                     dataKey="cashOutSigned"
@@ -374,6 +378,7 @@ function CashFlowCard({ series }: { series: FinanceOverview["series"] }) {
                     stroke="var(--card)"
                     strokeWidth={1}
                     maxBarSize={26}
+                    isAnimationActive={false}
                   />
                   <Bar
                     dataKey="expectedOutSigned"
@@ -383,6 +388,7 @@ function CashFlowCard({ series }: { series: FinanceOverview["series"] }) {
                     strokeWidth={1}
                     maxBarSize={26}
                     radius={[0, 0, 4, 4]}
+                    isAnimationActive={false}
                   />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -652,6 +658,9 @@ function CategoriesCard({
                   paddingAngle={2}
                   stroke="var(--card)"
                   strokeWidth={2}
+                  // O padrão era 400ms de espera + 1,5s: a rosca levava quase
+                  // 2s para ficar legível a cada visita.
+                  isAnimationActive={false}
                 >
                   {slices.map((slice, index) => (
                     <Cell
@@ -826,11 +835,13 @@ function methodTypeLabel(value: string) {
   return labels[value] ?? value;
 }
 
+// `|| 0` troca o -0 por 0: as saídas entram negativas (-periodExpense), e
+// sem movimento o card mostrava "-R$ 0,00".
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format(value);
+  }).format(value || 0);
 }
 
 function formatCompactCurrency(value: number) {
@@ -839,5 +850,5 @@ function formatCompactCurrency(value: number) {
     currency: "BRL",
     notation: "compact",
     maximumFractionDigits: 1,
-  }).format(value);
+  }).format(value || 0);
 }

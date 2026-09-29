@@ -55,15 +55,26 @@ export async function deletePatientPhoto(path: string | null | undefined) {
 }
 
 // createSignedUrl é um POST de rede ao Storage por foto. As URLs valem
-// 1h; o cache de 45min evita pagar esse round-trip a cada navegação.
-// O path muda a cada upload (uuid novo), então troca de foto nunca
-// serve URL antiga.
+// 1h; o cache evita pagar esse round-trip a cada navegação. O path muda a
+// cada upload (uuid novo), então troca de foto nunca serve URL antiga.
+//
+// O revalidate sozinho não bastava: o unstable_cache é stale-while-
+// revalidate, e depois do prazo ainda entrega a URL velha uma vez enquanto
+// busca outra. Sem visita por mais de 1h, essa URL velha já tinha vencido e
+// a primeira pessoa a abrir a ficha via a foto quebrada. A janela de 30min
+// entra na chave: janela nova é chave nova, buscada na hora, e nenhuma URL
+// servida tem mais de ~30min dos 60 de validade.
+const signedUrlTtlSeconds = 60 * 60;
+const signedUrlWindowMs = 30 * 60 * 1000;
+
 const createCachedSignedUrl = unstable_cache(
-  async (path: string) => {
+  // `window` só existe para compor a chave do cache.
+  async (path: string, window: number) => {
+    void window;
     const supabaseAdmin = createSupabaseAdminClient();
     const { data, error } = await supabaseAdmin.storage
       .from(BUCKET)
-      .createSignedUrl(path, 60 * 60);
+      .createSignedUrl(path, signedUrlTtlSeconds);
 
     if (error) return null;
     return data.signedUrl;
@@ -76,5 +87,8 @@ export async function createPatientPhotoSignedUrl(
   path: string | null | undefined,
 ) {
   if (!path) return null;
-  return createCachedSignedUrl(path);
+  return createCachedSignedUrl(
+    path,
+    Math.floor(Date.now() / signedUrlWindowMs),
+  );
 }

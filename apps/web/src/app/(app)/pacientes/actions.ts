@@ -55,6 +55,16 @@ const patientSchema = z
     allow_email: z.boolean(),
     allow_sms: z.boolean(),
     source: optionalText,
+    health_insurance_id: z
+      .string()
+      .uuid("Convênio inválido.")
+      .optional()
+      .or(z.literal("")),
+    health_insurance_card: z
+      .string()
+      .trim()
+      .max(60, "A carteirinha tem no máximo 60 caracteres.")
+      .optional(),
     postal_code: optionalText,
     address_line: optionalText,
     address_number: optionalText,
@@ -129,6 +139,13 @@ function formValues(formData: FormData) {
     allow_email: formData.get("allow_email") === "on",
     allow_sms: formData.get("allow_sms") === "on",
     source: formData.get("source") || undefined,
+    // Só vêm quando o formulário mostra o bloco de convênio.
+    health_insurance_id: formData.has("health_insurance_id")
+      ? String(formData.get("health_insurance_id") ?? "")
+      : undefined,
+    health_insurance_card: formData.has("health_insurance_card")
+      ? String(formData.get("health_insurance_card") ?? "")
+      : undefined,
     postal_code: formData.get("postal_code") || undefined,
     address_line: formData.get("address_line") || undefined,
     address_number: formData.get("address_number") || undefined,
@@ -159,6 +176,14 @@ function patientPayload(data: z.infer<typeof patientSchema>) {
     allow_email: data.allow_email,
     allow_sms: data.allow_sms,
     source: emptyToNull(data.source),
+    ...(data.health_insurance_id !== undefined
+      ? {
+          health_insurance_id: data.health_insurance_id || null,
+          health_insurance_card: data.health_insurance_id
+            ? emptyToNull(data.health_insurance_card)
+            : null,
+        }
+      : {}),
   };
 }
 
@@ -183,6 +208,9 @@ function friendlyError(message: string) {
   }
   if (message.includes("patients_deceased_not_future_check")) {
     return "A data do óbito não pode estar no futuro.";
+  }
+  if (message.includes("patients_health_insurance_fkey")) {
+    return "O convênio escolhido não existe mais. Atualize a página.";
   }
   if (message.includes("duplicate key")) {
     return "Já existe um registro ativo com estes dados.";

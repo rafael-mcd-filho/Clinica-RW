@@ -108,7 +108,7 @@ export function ReportsDocument({
             rows={[
               ["Agendamentos", String(data.operational.totalAppointments)],
               ["Atendidos", String(data.operational.attended)],
-              ["No-show", `${data.operational.noShowRate}%`],
+              ["Taxa de faltas", `${data.operational.noShowRate}%`],
               [
                 "Ocupação",
                 data.operational.occupancyRate == null
@@ -154,7 +154,7 @@ export function ReportsDocument({
               [
                 "Tempo médio até finalizar",
                 data.clinical.averageCompletionHours == null
-                  ? "0h"
+                  ? "—"
                   : `${Math.round(data.clinical.averageCompletionHours * 10) / 10}h`,
               ],
             ]}
