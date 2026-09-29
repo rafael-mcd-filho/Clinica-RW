@@ -34,7 +34,7 @@ export function Switch({
   return (
     <label
       className={cn(
-        "inline-flex min-w-0 cursor-pointer items-center gap-2 text-sm leading-5 text-secondary-foreground",
+        "inline-flex min-w-0 cursor-pointer touch-manipulation items-center gap-2 text-body-sm text-secondary-foreground",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >
@@ -64,7 +64,7 @@ export function Switch({
       >
         <span
           className={cn(
-            "absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out)]",
+            "absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out)] motion-reduce:transition-none",
             isChecked ? "translate-x-4" : "translate-x-0",
           )}
         />

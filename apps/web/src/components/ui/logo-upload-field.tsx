@@ -17,6 +17,8 @@ type LogoUploadFieldProps = {
   currentFieldName?: string;
   /** Hidden field flag telling the server to clear the stored logo. */
   removeFieldName?: string;
+  variant?: "square" | "wide";
+  label?: string;
 };
 
 /**
@@ -29,6 +31,8 @@ export function LogoUploadField({
   currentUrl = null,
   currentFieldName = "current_logo_url",
   removeFieldName = "remove_logo",
+  variant = "square",
+  label = "logo",
 }: LogoUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(currentUrl);
@@ -54,12 +58,14 @@ export function LogoUploadField({
 
   return (
     <div className="flex items-center gap-4">
-      <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
+      <div
+        className={`flex h-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted ${variant === "wide" ? "w-40" : "w-16"}`}
+      >
         {preview ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={preview}
-            alt="Pré-visualização da logo"
+            alt={`Pré-visualização da ${label}`}
             className="size-full object-contain"
           />
         ) : (
@@ -87,7 +93,7 @@ export function LogoUploadField({
             onClick={() => inputRef.current?.click()}
           >
             <Upload className="size-4" aria-hidden="true" />
-            {preview ? "Trocar logo" : "Enviar logo"}
+            {preview ? `Trocar ${label}` : `Enviar ${label}`}
           </Button>
           {preview ? (
             <Button
@@ -97,7 +103,7 @@ export function LogoUploadField({
               onClick={() => setConfirmingRemoval(true)}
             >
               <X className="size-4" aria-hidden="true" />
-              Remover
+              Remover {label}
             </Button>
           ) : null}
         </div>
@@ -115,9 +121,9 @@ export function LogoUploadField({
       <ConfirmDialog
         open={confirmingRemoval}
         onClose={() => setConfirmingRemoval(false)}
-        title="Remover logo?"
-        description="A logo será marcada para remoção e apagada quando você salvar as alterações."
-        confirmLabel="Remover logo"
+        title={`Remover ${label}?`}
+        description={`A ${label} será marcada para remoção e apagada quando você salvar as alterações.`}
+        confirmLabel={`Remover ${label}`}
         destructive
         onConfirm={handleRemove}
       />

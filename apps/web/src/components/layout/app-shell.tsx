@@ -34,6 +34,7 @@ import { endImpersonation } from "@/app/(app)/suporte/actions";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
+import { SidebarAccountMenu } from "@/components/layout/sidebar-account-menu";
 import { TodayAppointmentsRail } from "@/components/layout/today-appointments-rail";
 import {
   GlobalHeader,
@@ -127,10 +128,12 @@ type AppShellProps = {
   navItems: AppShellNavItem[];
   brandName: string;
   brandLogoUrl: string | null;
+  brandFullLogoUrl: string | null;
   sidebarSubtitle: string;
   userName: string;
   userSubtitle: string;
   userRole: string;
+  userAvatarUrl?: string | null;
   impersonation: {
     organizationName: string;
     targetUserName: string;
@@ -195,10 +198,12 @@ export function AppShell({
   navItems,
   brandName,
   brandLogoUrl,
+  brandFullLogoUrl,
   sidebarSubtitle,
   userName,
   userSubtitle,
   userRole,
+  userAvatarUrl = null,
   impersonation,
   patientSearchEnabled = false,
   todayRailEnabled = false,
@@ -224,6 +229,12 @@ export function AppShell({
   >(null);
   const hasTodayRail = todayRailEnabled;
   const searchPages = navigationSearchPages(navItems);
+  const account = {
+    userName,
+    userRole,
+    userOrganization: userSubtitle,
+    userAvatarUrl,
+  };
 
   function updatePinned(nextPinned: boolean) {
     window.localStorage.setItem(storageKey, String(nextPinned));
@@ -261,29 +272,38 @@ export function AppShell({
           navItems={navItems}
           brandName={brandName}
           brandLogoUrl={brandLogoUrl}
+          brandFullLogoUrl={brandFullLogoUrl}
           subtitle={sidebarSubtitle}
           impersonation={impersonation}
+          account={account}
           pinned={sidebarPinned}
           onTogglePinned={() => updatePinned(false)}
           className="hidden lg:flex"
         />
       ) : null}
 
-      {drawerOpen ? (
-        <button
-          aria-label="Fechar menu"
-          className="fixed inset-0 z-30 bg-black/20"
-          onClick={() => setDrawerOpen(false)}
-          type="button"
-        />
-      ) : null}
+      {/* Sempre montado, com o mesmo tempo e curva da gaveta: antes ele
+          aparecia e sumia de uma vez enquanto o menu deslizava. Fechado,
+          fica inerte (sem foco e sem clique). */}
+      <button
+        aria-label="Fechar menu"
+        className={cn(
+          "fixed inset-0 z-30 bg-black/20 transition-opacity duration-[var(--motion-drawer)] ease-[var(--ease-out)]",
+          drawerOpen ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+        inert={!drawerOpen}
+        onClick={() => setDrawerOpen(false)}
+        type="button"
+      />
 
       <Sidebar
         navItems={navItems}
         brandName={brandName}
         brandLogoUrl={brandLogoUrl}
+        brandFullLogoUrl={brandFullLogoUrl}
         subtitle={sidebarSubtitle}
         impersonation={impersonation}
+        account={account}
         pinned={sidebarPinned}
         onNavigate={() => {
           if (!sidebarPinned) {
@@ -292,7 +312,7 @@ export function AppShell({
         }}
         onTogglePinned={() => updatePinned(!sidebarPinned)}
         className={cn(
-          "z-40 transition-transform duration-[var(--motion-drawer)] ease-[var(--ease-out)]",
+          "z-40 transition-transform duration-[var(--motion-drawer)] ease-[var(--ease-out)] motion-reduce:transition-none",
           drawerOpen ? "translate-x-0" : "-translate-x-full",
           sidebarPinned ? "flex lg:hidden" : "flex",
         )}
@@ -312,9 +332,6 @@ export function AppShell({
         <GlobalHeader
           pages={searchPages}
           patientSearchEnabled={patientSearchEnabled}
-          userName={userName}
-          userSubtitle={userRole}
-          userOrganization={userSubtitle}
           sidebarPinned={sidebarPinned}
           onOpenMenu={() => setDrawerOpen(true)}
           todayRailEnabled={hasTodayRail}
@@ -399,8 +416,10 @@ function Sidebar({
   navItems,
   brandName,
   brandLogoUrl,
+  brandFullLogoUrl,
   subtitle,
   impersonation,
+  account,
   pinned,
   onNavigate,
   onTogglePinned,
@@ -409,8 +428,15 @@ function Sidebar({
   navItems: AppShellNavItem[];
   brandName: string;
   brandLogoUrl: string | null;
+  brandFullLogoUrl: string | null;
   subtitle: string;
   impersonation: AppShellProps["impersonation"];
+  account: {
+    userName: string;
+    userRole: string;
+    userOrganization: string;
+    userAvatarUrl: string | null;
+  };
   pinned: boolean;
   onNavigate?: () => void;
   onTogglePinned: () => void;
@@ -424,34 +450,47 @@ function Sidebar({
       )}
     >
       <div className="flex h-16 items-center justify-between gap-3 border-b border-sidebar-border px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={cn(
-              "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md",
-              brandLogoUrl
-                ? "border border-sidebar-border bg-white"
-                : "bg-primary text-primary-foreground",
-            )}
-          >
-            {brandLogoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          {brandFullLogoUrl ? (
+            <div className="min-w-0 flex-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={brandLogoUrl}
-                alt={`Logo ${brandName}`}
-                className="size-full object-contain"
+                src={brandFullLogoUrl}
+                alt={brandName}
+                className="h-10 w-full max-w-[170px] object-contain object-left"
               />
-            ) : (
-              <Activity className="size-5" aria-hidden="true" />
-            )}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-heading-sm font-semibold text-sidebar-foreground">
-              {brandName}
-            </p>
-            <p className="truncate text-xs text-sidebar-muted-foreground">
-              {subtitle}
-            </p>
-          </div>
+            </div>
+          ) : (
+            <>
+              <div
+                className={cn(
+                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md",
+                  brandLogoUrl
+                    ? "border border-sidebar-border bg-white"
+                    : "bg-primary text-primary-foreground",
+                )}
+              >
+                {brandLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={brandLogoUrl}
+                    alt=""
+                    className="size-full object-contain"
+                  />
+                ) : (
+                  <Activity className="size-5" aria-hidden="true" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-heading-sm font-semibold text-sidebar-foreground">
+                  {brandName}
+                </p>
+                <p className="truncate text-xs text-sidebar-muted-foreground">
+                  {subtitle}
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         <Tooltip
@@ -464,7 +503,7 @@ function Sidebar({
             type="button"
             aria-label={pinned ? "Desfixar menu" : "Fixar menu"}
             onClick={onTogglePinned}
-            className="border-sidebar-border bg-transparent text-sidebar-muted-foreground shadow-none hover:border-sidebar-border hover:bg-sidebar-hover hover:text-sidebar-foreground"
+            className="shrink-0 border-sidebar-border bg-transparent text-sidebar-muted-foreground shadow-none hover:border-sidebar-border hover:bg-sidebar-hover hover:text-sidebar-foreground"
           >
             {pinned ? (
               <PanelLeftClose className="size-4" aria-hidden="true" />
@@ -482,6 +521,7 @@ function Sidebar({
       </nav>
 
       <SidebarSupport impersonation={impersonation} />
+      <SidebarAccountMenu {...account} onNavigate={onNavigate} />
     </aside>
   );
 }
@@ -523,14 +563,20 @@ function SidebarLink({
       : isNavRouteActive(pathname, child.href),
   );
   const routeInGroup = active || Boolean(activeChild);
-  const [expansionOverride, setExpansionOverride] = useState<{
-    pathname: string;
-    expanded: boolean;
-  } | null>(null);
-  const expanded =
-    expansionOverride?.pathname === pathname
-      ? expansionOverride.expanded
-      : routeInGroup;
+  // Abrir ou fechar um grupo à mão vale só até a próxima navegação. Antes a
+  // escolha ficava guardada com a rota em que foi feita e voltava a valer ao
+  // retornar a ela: abrir Configurações no Prontuário, ir a Modelos clínicos
+  // e voltar deixava Configurações aberto sem motivo. Zerar ao mudar de rota
+  // durante a renderização é o padrão do React para ajustar estado a props.
+  const [expansionOverride, setExpansionOverride] = useState<boolean | null>(
+    null,
+  );
+  const [overridePathname, setOverridePathname] = useState(pathname);
+  if (overridePathname !== pathname) {
+    setOverridePathname(pathname);
+    setExpansionOverride(null);
+  }
+  const expanded = expansionOverride ?? routeInGroup;
 
   if (hasChildren) {
     return (
@@ -542,9 +588,7 @@ function SidebarLink({
           type="button"
           aria-controls={childrenId}
           aria-expanded={expanded}
-          onClick={() =>
-            setExpansionOverride({ pathname, expanded: !expanded })
-          }
+          onClick={() => setExpansionOverride(!expanded)}
           className={cn(
             "relative flex min-h-10 w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-control font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
             routeInGroup

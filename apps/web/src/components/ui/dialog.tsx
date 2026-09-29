@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type ComponentType } from "react";
+import { useId, useState, type ComponentType } from "react";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 import { Modal } from "@/components/ui/modal";
 
 type BaseProps = {
@@ -41,31 +42,45 @@ export function FormDialog({
   /** Server action (or any handler) bound to the form. */
   formAction: (formData: FormData) => void | Promise<void>;
 }) {
+  const formId = useId();
+  const footer = (
+    <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-full sm:w-auto"
+        onClick={onClose}
+      >
+        Cancelar
+      </Button>
+      <Button
+        type="submit"
+        form={formId}
+        className="w-full sm:w-auto"
+        disabled={pending || confirmDisabled}
+      >
+        {Icon ? <Icon className="size-4" aria-hidden="true" /> : null}
+        {pending ? pendingLabel : confirmLabel}
+      </Button>
+    </div>
+  );
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={title}
       description={description}
+      footer={footer}
     >
       <form
+        id={formId}
         action={formAction}
         className="grid min-w-0 gap-4"
         onSubmit={onSubmit}
       >
         {children}
-
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={pending || confirmDisabled}>
-            {Icon ? <Icon className="size-4" /> : null}
-            {pending ? pendingLabel : confirmLabel}
-          </Button>
-        </div>
+        <FormError message={error} />
       </form>
     </Modal>
   );
@@ -111,6 +126,7 @@ export function ConfirmDialog({
   destructive,
   icon: Icon,
 }: BaseProps & ConfirmActionProps & { destructive?: boolean }) {
+  const formId = useId();
   const [callbackPending, setCallbackPending] = useState(false);
   const isPending = Boolean(pending || callbackPending);
 
@@ -126,10 +142,11 @@ export function ConfirmDialog({
   }
 
   const footer = (
-    <div className="flex justify-end gap-2">
+    <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
       <Button
         type="button"
         variant="secondary"
+        className="w-full sm:w-auto"
         onClick={onClose}
         disabled={isPending}
       >
@@ -137,24 +154,16 @@ export function ConfirmDialog({
       </Button>
       <Button
         type={onConfirm ? "button" : "submit"}
+        form={onConfirm ? undefined : formId}
         variant={destructive ? "destructive" : "primary"}
+        className="w-full sm:w-auto"
         disabled={isPending || confirmDisabled}
         onClick={onConfirm ? handleConfirmClick : undefined}
       >
-        {Icon ? <Icon className="size-4" /> : null}
+        {Icon ? <Icon className="size-4" aria-hidden="true" /> : null}
         {isPending ? pendingLabel : confirmLabel}
       </Button>
     </div>
-  );
-
-  const body = (
-    <>
-      {children}
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {footer}
-    </>
   );
 
   return (
@@ -163,12 +172,17 @@ export function ConfirmDialog({
       onClose={onClose}
       title={title}
       description={description}
+      footer={footer}
     >
       {onConfirm ? (
-        <div className="grid min-w-0 gap-4">{body}</div>
+        <div className="grid min-w-0 gap-4">
+          {children}
+          <FormError message={error} />
+        </div>
       ) : (
-        <form action={formAction} className="grid min-w-0 gap-4">
-          {body}
+        <form id={formId} action={formAction} className="grid min-w-0 gap-4">
+          {children}
+          <FormError message={error} />
         </form>
       )}
     </Modal>

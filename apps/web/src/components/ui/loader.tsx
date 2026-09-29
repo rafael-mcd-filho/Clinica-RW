@@ -18,7 +18,9 @@ export function Skeleton({ className }: { className?: string }) {
     <span
       aria-hidden="true"
       className={cn(
-        "relative block overflow-hidden rounded bg-muted before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_1.4s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/70 before:to-transparent",
+        // linear: movimento contínuo em velocidade constante. Com movimento
+        // reduzido o brilho some e fica só o bloco cinza.
+        "relative block overflow-hidden rounded bg-muted before:absolute before:inset-0 before:animate-[shimmer_1.4s_linear_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/70 before:to-transparent motion-reduce:before:hidden",
         className,
       )}
     />

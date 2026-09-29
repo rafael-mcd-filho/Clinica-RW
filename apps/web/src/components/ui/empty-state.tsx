@@ -21,9 +21,11 @@ export function EmptyState({
       <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Icon className="size-5" weight="duotone" aria-hidden="true" />
       </div>
-      <p className="mt-3 text-sm font-medium">{title}</p>
+      <p className="mt-3 text-body-sm font-medium">{title}</p>
       {description ? (
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        <p className="mx-auto mt-1 max-w-xl text-body-sm text-muted-foreground">
+          {description}
+        </p>
       ) : null}
       {actions ? (
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
