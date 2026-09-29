@@ -21,6 +21,7 @@ import {
   resolveAppointmentSummaryFilters,
   type AppointmentSummaryRow,
 } from "@/lib/reports/appointments-summary";
+import { loadReportTimeZone } from "@/lib/reports/time-zone";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type AppointmentSummaryPageProps = {
@@ -32,12 +33,14 @@ export default async function AppointmentSummaryPage({
 }: AppointmentSummaryPageProps) {
   const params = await searchParams;
   const context = await requireCompanyPermission(["relatorio.operacional"]);
-  const filters = resolveAppointmentSummaryFilters(params);
   const supabase = await createSupabaseServerClient();
+  const timeZone = await loadReportTimeZone(supabase, context.organization.id);
+  const filters = resolveAppointmentSummaryFilters(params, timeZone);
   const data = await buildAppointmentSummaryData({
     filters,
     organizationId: context.organization.id,
     supabase,
+    timeZone,
   });
   const exportQuery = createAppointmentSummaryQueryString(filters);
   const canExport = context.permissionCodes.has("relatorio.exportar");
@@ -73,8 +76,12 @@ export default async function AppointmentSummaryPage({
 
       <Card>
         <CardContent>
-          <form className="grid gap-3 lg:grid-cols-[10rem_10rem_minmax(12rem,1fr)_12rem_12rem_12rem_auto]">
-            <div className="grid gap-2 text-sm font-medium lg:col-span-2">
+          {/* As sete colunas fixas somavam ~1.400px e, em notebook (1366px
+              menos a barra lateral), empurravam a página para a direita. Os
+              cinco campos dividem a linha a partir de xl; os botões só sobem
+              para ela em 2xl. */}
+          <form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1.4fr)_minmax(12rem,1fr)_repeat(3,minmax(9rem,0.8fr))] 2xl:grid-cols-[minmax(16rem,1.4fr)_minmax(12rem,1fr)_repeat(3,minmax(9rem,0.8fr))_auto]">
+            <div className="grid gap-2 text-sm font-medium sm:col-span-2 xl:col-span-1">
               Período
               <DateRangePickerInput
                 fromName="from"
@@ -92,7 +99,7 @@ export default async function AppointmentSummaryPage({
               />
             </label>
             <label className="grid gap-2 text-sm font-medium">
-              Endereco
+              Endereço
               <Select name="unit_id" defaultValue={filters.unitId}>
                 <option value="">Todos</option>
                 {data.options.units.map((unit) => (
@@ -103,7 +110,7 @@ export default async function AppointmentSummaryPage({
               </Select>
             </label>
             <label className="grid gap-2 text-sm font-medium">
-              Convenio
+              Convênio
               <Select
                 name="health_insurance_id"
                 defaultValue={filters.healthInsuranceId}
@@ -117,7 +124,7 @@ export default async function AppointmentSummaryPage({
               </Select>
             </label>
             <label className="grid gap-2 text-sm font-medium">
-              Servico
+              Serviço
               <Select name="procedure_id" defaultValue={filters.procedureId}>
                 <option value="">Todos</option>
                 {data.options.procedures.map((procedure) => (
@@ -127,7 +134,7 @@ export default async function AppointmentSummaryPage({
                 ))}
               </Select>
             </label>
-            <div className="flex items-end gap-2">
+            <div className="flex flex-wrap items-end justify-end gap-2 sm:col-span-2 xl:col-span-5 2xl:col-span-1">
               <details className="relative">
                 <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium shadow-[var(--shadow-soft)] marker:hidden">
                   Mais
@@ -140,7 +147,7 @@ export default async function AppointmentSummaryPage({
                     selected={filters.statuses}
                   />
                   <FilterGroup
-                    title="Situacao do pagamento"
+                    title="Situação do pagamento"
                     name="payment_status"
                     options={paymentStatusOptions}
                     selected={filters.paymentStatuses}
@@ -148,13 +155,16 @@ export default async function AppointmentSummaryPage({
                   />
                 </div>
               </details>
-              <Button type="submit">
+              <Button type="submit" size="lg">
                 <Filter className="size-4" aria-hidden="true" />
                 Filtrar
               </Button>
-              <Button asChild type="button" variant="ghost">
+              {/* Só a seta, sem rótulo, não dizia o que fazia — nem para
+                  leitor de tela, que anunciava um link sem nome. */}
+              <Button asChild type="button" variant="ghost" size="lg">
                 <Link href="/relatorios/agendamentos">
                   <RotateCcw className="size-4" aria-hidden="true" />
+                  Limpar
                 </Link>
               </Button>
             </div>
@@ -182,9 +192,9 @@ export default async function AppointmentSummaryPage({
               <tr>
                 <Th>Data</Th>
                 <Th>Paciente</Th>
-                <Th>Servicos</Th>
-                <Th>Convenio</Th>
-                <Th>Preco</Th>
+                <Th>Serviços</Th>
+                <Th>Convênio</Th>
+                <Th>Preço</Th>
                 <Th>Fonte da consulta</Th>
                 <Th>Estado</Th>
                 <Th>Pagamento</Th>
@@ -273,7 +283,7 @@ function AppointmentRowItem({ row }: { row: AppointmentSummaryRow }) {
       <Td>{row.serviceName}</Td>
       <Td>{row.insuranceName}</Td>
       <Td>
-        {row.price == null ? "Adicionar preco" : formatCurrency(row.price)}
+        {row.price == null ? "Adicionar preço" : formatCurrency(row.price)}
       </Td>
       <Td>{row.source}</Td>
       <Td>

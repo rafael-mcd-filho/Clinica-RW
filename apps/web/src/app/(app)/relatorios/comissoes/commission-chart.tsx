@@ -80,6 +80,8 @@ export function CommissionChart({ data }: { data: CommissionPoint[] }) {
             strokeWidth={2}
             dot={{ r: 3, strokeWidth: 0, fill: revenueColor }}
             activeDot={{ r: 5, strokeWidth: 2, stroke: "var(--card)" }}
+            // Sem o traçado de 1,5s do padrão: é dado para ler.
+            isAnimationActive={false}
           />
           <Line
             type="monotone"
@@ -88,6 +90,7 @@ export function CommissionChart({ data }: { data: CommissionPoint[] }) {
             strokeWidth={2}
             dot={{ r: 3, strokeWidth: 0, fill: commissionColor }}
             activeDot={{ r: 5, strokeWidth: 2, stroke: "var(--card)" }}
+            isAnimationActive={false}
           />
         </LineChart>
       </ResponsiveContainer>

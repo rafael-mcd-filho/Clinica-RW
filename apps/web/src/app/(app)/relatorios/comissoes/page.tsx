@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import {
   HandCoins,
   ChartLineUp as TrendingUp,
+  WarningCircle,
 } from "@phosphor-icons/react/dist/ssr";
 import { ReportsFilters } from "../reports-filters";
 import { CommissionChart, type CommissionPoint } from "./commission-chart";
@@ -9,11 +11,17 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireCompanyPermission } from "@/lib/authz/guards";
+import { logger } from "@/lib/observability/logger";
 import {
   buildPhase13ReportData,
   resolveReportFilters,
   resolveReportPermissions,
 } from "@/lib/reports/phase13";
+import {
+  loadReportTimeZone,
+  zonedDayEndExclusive,
+  zonedDayStart,
+} from "@/lib/reports/time-zone";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type CommissionRow = {
@@ -43,11 +51,19 @@ export default async function CommissionReportPage({
     searchParams ?? Promise.resolve({}),
     requireCompanyPermission(["relatorio.financeiro"]),
   ]);
-  const filters = resolveReportFilters(params);
+  // O cálculo (RPC) exige `financeiro.ver_geral`, e a comissão de cada
+  // profissional é dado sensível: a página segue a regra do cálculo em vez
+  // de abrir e mostrar só o aviso de acesso negado. O menu esconde o item.
+  if (!context.permissionCodes.has("financeiro.ver_geral")) {
+    redirect("/relatorios/financeiro");
+  }
   const supabase = await createSupabaseServerClient();
+  const timeZone = await loadReportTimeZone(supabase, context.organization.id);
+  const filters = resolveReportFilters(params, timeZone);
 
-  const from = `${filters.from}T00:00:00`;
-  const to = `${filters.to}T23:59:59.999`;
+  // Limites no fuso da clínica; `to` é exclusivo (o RPC usa `< p_to`).
+  const from = zonedDayStart(filters.from, timeZone).toISOString();
+  const to = zonedDayEndExclusive(filters.to, timeZone).toISOString();
 
   const [reportData, commission, series] = await Promise.all([
     buildPhase13ReportData({
@@ -59,6 +75,7 @@ export default async function CommissionReportPage({
         operational: false,
       },
       supabase,
+      timeZone,
     }),
     supabase.rpc("commission_report", { p_from: from, p_to: to }),
     supabase.rpc("commission_monthly_series", { p_from: from, p_to: to }),
@@ -83,9 +100,19 @@ export default async function CommissionReportPage({
     { revenue: 0, due: 0, paid: 0, pending: 0 },
   );
   const unavailable = Boolean(commission.error);
+  // 42501 é permissão: a função exige `financeiro.ver_geral`, que a página
+  // (liberada por `relatorio.financeiro`) não garante. É um caso esperado,
+  // não uma falha — e pede outra mensagem. O resto vai para o log como erro.
+  const deniedByPermission = commission.error?.code === "42501";
+  if (commission.error) {
+    (deniedByPermission ? logger.warn : logger.error)(
+      "reports.commission_unavailable",
+      { code: commission.error.code, message: commission.error.message },
+    );
+  }
 
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-1 gap-6">
       <PageHeader
         icon={HandCoins}
         title="Comissões"
@@ -104,12 +131,27 @@ export default async function CommissionReportPage({
 
       {unavailable ? (
         <Card>
-          <CardContent>
-            <p className="text-body-sm text-muted-foreground">
-              Não foi possível calcular as comissões agora. Se esta empresa
-              acabou de ser atualizada, aplique as migrations pendentes.
-            </p>
-          </CardContent>
+          {/* No acesso de suporte o banco vê o login do suporte, que não
+              pertence à clínica — o perfil acessado não é o problema. */}
+          {deniedByPermission && context.impersonation ? (
+            <EmptyState
+              icon={WarningCircle}
+              title="Comissões indisponíveis no acesso de suporte"
+              description="O cálculo roda com o login da própria clínica. Para conferir os números, entre com um usuário dela."
+            />
+          ) : deniedByPermission ? (
+            <EmptyState
+              icon={WarningCircle}
+              title="Comissões indisponíveis para o seu perfil"
+              description="Este relatório exige a permissão de ver o financeiro completo."
+            />
+          ) : (
+            <EmptyState
+              icon={WarningCircle}
+              title="Não foi possível calcular as comissões"
+              description="Tente de novo em alguns instantes. Se continuar, fale com o suporte."
+            />
+          )}
         </Card>
       ) : rows.length ? (
         <>

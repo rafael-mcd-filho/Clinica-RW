@@ -9,6 +9,7 @@ import {
   type ReportData,
 } from "@/lib/reports/phase13";
 import { getRequestContext } from "@/lib/auth/context";
+import { loadReportTimeZone } from "@/lib/reports/time-zone";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
 
   if (context.isSuperAdmin || !context.organization) {
     return new Response(
-      "Relatorios disponiveis apenas no contexto da empresa.",
+      "Relatórios disponíveis apenas no contexto da empresa.",
       {
         status: 403,
       },
@@ -32,13 +33,15 @@ export async function GET(request: Request) {
     return new Response("Acesso negado.", { status: 403 });
   }
 
-  const filters = resolveReportFilters(url.searchParams);
   const supabase = await createSupabaseServerClient();
+  const timeZone = await loadReportTimeZone(supabase, context.organization.id);
+  const filters = resolveReportFilters(url.searchParams, timeZone);
   const data = await buildPhase13ReportData({
     filters,
     organizationId: context.organization.id,
     permissions,
     supabase,
+    timeZone,
   });
   const clinicName = context.organization.name;
 
@@ -53,7 +56,7 @@ export async function GET(request: Request) {
   }
 
   if (format !== "pdf") {
-    return new Response("Formato invalido.", { status: 400 });
+    return new Response("Formato inválido.", { status: 400 });
   }
 
   const pdfBytes = await renderToBuffer(
@@ -79,9 +82,9 @@ function buildExcelHtml(data: ReportData, clinicName: string) {
       ? tableHtml("Operacional", [
           ["Agendamentos", data.operational.totalAppointments],
           ["Atendidos", data.operational.attended],
-          ["No-show", `${data.operational.noShowRate}%`],
+          ["Taxa de faltas", `${data.operational.noShowRate}%`],
           [
-            "Ocupacao",
+            "Ocupação",
             data.operational.occupancyRate == null
               ? "Sem escala"
               : `${data.operational.occupancyRate}%`,
@@ -94,21 +97,23 @@ function buildExcelHtml(data: ReportData, clinicName: string) {
       ? tableHtml("Financeiro", [
           ["Recebido", formatCurrency(data.financial.revenue)],
           ["A receber", formatCurrency(data.financial.openReceivable)],
-          ["Inadimplencia", formatCurrency(data.financial.overdueReceivable)],
+          ["Inadimplência", formatCurrency(data.financial.overdueReceivable)],
           ["Despesas pagas", formatCurrency(data.financial.expenses)],
           ["Repasses pendentes", formatCurrency(data.financial.pendingPayouts)],
           ["Resultado", formatCurrency(data.financial.netResult)],
         ])
       : "",
     data.clinical
-      ? tableHtml("Clinico", [
+      ? tableHtml("Clínico", [
           ["Atendimentos", data.clinical.totalEncounters],
           ["Finalizados", data.clinical.finalizedEncounters],
           ["Rascunhos", data.clinical.draftEncounters],
           [
-            "Tempo medio ate finalizar",
+            "Tempo médio até finalizar",
+            // Sem prontuário finalizado não há tempo a medir: "0h" parecia
+            // uma medição real.
             data.clinical.averageCompletionHours == null
-              ? "0h"
+              ? "—"
               : `${Math.round(data.clinical.averageCompletionHours * 10) / 10}h`,
           ],
         ])
@@ -130,7 +135,7 @@ function buildExcelHtml(data: ReportData, clinicName: string) {
   </style>
 </head>
 <body>
-  <h1>Relatorios - ${escapeHtml(clinicName)}</h1>
+  <h1>Relatórios - ${escapeHtml(clinicName)}</h1>
   <p>${formatDate(data.filters.from)} a ${formatDate(data.filters.to)}</p>
   ${sections}
 </body>
@@ -160,9 +165,9 @@ function professionalTableHtml(data: ReportData) {
       <th>Profissional</th>
       <th>Consultas</th>
       <th>Atendidas</th>
-      <th>No-show</th>
+      <th>Taxa de faltas</th>
       <th>Faturamento</th>
-      <th>Prontuarios</th>
+      <th>Prontuários</th>
     </tr>
   </thead>
   <tbody>

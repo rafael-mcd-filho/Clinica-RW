@@ -1,6 +1,10 @@
-import { TrendUp as TrendingUp } from "@phosphor-icons/react/dist/ssr";
+import {
+  TrendUp as TrendingUp,
+  WarningCircle,
+} from "@phosphor-icons/react/dist/ssr";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { logger } from "@/lib/observability/logger";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type MarginRow = {
@@ -31,9 +35,14 @@ type MarginRow = {
  */
 export async function MarginSection({
   from,
+  supportAccess = false,
   to,
 }: {
+  /** Início do período (ISO), no fuso da clínica. */
   from: string;
+  /** No acesso de suporte o banco vê o login do suporte, sem clínica. */
+  supportAccess?: boolean;
+  /** Fim exclusivo do período (ISO): o RPC filtra `start_at < p_to`. */
   to: string;
 }) {
   const supabase = await createSupabaseServerClient();
@@ -43,6 +52,14 @@ export async function MarginSection({
   });
 
   if (error) {
+    // O motivo técnico vai para o log; "aplique as migrations" não é algo
+    // que quem usa a clínica possa fazer. 42501 é falta de permissão
+    // (`financeiro.ver_geral`), um caso esperado com mensagem própria.
+    const deniedByPermission = error.code === "42501";
+    (deniedByPermission ? logger.warn : logger.error)(
+      "reports.margin_unavailable",
+      { code: error.code, message: error.message },
+    );
     return (
       <Card>
         <CardHeader className="px-5 py-4">
@@ -50,12 +67,25 @@ export async function MarginSection({
             Margem por procedimento
           </h2>
         </CardHeader>
-        <CardContent>
-          <p className="text-body-sm text-muted-foreground">
-            Não foi possível calcular a margem agora. Se esta empresa acabou de
-            ser atualizada, aplique as migrations pendentes.
-          </p>
-        </CardContent>
+        {deniedByPermission && supportAccess ? (
+          <EmptyState
+            icon={WarningCircle}
+            title="Margem indisponível no acesso de suporte"
+            description="O cálculo roda com o login da própria clínica. Para conferir os números, entre com um usuário dela."
+          />
+        ) : deniedByPermission ? (
+          <EmptyState
+            icon={WarningCircle}
+            title="Margem indisponível para o seu perfil"
+            description="Este quadro exige a permissão de ver o financeiro completo."
+          />
+        ) : (
+          <EmptyState
+            icon={WarningCircle}
+            title="Não foi possível calcular a margem"
+            description="Tente de novo em alguns instantes. Se continuar, fale com o suporte."
+          />
+        )}
       </Card>
     );
   }

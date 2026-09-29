@@ -1,4 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { defaultAgendaTimeZone } from "@/lib/agenda/range";
+import {
+  addDateKeyDays,
+  dateKeysBetween,
+  dateKeyWeekday,
+  zonedDateKey,
+  zonedDayEndExclusive,
+  zonedDayStart,
+} from "./time-zone";
 
 export type ReportFilters = {
   from: string;
@@ -100,9 +109,7 @@ export type ReportData = {
 };
 
 type SearchParamsInput =
-  | URLSearchParams
-  | Record<string, string | string[] | undefined>
-  | undefined;
+  URLSearchParams | Record<string, string | string[] | undefined> | undefined;
 
 type AppointmentRow = {
   id: string;
@@ -205,13 +212,12 @@ export function hasAnyReportPermission(permissions: ReportPermissions) {
   );
 }
 
-export function resolveReportFilters(input: SearchParamsInput): ReportFilters {
-  const today = new Date();
-  const from = new Date(today);
-  from.setDate(from.getDate() - 30);
-
-  const fallbackFrom = toDateInputValue(from);
-  const fallbackTo = toDateInputValue(today);
+export function resolveReportFilters(
+  input: SearchParamsInput,
+  timeZone = defaultAgendaTimeZone,
+): ReportFilters {
+  const fallbackTo = zonedDateKey(new Date(), timeZone);
+  const fallbackFrom = addDateKeyDays(fallbackTo, -30);
 
   return {
     from: normalizeDateParam(readParam(input, "from"), fallbackFrom),
@@ -253,14 +259,18 @@ export async function buildPhase13ReportData({
   organizationId,
   permissions,
   supabase,
+  timeZone,
 }: {
   filters: ReportFilters;
   organizationId: string;
   permissions: ReportPermissions;
   supabase: SupabaseClient;
+  /** Fuso da clínica (`loadReportTimeZone`): o período são datas locais. */
+  timeZone: string;
 }): Promise<ReportData> {
-  const periodStart = new Date(`${filters.from}T00:00:00.000Z`);
-  const periodEnd = new Date(`${filters.to}T23:59:59.999Z`);
+  const periodStart = zonedDayStart(filters.from, timeZone);
+  const periodEndExclusive = zonedDayEndExclusive(filters.to, timeZone);
+  const dateKeys = dateKeysBetween(filters.from, filters.to);
   const hasReports = hasAnyReportPermission(permissions);
 
   const [professionalsResult, unitsResult, proceduresResult, insurancesResult] =
@@ -303,13 +313,13 @@ export async function buildPhase13ReportData({
     ? await queryAppointmentContext({
         filters,
         organizationId,
-        periodEnd,
+        periodEndExclusive,
         supabase,
       })
     : { data: [] as AppointmentRow[] };
   const appointmentContext = appointmentsResult.data ?? [];
   const appointments = appointmentContext.filter((appointment) =>
-    isWithinPeriod(appointment.start_at, periodStart, periodEnd),
+    isWithinPeriod(appointment.start_at, periodStart, periodEndExclusive),
   );
   const appointmentById = new Map(
     appointmentContext.map((appointment) => [appointment.id, appointment]),
@@ -345,7 +355,7 @@ export async function buildPhase13ReportData({
             )
             .eq("organization_id", organizationId)
             .gte("paid_at", periodStart.toISOString())
-            .lte("paid_at", periodEnd.toISOString())
+            .lt("paid_at", periodEndExclusive.toISOString())
             .returns<PaymentRow[]>(),
           supabase
             .from("accounts_payable")
@@ -389,7 +399,7 @@ export async function buildPhase13ReportData({
         )
         .eq("organization_id", organizationId)
         .gte("started_at", periodStart.toISOString())
-        .lte("started_at", periodEnd.toISOString())
+        .lt("started_at", periodEndExclusive.toISOString())
         .returns<EncounterRow[]>()
     : { data: [] as EncounterRow[] };
   const encounters = (encountersResult.data ?? []).filter((row) =>
@@ -414,10 +424,11 @@ export async function buildPhase13ReportData({
           appointments,
           appointmentHistory: appointmentContext,
           availability: availabilityResult.data ?? [],
+          dateKeys,
           names,
-          periodEnd,
           periodStart,
           schedules: schedulesResult.data ?? [],
+          timeZone,
         })
       : null,
     financial: permissions.financial
@@ -429,6 +440,7 @@ export async function buildPhase13ReportData({
           payments,
           payouts,
           receivables,
+          today: zonedDateKey(new Date(), timeZone),
         })
       : null,
     clinical: permissions.clinical
@@ -464,19 +476,15 @@ function normalizeIdParam(value: string | undefined) {
   return value && /^[0-9a-fA-F-]{36}$/.test(value) ? value : "";
 }
 
-function toDateInputValue(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
 async function queryAppointmentContext({
   filters,
   organizationId,
-  periodEnd,
+  periodEndExclusive,
   supabase,
 }: {
   filters: ReportFilters;
   organizationId: string;
-  periodEnd: Date;
+  periodEndExclusive: Date;
   supabase: SupabaseClient;
 }) {
   let query = supabase
@@ -485,7 +493,7 @@ async function queryAppointmentContext({
       "id, patient_id, professional_id, procedure_id, unit_id, health_insurance_id, status, start_at, end_at",
     )
     .eq("organization_id", organizationId)
-    .lte("start_at", periodEnd.toISOString());
+    .lt("start_at", periodEndExclusive.toISOString());
 
   if (filters.professionalId) {
     query = query.eq("professional_id", filters.professionalId);
@@ -539,18 +547,20 @@ function buildOperationalReport({
   appointments,
   appointmentHistory,
   availability,
+  dateKeys,
   names,
-  periodEnd,
   periodStart,
   schedules,
+  timeZone,
 }: {
   appointments: AppointmentRow[];
   appointmentHistory: AppointmentRow[];
   availability: AvailabilityRow[];
+  dateKeys: string[];
   names: ReturnType<typeof buildNameMaps>;
-  periodEnd: Date;
   periodStart: Date;
   schedules: ScheduleRow[];
+  timeZone: string;
 }) {
   const activeAppointments = appointments.filter(
     (appointment) => !["cancelled", "no_show"].includes(appointment.status),
@@ -567,8 +577,7 @@ function buildOperationalReport({
   const occupiedMinutes = sumDurations(activeAppointments);
   const capacityMinutes = calculateCapacityMinutes({
     availability,
-    periodEnd,
-    periodStart,
+    dateKeys,
     schedules,
   });
   const patientFirstAppointment = new Map<string, string>();
@@ -604,7 +613,7 @@ function buildOperationalReport({
     averageDurationMinutes: average(durations),
     newPatients,
     recurringPatients,
-    dailyVolume: buildDailyPoints(periodStart, periodEnd, appointments),
+    dailyVolume: buildDailyPoints(dateKeys, appointments, timeZone),
     statusBreakdown: toBreakdown(countBy(appointments, statusLabel)),
     procedureBreakdown: toBreakdown(
       countBy(
@@ -618,8 +627,7 @@ function buildOperationalReport({
       appointments,
       capacityByProfessional: calculateCapacityByProfessional({
         availability,
-        periodEnd,
-        periodStart,
+        dateKeys,
         schedules,
       }),
       names,
@@ -635,6 +643,7 @@ function buildFinancialReport({
   payments,
   payouts,
   receivables,
+  today,
 }: {
   appointmentById: Map<string, AppointmentRow>;
   filters: ReportFilters;
@@ -643,6 +652,8 @@ function buildFinancialReport({
   payments: PaymentRow[];
   payouts: PayoutRow[];
   receivables: ReceivableRow[];
+  /** Hoje (yyyy-mm-dd) no fuso da clínica, para separar o que já venceu. */
+  today: string;
 }) {
   const filteredPayables = payables.filter(() => !hasCareFilter(filters));
   const revenue = sum(payments, (payment) => numberValue(payment.amount));
@@ -650,7 +661,6 @@ function buildFinancialReport({
     filteredPayables.filter((payable) => payable.status === "paid"),
     (payable) => numberValue(payable.amount),
   );
-  const today = toDateInputValue(new Date());
   const openReceivable = sum(
     receivables.filter((receivable) =>
       ["open", "partial"].includes(receivable.status),
@@ -690,7 +700,7 @@ function buildFinancialReport({
     paymentMethods: toBreakdown(
       sumBy(
         payments,
-        (payment) => payment.payment_methods?.name ?? "Nao informado",
+        (payment) => payment.payment_methods?.name ?? "Não informado",
         (payment) => numberValue(payment.amount),
       ),
     ),
@@ -706,9 +716,12 @@ function buildFinancialReport({
             source?.health_insurance_id ??
             appointment?.health_insurance_id ??
             null;
+          // "Sem convênio", como no painel e na agenda: a clínica pode ter um
+          // convênio cadastrado com o nome "Particular", e as duas barras
+          // sairiam com o mesmo rótulo.
           return insuranceId
-            ? (names.healthInsurances.get(insuranceId) ?? "Convenio")
-            : "Particular";
+            ? (names.healthInsurances.get(insuranceId) ?? "Convênio")
+            : "Sem convênio";
         },
         (payment) => numberValue(payment.amount),
       ),
@@ -970,45 +983,34 @@ function hasAppointmentFilter(filters: ReportFilters) {
 }
 
 function buildDailyPoints(
-  periodStart: Date,
-  periodEnd: Date,
+  dateKeys: string[],
   appointments: AppointmentRow[],
-) {
+  timeZone: string,
+): ReportPoint[] {
   const counts = countBy(appointments, (appointment) =>
-    toDateInputValue(new Date(appointment.start_at)),
+    zonedDateKey(appointment.start_at, timeZone),
   );
-  const points: ReportPoint[] = [];
-  const cursor = new Date(periodStart);
 
-  while (cursor <= periodEnd) {
-    const key = toDateInputValue(cursor);
-    points.push({
-      label: formatShortDate(cursor),
-      value: counts.get(key) ?? 0,
-    });
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  return points;
+  return dateKeys.map((key) => ({
+    label: formatShortDateKey(key),
+    value: counts.get(key) ?? 0,
+  }));
 }
 
 function calculateCapacityMinutes({
   availability,
-  periodEnd,
-  periodStart,
+  dateKeys,
   schedules,
 }: {
   availability: AvailabilityRow[];
-  periodEnd: Date;
-  periodStart: Date;
+  dateKeys: string[];
   schedules: ScheduleRow[];
 }) {
   return sum(
     [
       ...calculateCapacityByProfessional({
         availability,
-        periodEnd,
-        periodStart,
+        dateKeys,
         schedules,
       }).values(),
     ],
@@ -1018,13 +1020,11 @@ function calculateCapacityMinutes({
 
 function calculateCapacityByProfessional({
   availability,
-  periodEnd,
-  periodStart,
+  dateKeys,
   schedules,
 }: {
   availability: AvailabilityRow[];
-  periodEnd: Date;
-  periodStart: Date;
+  dateKeys: string[];
   schedules: ScheduleRow[];
 }) {
   const availabilityBySchedule = new Map<string, AvailabilityRow[]>();
@@ -1035,9 +1035,8 @@ function calculateCapacityByProfessional({
   }
 
   const capacity = new Map<string, number>();
-  const cursor = new Date(periodStart);
-  while (cursor <= periodEnd) {
-    const weekday = cursor.getUTCDay();
+  for (const dateKey of dateKeys) {
+    const weekday = dateKeyWeekday(dateKey);
     for (const schedule of schedules) {
       const minutes = (availabilityBySchedule.get(schedule.id) ?? [])
         .filter((item) => item.weekday === weekday)
@@ -1051,15 +1050,18 @@ function calculateCapacityByProfessional({
         (capacity.get(schedule.professional_id) ?? 0) + minutes,
       );
     }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
   return capacity;
 }
 
-function isWithinPeriod(value: string, periodStart: Date, periodEnd: Date) {
+function isWithinPeriod(
+  value: string,
+  periodStart: Date,
+  periodEndExclusive: Date,
+) {
   const date = new Date(value);
-  return date >= periodStart && date <= periodEnd;
+  return date >= periodStart && date < periodEndExclusive;
 }
 
 function appointmentDurationMinutes(appointment: AppointmentRow) {
@@ -1134,12 +1136,9 @@ function minutesBetween(start: string, end: string) {
   return endHour * 60 + endMinute - (startHour * 60 + startMinute);
 }
 
-function formatShortDate(date: Date) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "UTC",
-  }).format(date);
+function formatShortDateKey(dateKey: string) {
+  const [, month, day] = dateKey.split("-");
+  return `${day}/${month}`;
 }
 
 function statusLabel(appointment: AppointmentRow) {

@@ -6,11 +6,11 @@ export default function ReportsLoading() {
       <span className="sr-only">Carregando relatório</span>
 
       <header className="flex min-h-14 items-start justify-between gap-4">
-        <div className="grid gap-2">
-          <Skeleton className="h-6 w-44" />
-          <Skeleton className="h-4 w-80 max-w-[70vw]" />
+        <div className="grid min-w-0 flex-1 gap-2">
+          <Skeleton className="h-6 w-full max-w-44" />
+          <Skeleton className="h-4 w-full max-w-80" />
         </div>
-        <Skeleton className="h-10 w-40" />
+        <Skeleton className="h-10 w-40 shrink-0" />
       </header>
 
       <section className="rounded-lg border border-border bg-card p-5 shadow-[var(--shadow-soft)]">

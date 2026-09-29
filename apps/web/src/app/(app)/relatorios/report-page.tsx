@@ -24,6 +24,11 @@ import {
   resolveReportPermissions,
   type ReportPermissions,
 } from "@/lib/reports/phase13";
+import {
+  loadReportTimeZone,
+  zonedDayEndExclusive,
+  zonedDayStart,
+} from "@/lib/reports/time-zone";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ReportsSearchParams = Promise<
@@ -102,21 +107,25 @@ export async function ReportPage({
     searchParams ?? Promise.resolve({}),
     requireCompanyPermission(config.permissionCodes),
   ]);
-  const filters = resolveReportFilters(params);
+  const supabase = await createSupabaseServerClient();
+  const timeZone = await loadReportTimeZone(supabase, context.organization.id);
+  const filters = resolveReportFilters(params, timeZone);
   const availablePermissions = resolveReportPermissions(
     context.permissionCodes,
   );
   const permissions = scopePermissions(view, availablePermissions);
-  const supabase = await createSupabaseServerClient();
   const data = await buildPhase13ReportData({
     filters,
     organizationId: context.organization.id,
     permissions,
     supabase,
+    timeZone,
   });
 
+  // grid-cols-1 (minmax(0,1fr)): com a coluna automática, qualquer filho
+  // mais largo que a tela esticava a página inteira em vez de encolher.
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-1 gap-6">
       <PageHeader
         icon={config.icon}
         title={config.title}
@@ -141,8 +150,9 @@ export async function ReportPage({
       {view === "financial" &&
       context.permissionCodes.has("financeiro.ver_geral") ? (
         <MarginSection
-          from={`${filters.from}T00:00:00`}
-          to={`${filters.to}T23:59:59.999`}
+          from={zonedDayStart(filters.from, timeZone).toISOString()}
+          to={zonedDayEndExclusive(filters.to, timeZone).toISOString()}
+          supportAccess={Boolean(context.impersonation)}
         />
       ) : null}
     </div>

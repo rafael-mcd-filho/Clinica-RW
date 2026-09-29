@@ -67,7 +67,11 @@ export function ReportsFilters({
 
   return (
     <form className="grid gap-4">
-      <div className="grid gap-3 lg:grid-cols-[12rem_minmax(18rem,1fr)_minmax(12rem,0.8fr)_minmax(12rem,0.8fr)_auto]">
+      {/* Uma linha só a partir de 2xl. As larguras mínimas das cinco colunas
+          somavam ~1150px, e em notebook (1366px menos a barra lateral) a
+          linha empurrava a página inteira para a direita. Até lá, os quatro
+          campos dividem a linha e os botões descem para a de baixo. */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(9rem,0.7fr)_minmax(15rem,1.3fr)_minmax(0,1fr)_minmax(0,1fr)] 2xl:grid-cols-[12rem_minmax(18rem,1fr)_minmax(12rem,0.8fr)_minmax(12rem,0.8fr)_auto]">
         <label className="grid gap-2 text-sm font-medium">
           Período
           <Select value={preset} onValueChange={applyPreset}>
@@ -103,14 +107,16 @@ export function ReportsFilters({
           emptyLabel="Todas"
           options={options.units}
         />
-        <div className="flex items-end gap-2">
-          <Button type="submit">
+        <div className="flex flex-wrap items-end justify-end gap-2 sm:col-span-2 lg:col-span-4 2xl:col-span-1">
+          {/* lg: em 2xl os botões dividem a linha com os campos (h-10). */}
+          <Button type="submit" size="lg">
             <Filter className="size-4" aria-hidden="true" />
             Aplicar
           </Button>
           <Button
             type="button"
             variant="secondary"
+            size="lg"
             aria-expanded={advancedOpen}
             onClick={() => setAdvancedOpen((current) => !current)}
           >
@@ -121,7 +127,7 @@ export function ReportsFilters({
       </div>
 
       {advancedOpen ? (
-        <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-4 sm:grid-cols-2">
+        <div className="grid animate-content-enter gap-3 rounded-lg border border-border bg-muted/30 p-4 sm:grid-cols-2">
           <FilterSelect
             label="Convênio"
             name="health_insurance_id"
