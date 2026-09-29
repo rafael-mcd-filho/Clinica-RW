@@ -1117,15 +1117,21 @@ function refreshTagViews() {
   revalidatePath("/atendimento");
 }
 
-export async function createPatientAutomationRule(
-  _previousState: CompanyActionState,
-  formData: FormData,
-): Promise<CompanyActionState> {
-  const context = await requireCompanyConfig();
-  if (!context?.organization) {
-    return { error: "Você não pode configurar regras de tag." };
-  }
+type AutomationRulePayload = {
+  name: string;
+  trigger_type: string;
+  triggerConfig: Record<string, number | string>;
+  action_type: string;
+  actionConfig: { tag_id: string; duration_days: number | null };
+  active: boolean;
+};
 
+/** Validação comum de criar e editar automação (formulário → contrato). */
+async function parseAutomationRuleForm(
+  formData: FormData,
+  organizationId: string,
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+): Promise<{ error: string } | { payload: AutomationRulePayload }> {
   const parsed = patientTagRuleSchema.safeParse(valuesFromFormData(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -1152,14 +1158,13 @@ export async function createPatientAutomationRule(
         ? { minimum_paid_amount: minimum_paid_amount! }
         : {};
 
-  const supabase = await createSupabaseServerClient();
   const [scheduleResult, professionalResult] = await Promise.all([
     schedule_id
       ? supabase
           .from("schedules")
           .select("id, professional_id")
           .eq("id", schedule_id)
-          .eq("organization_id", context.organization.id)
+          .eq("organization_id", organizationId)
           .eq("active", true)
           .maybeSingle<{ id: string; professional_id: string | null }>()
       : Promise.resolve({ data: null, error: null }),
@@ -1168,7 +1173,7 @@ export async function createPatientAutomationRule(
           .from("professionals")
           .select("id")
           .eq("id", professional_id)
-          .eq("organization_id", context.organization.id)
+          .eq("organization_id", organizationId)
           .eq("active", true)
           .maybeSingle<{ id: string }>()
       : Promise.resolve({ data: null, error: null }),
@@ -1202,15 +1207,46 @@ export async function createPatientAutomationRule(
     tag_id,
     duration_days: action_type === "add_tag" ? (duration_days ?? null) : null,
   };
+
+  return {
+    payload: {
+      name,
+      trigger_type,
+      triggerConfig,
+      action_type,
+      actionConfig,
+      active,
+    },
+  };
+}
+
+export async function createPatientAutomationRule(
+  _previousState: CompanyActionState,
+  formData: FormData,
+): Promise<CompanyActionState> {
+  const context = await requireCompanyConfig();
+  if (!context?.organization) {
+    return { error: "Você não pode configurar regras de tag." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const result = await parseAutomationRuleForm(
+    formData,
+    context.organization.id,
+    supabase,
+  );
+  if ("error" in result) return { error: result.error };
+  const { payload } = result;
+
   const { data: ruleId, error } = await supabase.rpc(
     "create_patient_automation_rule",
     {
-      p_name: name,
-      p_trigger_type: trigger_type,
-      p_trigger_config: triggerConfig,
-      p_action_type: action_type,
-      p_action_config: actionConfig,
-      p_active: active,
+      p_name: payload.name,
+      p_trigger_type: payload.trigger_type,
+      p_trigger_config: payload.triggerConfig,
+      p_action_type: payload.action_type,
+      p_action_config: payload.actionConfig,
+      p_active: payload.active,
       p_impersonation_session_id: context.impersonation?.id ?? null,
     },
   );
@@ -1225,6 +1261,49 @@ export async function createPatientAutomationRule(
   return { success: "Automação criada." };
 }
 
+/** Edita uma automação existente (antes só dava para apagar e recriar). */
+export async function updatePatientAutomationRule(
+  ruleId: string,
+  _previousState: CompanyActionState,
+  formData: FormData,
+): Promise<CompanyActionState> {
+  const context = await requireCompanyConfig();
+  if (!context?.organization || !z.string().uuid().safeParse(ruleId).success) {
+    return { error: "Você não pode editar esta automação." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const result = await parseAutomationRuleForm(
+    formData,
+    context.organization.id,
+    supabase,
+  );
+  if ("error" in result) return { error: result.error };
+  const { payload } = result;
+
+  const { error } = await supabase.rpc("update_patient_automation_rule", {
+    p_rule_id: ruleId,
+    p_name: payload.name,
+    p_trigger_type: payload.trigger_type,
+    p_trigger_config: payload.triggerConfig,
+    p_action_type: payload.action_type,
+    p_action_config: payload.actionConfig,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
+  });
+
+  if (error) {
+    return {
+      error:
+        error.code === "PGRST202" || error.message.includes("schema cache")
+          ? databaseErrorMessage(error)
+          : friendlyDatabaseError(error.message),
+    };
+  }
+
+  refreshCompanySettings();
+  return { success: "Automação atualizada." };
+}
+
 /** Compatibilidade com a tela anterior; novas telas podem usar o nome genérico. */
 export async function createPatientTagRule(
   previousState: CompanyActionState,
@@ -1236,27 +1315,31 @@ export async function createPatientTagRule(
 export async function setPatientAutomationRuleActive(
   ruleId: string,
   active: boolean,
-): Promise<void> {
+): Promise<CompanyActionState> {
   const context = await requireCompanyConfig();
   if (!context?.organization || !z.string().uuid().safeParse(ruleId).success) {
-    return;
+    return { error: "Você não pode alterar esta automação." };
   }
 
   const supabase = await createSupabaseServerClient();
-  await supabase.rpc("set_patient_automation_rule_active", {
+  const { error } = await supabase.rpc("set_patient_automation_rule_active", {
     p_rule_id: ruleId,
     p_active: active,
     p_impersonation_session_id: context.impersonation?.id ?? null,
   });
+  if (error) {
+    return { error: friendlyDatabaseError(error.message) };
+  }
 
   refreshCompanySettings();
+  return { success: active ? "Automação ativada." : "Automação desativada." };
 }
 
 /** Compatibilidade com a tela anterior; novas telas podem usar o nome genérico. */
 export async function setPatientTagRuleActive(
   ruleId: string,
   active: boolean,
-): Promise<void> {
+): Promise<CompanyActionState> {
   return setPatientAutomationRuleActive(ruleId, active);
 }
 
@@ -1299,24 +1382,37 @@ export async function refreshPatientAutomationRule(
   refreshCompanySettings();
 }
 
+/**
+ * Ativa ou desativa um cadastro. Devolve o resultado: antes a troca era
+ * muda e uma recusa do banco passava despercebida.
+ */
 export async function setRegistrationActive(
   kind: Exclude<RegistrationKind, "price_item">,
   recordId: string,
   active: boolean,
-): Promise<void> {
+): Promise<CompanyActionState> {
   const context = await requireCompanyConfig();
   if (!context?.organization) {
-    return;
+    return { error: "Seu perfil não pode alterar os cadastros da clínica." };
   }
 
   const supabase = await createSupabaseServerClient();
-  await supabase
+  const { error } = await supabase
     .from(tableByKind[kind])
     .update({ active })
     .eq("id", recordId)
     .eq("organization_id", context.organization.id);
+  if (error) {
+    return {
+      error: databaseErrorMessage(
+        error,
+        active ? "Não foi possível ativar." : "Não foi possível desativar.",
+      ),
+    };
+  }
 
   refreshCompanySettings();
+  return { success: active ? "Cadastro ativado." : "Cadastro desativado." };
 }
 
 export async function deletePriceItem(recordId: string): Promise<void> {

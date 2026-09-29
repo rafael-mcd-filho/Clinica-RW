@@ -92,18 +92,25 @@ export function WhatsAppSettings({ initial }: Props) {
     connection.profilePictureUrl ?? initial.profilePictureUrl;
   const displayName = connection.displayName ?? initial.displayName;
   const phoneNumber = connection.phoneNumber ?? initial.phoneNumber;
+  // A URL da foto vem da Evolution e expira; desconectado ela nem se refere
+  // mais à conta. Falhou ou desconectou, volta o ícone — antes a imagem
+  // quebrada mostrava o texto alternativo espremido no círculo.
+  const [failedPicture, setFailedPicture] = useState<string | null>(null);
+  const showPicture =
+    connected && Boolean(profilePicture) && failedPicture !== profilePicture;
 
   return (
-    <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+    <section className="rounded-lg border border-border bg-card p-6 shadow-[var(--shadow-soft)]">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-4">
-          <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-50 text-emerald-700">
-            {profilePicture ? (
+          <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-success-muted text-success-foreground">
+            {showPicture && profilePicture ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={profilePicture}
                 alt="Foto do perfil do WhatsApp"
-                className="size-full object-cover"
+                className="size-full animate-success-pop object-cover"
+                onError={() => setFailedPicture(profilePicture)}
               />
             ) : (
               <MessageCircle className="size-7" aria-hidden="true" />
@@ -115,10 +122,10 @@ export function WhatsAppSettings({ initial }: Props) {
               <span
                 className={`size-2.5 rounded-full ${
                   connected
-                    ? "bg-emerald-500"
+                    ? "bg-success"
                     : connecting
-                      ? "animate-pulse bg-amber-500"
-                      : "bg-slate-400"
+                      ? "animate-pulse bg-warning"
+                      : "bg-muted-foreground"
                 }`}
                 aria-hidden="true"
               />
@@ -126,8 +133,10 @@ export function WhatsAppSettings({ initial }: Props) {
                 {statusLabels[state] ?? state}
               </span>
             </div>
+            {/* Conectar é raro e é o momento de saber que deu certo: a conta
+                entra no lugar do QR Code, e a foto cresce até o lugar. */}
             {connected ? (
-              <div className="mt-2 grid gap-0.5 text-sm">
+              <div className="mt-2 grid animate-panel-enter gap-0.5 text-sm">
                 <span className="font-medium">
                   {displayName ?? "Conta do WhatsApp"}
                 </span>
@@ -195,13 +204,14 @@ export function WhatsAppSettings({ initial }: Props) {
       />
 
       {!initial.platformConfigured ? (
-        <p className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+        <p className="mt-5 rounded-md border border-warning-muted bg-warning-muted/40 p-3 text-sm text-warning-foreground">
           A integração ainda precisa ser configurada pelo Super Admin.
         </p>
       ) : null}
 
       {qrSource && connecting ? (
-        <div className="mt-6 grid justify-items-center gap-3 rounded-lg border border-border bg-white p-5 text-slate-900">
+        // Fundo branco de propósito: o leitor de QR Code precisa do contraste.
+        <div className="mt-6 grid justify-items-center gap-3 rounded-lg border border-border bg-white p-5 text-foreground">
           <Image
             unoptimized
             width={256}
@@ -231,7 +241,7 @@ export function WhatsAppSettings({ initial }: Props) {
 }
 
 function formatPhone(phone: string | null) {
-  if (!phone) return "Número não informado pela Evolution";
+  if (!phone) return "Número não informado";
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 13 && digits.startsWith("55")) {
     return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;

@@ -28,7 +28,7 @@ export default async function PlataformaConfiguracoesPage() {
               Aparência e suporte
             </h2>
             <p className="text-sm text-muted-foreground">
-              Estes dados serão usados nas páginas das empresas.
+              Defina a marca exibida no login, nos menus e no navegador.
             </p>
           </div>
         </div>

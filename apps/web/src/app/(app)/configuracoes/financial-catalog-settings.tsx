@@ -14,6 +14,7 @@ import {
   Plus,
   FloppyDisk as Save,
   Trash as Trash2,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
@@ -31,6 +32,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
 import { FormError } from "@/components/ui/form-error";
@@ -145,11 +147,16 @@ export function ProcedureCostsSection({
         {procedures.length > 6 ? (
           <label className="relative">
             <span className="sr-only">Pesquisar procedimento</span>
+            <MagnifyingGlass
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
             <Input
+              type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Pesquisar procedimento ou serviço"
-              className="w-full"
+              className="w-full pl-9"
             />
           </label>
         ) : null}
@@ -263,7 +270,7 @@ function ProcedureValueRow({
       </button>
 
       {expanded ? (
-        <div className="grid gap-4 border-t border-border p-4">
+        <div className="grid animate-content-enter gap-4 border-t border-border p-4">
           <div className="grid gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h4 className="text-sm font-semibold">Custos deste item</h4>
@@ -377,28 +384,10 @@ function ProcedureCostForm({
           <option value="other">Outro</option>
         </Select>
       </CatalogField>
-      <CatalogField label="Cálculo" required>
-        <Select
-          name="calculation_type"
-          required
-          defaultValue={editing?.calculation_type ?? "percentage"}
-        >
-          <option value="percentage">Percentual (%)</option>
-          <option value="fixed">Valor fixo (R$)</option>
-        </Select>
-      </CatalogField>
-      <CatalogField label="Valor" required>
-        <Input
-          name="value"
-          type="number"
-          inputMode="decimal"
-          required
-          min={0}
-          step="0.01"
-          placeholder="0,00"
-          defaultValue={editing?.value ?? ""}
-        />
-      </CatalogField>
+      <CalculationValueFields
+        calculationType={editing?.calculation_type}
+        value={editing?.value}
+      />
       <FormError message={state.error} className="sm:col-span-2" />
       <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
         <Button type="button" size="sm" variant="ghost" onClick={onClose}>
@@ -750,28 +739,10 @@ function PaymentMethodFeeForm({
           defaultValue={editing?.name ?? ""}
         />
       </CatalogField>
-      <CatalogField label="Cálculo" required>
-        <Select
-          name="calculation_type"
-          required
-          defaultValue={editing?.calculation_type ?? "percentage"}
-        >
-          <option value="percentage">Percentual (%)</option>
-          <option value="fixed">Valor fixo (R$)</option>
-        </Select>
-      </CatalogField>
-      <CatalogField label="Valor" required>
-        <Input
-          name="value"
-          type="number"
-          inputMode="decimal"
-          required
-          min={0}
-          step="0.01"
-          placeholder="0,00"
-          defaultValue={editing?.value ?? ""}
-        />
-      </CatalogField>
+      <CalculationValueFields
+        calculationType={editing?.calculation_type}
+        value={editing?.value}
+      />
       <FormError message={state.error} className="sm:col-span-2" />
       <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
         <Button type="button" size="sm" variant="ghost" onClick={onClose}>
@@ -967,6 +938,67 @@ function DeleteCatalogButton({
         destructive
         icon={Trash2}
       />
+    </>
+  );
+}
+
+/**
+ * Cálculo e valor andam juntos: em valor fixo o campo é em R$ (com máscara);
+ * em percentual, número com "%". Antes os dois eram um número solto, com
+ * ponto ou vírgula dependendo do navegador.
+ */
+function CalculationValueFields({
+  calculationType,
+  value,
+}: {
+  calculationType?: string | null;
+  value?: number | string | null;
+}) {
+  const [type, setType] = useState(calculationType ?? "percentage");
+  return (
+    <>
+      <CatalogField label="Cálculo" required>
+        <Select
+          name="calculation_type"
+          required
+          value={type}
+          onValueChange={setType}
+        >
+          <option value="percentage">Percentual (%)</option>
+          <option value="fixed">Valor fixo (R$)</option>
+        </Select>
+      </CatalogField>
+      <CatalogField label="Valor" required>
+        {type === "fixed" ? (
+          <CurrencyInput
+            key="fixed"
+            name="value"
+            required
+            defaultValue={value == null || value === "" ? 0 : Number(value)}
+          />
+        ) : (
+          <div key="percentage" className="relative">
+            <Input
+              name="value"
+              inputMode="decimal"
+              required
+              placeholder="0"
+              defaultValue={
+                value == null || value === ""
+                  ? ""
+                  : String(value).replace(".", ",")
+              }
+              className="pr-8 text-right tabular-nums"
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-control text-muted-foreground"
+            >
+              %
+            </span>
+          </div>
+        )}
+      </CatalogField>
     </>
   );
 }

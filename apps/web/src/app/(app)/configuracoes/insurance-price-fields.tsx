@@ -1,6 +1,7 @@
 "use client";
 
-import { Input } from "@/components/ui/field";
+import Link from "next/link";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { HelpTooltip } from "@/components/ui/help-tooltip";
 import type { HealthInsuranceRow } from "@/lib/clinic/base-registrations";
 
@@ -27,7 +28,16 @@ export function InsurancePriceFields({
   if (!active.length) {
     return (
       <p className="text-body-sm text-muted-foreground">
-        Cadastre um convênio para definir quanto ele paga por este procedimento.
+        Para definir quanto cada convênio paga por este procedimento, cadastre
+        os convênios em{" "}
+        <Link
+          href="?section=convenios"
+          scroll={false}
+          className="font-medium text-primary hover:underline"
+        >
+          Convênios e pagamentos
+        </Link>
+        .
       </p>
     );
   }
@@ -44,35 +54,26 @@ export function InsurancePriceFields({
         </HelpTooltip>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        {active.map((insurance) => (
-          <label
-            key={insurance.id}
-            className="grid gap-1.5 text-xs font-medium text-muted-foreground"
-          >
-            {insurance.name}
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm text-muted-foreground">R$</span>
-              <Input
+        {active.map((insurance) => {
+          const price = procedureId
+            ? insurancePrices[`${insurance.id}:${procedureId}`]
+            : undefined;
+          return (
+            <label
+              key={insurance.id}
+              className="grid gap-1.5 text-sm font-medium"
+            >
+              {insurance.name}
+              <CurrencyInput
                 name={`price_${insurance.id}`}
-                inputMode="decimal"
-                defaultValue={
-                  procedureId
-                    ? formatPriceValue(
-                        insurancePrices[`${insurance.id}:${procedureId}`],
-                      )
-                    : ""
-                }
+                allowEmpty
+                defaultValue={typeof price === "number" ? price : ""}
                 placeholder="Não cobre"
-                className="h-9 text-right tabular-nums"
               />
-            </div>
-          </label>
-        ))}
+            </label>
+          );
+        })}
       </div>
     </div>
   );
-}
-
-function formatPriceValue(value: number | undefined) {
-  return typeof value === "number" ? value.toFixed(2).replace(".", ",") : "";
 }

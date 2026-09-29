@@ -15,6 +15,8 @@ import {
   CheckCircle as CheckCircle2,
   Clock as Clock3,
   Copy,
+  HandCoins,
+  MagnifyingGlass,
   PencilSimple as Pencil,
   Plus,
   FloppyDisk as Save,
@@ -23,6 +25,7 @@ import {
   Trash,
   UsersThree as UsersRound,
 } from "@phosphor-icons/react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   completeOnboarding,
@@ -46,6 +49,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select, Textarea } from "@/components/ui/field";
 import { MaskedInput } from "@/components/ui/masked-input";
@@ -71,7 +75,8 @@ type Option = { value: string; label: string };
 type FieldDefinition = {
   name: string;
   label: string;
-  type?: "text" | "email" | "number" | "textarea" | "select";
+  type?:
+    "text" | "email" | "number" | "textarea" | "select" | "currency" | "phone";
   required?: boolean;
   placeholder?: string;
   options?: Option[];
@@ -81,6 +86,51 @@ type FieldDefinition = {
   wide?: boolean;
   help?: React.ReactNode;
 };
+
+const councilOptions: Option[] = [
+  "CRM",
+  "CRO",
+  "CRP",
+  "CREFITO",
+  "COREN",
+  "CRN",
+  "CRFa",
+  "CRF",
+  "CRBM",
+  "CREF",
+  "CRESS",
+  "CRMV",
+].map((value) => ({ value, label: value }));
+
+const ufOptions: Option[] = [
+  "AC",
+  "AL",
+  "AM",
+  "AP",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MG",
+  "MS",
+  "MT",
+  "PA",
+  "PB",
+  "PE",
+  "PI",
+  "PR",
+  "RJ",
+  "RN",
+  "RO",
+  "RR",
+  "RS",
+  "SC",
+  "SE",
+  "SP",
+  "TO",
+].map((value) => ({ value, label: value }));
 
 const weekdays = [
   "Domingo",
@@ -120,18 +170,29 @@ export function CompanySettings({
   }, [data.priceTables, data.priceTableItems]);
 
   const checklist = [
-    { label: "Dados da clínica", done: Boolean(data.clinic.trade_name) },
-    { label: "Unidade ativa", done: data.units.some((item) => item.active) },
+    {
+      label: "Dados da clínica",
+      section: "clinica",
+      done: Boolean(data.clinic.trade_name),
+    },
+    {
+      label: "Unidade ativa",
+      section: "estrutura",
+      done: data.units.some((item) => item.active),
+    },
     {
       label: "Profissional ativo",
+      section: "equipe",
       done: data.professionals.some((item) => item.active),
     },
     {
       label: "Procedimento ativo",
+      section: "servicos",
       done: data.procedures.some((item) => item.active),
     },
     {
-      label: "Horário configurado",
+      label: "Horário de funcionamento",
+      section: "clinica",
       done: data.businessHours.some(
         (item) => !item.unit_id && !item.professional_id && item.active,
       ),
@@ -186,6 +247,7 @@ export function CompanySettings({
                   itemLabel="Unidade"
                   modalForm
                   description="Endereços físicos onde a clínica atende."
+                  emptyText="Cadastre a primeira unidade: é o endereço onde a clínica atende e que aparece para o paciente."
                   rows={data.units as EditableRow[]}
                   fields={unitFields}
                   summary={(row) =>
@@ -200,7 +262,23 @@ export function CompanySettings({
                   itemLabel="Sala"
                   modalForm
                   description="Consultórios e ambientes vinculados a uma unidade."
-                  rows={data.rooms as EditableRow[]}
+                  rows={
+                    [...data.rooms].sort(
+                      (left, right) =>
+                        optionLabel(
+                          unitOptions,
+                          String(left.unit_id ?? ""),
+                        ).localeCompare(
+                          optionLabel(unitOptions, String(right.unit_id ?? "")),
+                          "pt-BR",
+                        ) ||
+                        String(left.name).localeCompare(
+                          String(right.name),
+                          "pt-BR",
+                        ),
+                    ) as EditableRow[]
+                  }
+                  emptyText="Cadastre os consultórios e salas de cada unidade para organizar onde cada atendimento acontece."
                   fields={[
                     selectField("unit_id", "Unidade", unitOptions, true),
                     textField("name", "Nome", true, "Consultório 1"),
@@ -217,6 +295,7 @@ export function CompanySettings({
                   itemGender="masculine"
                   modalForm
                   description="Recursos compartilhados usados nos atendimentos."
+                  emptyText="Cadastre equipamentos compartilhados (ex.: ultrassom) para saber onde estão e evitar conflito de uso."
                   rows={data.equipment as EditableRow[]}
                   fields={[
                     selectField("unit_id", "Unidade", unitOptions),
@@ -243,6 +322,7 @@ export function CompanySettings({
                   itemLabel="Especialidade"
                   modalForm
                   description="Especialidades usadas na equipe e no prontuário."
+                  emptyText="Cadastre as especialidades da clínica para vinculá-las aos profissionais e às fichas de atendimento."
                   rows={data.specialties as EditableRow[]}
                   fields={[
                     textField("name", "Nome", true, "Clínica geral"),
@@ -262,6 +342,7 @@ export function CompanySettings({
                   itemGender="masculine"
                   modalForm
                   description="Profissionais assistenciais que terão agenda e atendimentos."
+                  emptyText="Cadastre quem atende: cada profissional pode ter agenda, atendimentos e, se quiser, acesso ao sistema."
                   rows={data.professionals as EditableRow[]}
                   canManageUsers={canManageUsers}
                   fields={[
@@ -279,9 +360,9 @@ export function CompanySettings({
                       "Especialidade principal",
                       specialtyOptions,
                     ),
-                    textField("council_type", "Conselho", false, "CRM"),
+                    selectField("council_type", "Conselho", councilOptions),
                     textField("council_number", "Número do conselho"),
-                    textField("council_state", "UF do conselho", false, "CE"),
+                    selectField("council_state", "UF do conselho", ufOptions),
                   ]}
                   summary={(row) => {
                     const specialty = optionLabel(
@@ -318,6 +399,8 @@ export function CompanySettings({
                   itemGender="masculine"
                   modalForm
                   description="Itens que poderão ser agendados e cobrados."
+                  addLabel="Novo procedimento"
+                  emptyText="Cadastre as consultas, exames e procedimentos: eles aparecem na agenda, no financeiro e no agendamento online."
                   rows={data.procedures as EditableRow[]}
                   fields={[
                     textField("name", "Nome", true, "Consulta"),
@@ -333,14 +416,10 @@ export function CompanySettings({
                       help: "Tempo reservado na agenda ao selecionar este procedimento.",
                     },
                     {
-                      ...numberField(
-                        "base_price",
-                        "Preço padrão particular (R$)",
-                        0,
-                        0,
-                        undefined,
-                        "0.01",
-                      ),
+                      name: "base_price",
+                      label: "Preço particular",
+                      type: "currency",
+                      required: true,
                       help: "Valor padrão do procedimento para atendimentos particulares.",
                     },
                   ]}
@@ -358,14 +437,15 @@ export function CompanySettings({
                     `${row.duration_minutes} min · ${formatCurrency(Number(row.base_price))}`
                   }
                 />
-                <ProcedureCostsSection
-                  procedures={data.procedures}
-                  costs={data.procedureCosts}
-                />
-                <PaymentMethodsSettings
-                  methods={data.paymentMethods}
-                  fees={data.paymentMethodFees}
-                />
+              </div>
+            ),
+          },
+          {
+            id: "convenios",
+            label: "Convênios e pagamentos",
+            icon: <HandCoins />,
+            content: (
+              <div className="grid gap-5">
                 <RegistrationSection
                   kind="health_insurance"
                   title="Convênios"
@@ -373,6 +453,7 @@ export function CompanySettings({
                   itemGender="masculine"
                   modalForm
                   description="Planos de saúde aceitos pela clínica. Atendimento particular não precisa ser cadastrado como convênio."
+                  emptyText="Cadastre os convênios aceitos para definir quanto cada um paga por procedimento."
                   rows={data.healthInsurances as EditableRow[]}
                   fields={[
                     textField("name", "Nome", true, "Convênio"),
@@ -381,6 +462,14 @@ export function CompanySettings({
                   summary={(row) =>
                     String(row.document ?? "Sem CNPJ informado")
                   }
+                />
+                <PaymentMethodsSettings
+                  methods={data.paymentMethods}
+                  fees={data.paymentMethodFees}
+                />
+                <ProcedureCostsSection
+                  procedures={data.procedures}
+                  costs={data.procedureCosts}
                 />
               </div>
             ),
@@ -401,7 +490,7 @@ function OnboardingCard({
   checklist,
   mode,
 }: {
-  checklist: Array<{ label: string; done: boolean }>;
+  checklist: Array<{ label: string; section: string; done: boolean }>;
   mode: "solo" | "clinic";
 }) {
   const [state, action, pending] = useActionState(
@@ -442,15 +531,32 @@ function OnboardingCard({
       <CardContent>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {checklist.map((item) => (
-            <div
+            // Cada item leva à aba onde ele se resolve.
+            <Link
               key={item.label}
-              className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
+              href={`?section=${item.section}`}
+              scroll={false}
+              className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors duration-[var(--motion-fast)] hover:border-primary/50 hover:bg-primary-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
-              <span
-                className={`size-2 rounded-full ${item.done ? "bg-success" : "bg-border-strong"}`}
-              />
-              {item.label}
-            </div>
+              {item.done ? (
+                <CheckCircle2
+                  className="size-4 shrink-0 text-success-foreground"
+                  weight="fill"
+                  aria-hidden="true"
+                />
+              ) : (
+                <span
+                  className="size-2 shrink-0 rounded-full bg-border-strong"
+                  aria-hidden="true"
+                />
+              )}
+              <span className={item.done ? "text-muted-foreground" : ""}>
+                {item.label}
+              </span>
+              <span className="sr-only">
+                {item.done ? "(concluído)" : "(pendente)"}
+              </span>
+            </Link>
           ))}
         </div>
         <FormError message={state.error} className="mt-3" />
@@ -563,11 +669,11 @@ function ClinicForm({
                 <option value="America/Rio_Branco">Rio Branco</option>
               </Select>
             </FormField>
-            <FormField label="Idioma" required>
-              <Select name="locale" defaultValue={data.settings.locale}>
-                <option value="pt-BR">Português (Brasil)</option>
-              </Select>
-            </FormField>
+            <input
+              type="hidden"
+              name="locale"
+              value={data.settings.locale || "pt-BR"}
+            />
           </div>
 
           <section className="grid gap-4 rounded-md border border-border bg-background p-4">
@@ -582,8 +688,8 @@ function ClinicForm({
                   </Badge>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Classifica a estrutura da operação; não substitui perfis,
-                  permissões ou escopos de acesso.
+                  Organiza telas e relatórios por profissional. Não muda plano,
+                  permissões nem apaga dados.
                 </p>
               </div>
               <Switch
@@ -594,26 +700,11 @@ function ClinicForm({
               />
             </div>
 
-            <div className="rounded-md bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              {automaticMode ? (
-                <p>
-                  <strong className="font-medium text-foreground">
-                    Detecção automática ativa:
-                  </strong>{" "}
-                  {activeProfessionalCount} profissional
-                  {activeProfessionalCount === 1 ? " ativo" : "ais ativos"}. Até
-                  1 resulta em Solo; a partir de 2, em Clínica.
-                </p>
-              ) : (
-                <p>
-                  <strong className="font-medium text-foreground">
-                    Definição manual ativa:
-                  </strong>{" "}
-                  o modo escolhido permanecerá fixo mesmo se a quantidade de
-                  profissionais mudar.
-                </p>
-              )}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              {automaticMode
+                ? `Automático: ${activeProfessionalCount} profissional${activeProfessionalCount === 1 ? " ativo" : "ais ativos"} — até 1 é Solo; a partir de 2, Clínica.`
+                : "Manual: o modo escolhido fica fixo, mesmo se a equipe mudar."}
+            </p>
 
             {automaticMode ? (
               <input
@@ -650,16 +741,6 @@ function ClinicForm({
                 rule="No automático: 2 ou mais profissionais ativos."
               />
             </div>
-
-            <p className="rounded-md border border-primary/20 bg-primary-muted/35 px-3 py-2 text-xs text-muted-foreground">
-              <strong className="font-semibold text-foreground">
-                Implicação atual:
-              </strong>{" "}
-              trocar o modo não altera o plano, não concede permissões e não
-              exclui pacientes, agendas ou cadastros. Os mesmos recursos
-              continuam disponíveis; a segurança permanece definida pelos perfis
-              e escopos dos usuários.
-            </p>
           </section>
 
           <FormError message={state.error} />
@@ -675,36 +756,87 @@ function ClinicForm({
   );
 }
 
+type BusinessDayState = {
+  enabled: boolean;
+  start: string;
+  end: string;
+  lunchEnabled: boolean;
+  lunchStart: string;
+  lunchEnd: string;
+};
+
 function BusinessHoursForm({ hours }: { hours: BusinessHourRow[] }) {
   const [state, action, pending] = useActionState(
     saveBusinessHours,
     initialState,
   );
-  const clinicHours = useMemo(
-    () =>
-      new Map(
-        hours
-          .filter((item) => !item.unit_id && !item.professional_id)
-          .map((item) => [item.weekday, item]),
-      ),
-    [hours],
-  );
+  const [days, setDays] = useState<BusinessDayState[]>(() => {
+    const clinicHours = new Map(
+      hours
+        .filter((item) => !item.unit_id && !item.professional_id)
+        .map((item) => [item.weekday, item]),
+    );
+    return weekdays.map((_, weekday) => {
+      const hour = clinicHours.get(weekday);
+      return {
+        enabled: Boolean(hour?.active),
+        start: hour?.start_time.slice(0, 5) ?? "08:00",
+        end: hour?.end_time.slice(0, 5) ?? "18:00",
+        lunchEnabled: Boolean(hour?.lunch_start_time && hour?.lunch_end_time),
+        lunchStart: hour?.lunch_start_time?.slice(0, 5) ?? "12:00",
+        lunchEnd: hour?.lunch_end_time?.slice(0, 5) ?? "13:00",
+      };
+    });
+  });
 
   useEffect(() => {
     if (state.success) toast.success(state.success);
   }, [state]);
 
+  function updateDay(weekday: number, patch: Partial<BusinessDayState>) {
+    setDays((current) =>
+      current.map((day, index) =>
+        index === weekday ? { ...day, ...patch } : day,
+      ),
+    );
+  }
+
+  // Segunda a sexta costumam ter o mesmo horário: um clique em vez de cinco.
+  function copyMondayToWeekdays() {
+    setDays((current) =>
+      current.map((day, index) =>
+        index >= 1 && index <= 5 ? { ...current[1], enabled: true } : day,
+      ),
+    );
+    toast.success("Horário de segunda repetido de terça a sexta.");
+  }
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Clock3 className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="font-semibold">Horários de funcionamento</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Clock3 className="size-4 text-primary" aria-hidden="true" />
+              <h2 className="font-semibold">Horários de funcionamento</h2>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Quando a clínica está aberta. Os horários de atendimento de cada
+              profissional ficam na agenda dele, em Configurações › Agenda.
+            </p>
+          </div>
+          {days[1].enabled ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={copyMondayToWeekdays}
+            >
+              <Copy className="size-3.5" aria-hidden="true" />
+              Repetir segunda nos dias úteis
+            </Button>
+          ) : null}
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Referência geral da clínica. Não abre nem bloqueia horários; cada
-          agenda possui sua própria disponibilidade e regras online.
-        </p>
       </CardHeader>
       <CardContent>
         <form action={action} className="grid gap-4">
@@ -714,17 +846,15 @@ function BusinessHoursForm({ hours }: { hours: BusinessHourRow[] }) {
               <span>Funcionamento</span>
               <span>Intervalo</span>
             </div>
-            {weekdays.map((label, weekday) => {
-              const hour = clinicHours.get(weekday);
-              return (
-                <BusinessHourDay
-                  key={label}
-                  weekday={weekday}
-                  label={label}
-                  hour={hour}
-                />
-              );
-            })}
+            {weekdays.map((label, weekday) => (
+              <BusinessHourDay
+                key={label}
+                weekday={weekday}
+                label={label}
+                day={days[weekday]}
+                onChange={(patch) => updateDay(weekday, patch)}
+              />
+            ))}
           </div>
           <FormError message={state.error} />
           <div className="flex justify-end">
@@ -742,34 +872,32 @@ function BusinessHoursForm({ hours }: { hours: BusinessHourRow[] }) {
 function BusinessHourDay({
   weekday,
   label,
-  hour,
+  day,
+  onChange,
 }: {
   weekday: number;
   label: string;
-  hour?: BusinessHourRow;
+  day: BusinessDayState;
+  onChange: (patch: Partial<BusinessDayState>) => void;
 }) {
-  const [enabled, setEnabled] = useState(Boolean(hour?.active));
-  const [lunchEnabled, setLunchEnabled] = useState(
-    Boolean(hour?.lunch_start_time && hour?.lunch_end_time),
-  );
-
   return (
     <section className="rounded-md border border-border px-3 py-2.5">
       <div className="grid min-w-0 gap-2.5 lg:grid-cols-[10.5rem_minmax(16rem,0.9fr)_minmax(19rem,1.1fr)] lg:items-center lg:gap-3">
         <Checkbox
           name={`enabled_${weekday}`}
-          checked={enabled}
-          onChange={(event) => setEnabled(event.target.checked)}
+          checked={day.enabled}
+          onChange={(event) => onChange({ enabled: event.target.checked })}
           label={label}
         />
-        {enabled ? (
+        {day.enabled ? (
           <>
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 animate-content-enter items-center gap-2">
               <Input
                 aria-label={`Abertura de ${label}`}
                 name={`start_${weekday}`}
                 type="time"
-                defaultValue={hour?.start_time.slice(0, 5) ?? "08:00"}
+                value={day.start}
+                onChange={(event) => onChange({ start: event.target.value })}
                 className="min-w-0 flex-1"
                 required
               />
@@ -778,31 +906,35 @@ function BusinessHourDay({
                 aria-label={`Fechamento de ${label}`}
                 name={`end_${weekday}`}
                 type="time"
-                defaultValue={hour?.end_time.slice(0, 5) ?? "18:00"}
+                value={day.end}
+                onChange={(event) => onChange({ end: event.target.value })}
                 className="min-w-0 flex-1"
                 required
               />
             </div>
 
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="flex min-w-0 animate-content-enter flex-wrap items-center gap-2">
               <Switch
-                checked={lunchEnabled}
+                checked={day.lunchEnabled}
                 label="Almoço"
-                onCheckedChange={setLunchEnabled}
+                onCheckedChange={(checked) =>
+                  onChange({ lunchEnabled: checked })
+                }
               />
               <input
                 type="hidden"
                 name={`lunch_enabled_${weekday}`}
-                value={lunchEnabled ? "on" : "off"}
+                value={day.lunchEnabled ? "on" : "off"}
               />
-              {lunchEnabled ? (
-                <div className="flex min-w-0 flex-1 items-center gap-2">
+              {day.lunchEnabled ? (
+                <div className="flex min-w-0 flex-1 animate-content-enter items-center gap-2">
                   <Input
                     aria-label={`Início da pausa de ${label}`}
                     name={`lunch_start_${weekday}`}
                     type="time"
-                    defaultValue={
-                      hour?.lunch_start_time?.slice(0, 5) ?? "12:00"
+                    value={day.lunchStart}
+                    onChange={(event) =>
+                      onChange({ lunchStart: event.target.value })
                     }
                     className="min-w-0 flex-1"
                     required
@@ -814,7 +946,10 @@ function BusinessHourDay({
                     aria-label={`Fim da pausa de ${label}`}
                     name={`lunch_end_${weekday}`}
                     type="time"
-                    defaultValue={hour?.lunch_end_time?.slice(0, 5) ?? "13:00"}
+                    value={day.lunchEnd}
+                    onChange={(event) =>
+                      onChange({ lunchEnd: event.target.value })
+                    }
                     className="min-w-0 flex-1"
                     required
                   />
@@ -980,6 +1115,8 @@ function RegistrationSection({
   modalForm = false,
   itemLabel = "Cadastro",
   itemGender = "feminine",
+  addLabel,
+  emptyText,
   canManageUsers = false,
   extraFields,
 }: {
@@ -992,15 +1129,25 @@ function RegistrationSection({
   modalForm?: boolean;
   itemLabel?: string;
   itemGender?: "feminine" | "masculine";
+  /** Texto do botão de criar; padrão "Nova unidade", "Novo profissional"... */
+  addLabel?: string;
+  /** Estado vazio que explica para que serve o cadastro. */
+  emptyText?: string;
   canManageUsers?: boolean;
   extraFields?: (editing: EditableRow | null) => React.ReactNode;
 }) {
   const [editing, setEditing] = useState<EditableRow | null>(null);
   const [confirmingDeactivate, setConfirmingDeactivate] =
     useState<EditableRow | null>(null);
+  const [deactivateError, setDeactivateError] = useState<string>();
   const [formOpen, setFormOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [, startToggle] = useTransition();
   const itemLabelLower = itemLabel.toLowerCase();
   const feminineItem = itemGender === "feminine";
+  const createLabel =
+    addLabel ?? `${feminineItem ? "Nova" : "Novo"} ${itemLabelLower}`;
   // Profissional fica de fora: ele carrega acesso ao sistema e prontuário, e
   // some por outro caminho.
   const deletableKind = deletableRegistrationKinds.has(kind)
@@ -1010,6 +1157,15 @@ function RegistrationSection({
     setEditing(null);
     setFormOpen(false);
   }, []);
+  const searchable = rows.length > 8;
+  const normalizedQuery = foldText(query.trim());
+  const visibleRows = normalizedQuery
+    ? rows.filter((row) =>
+        foldText(`${String(row.name)} ${summary(row)}`).includes(
+          normalizedQuery,
+        ),
+      )
+    : rows;
 
   function openNewRegistration() {
     setEditing(null);
@@ -1017,27 +1173,48 @@ function RegistrationSection({
   }
 
   function openEditRegistration(row: EditableRow) {
-    setEditing(row);
-    setFormOpen(true);
+    if (modalForm) {
+      setEditing(row);
+      setFormOpen(true);
+    } else {
+      setEditing(row);
+    }
+  }
+
+  // Ativar/desativar agora diz o que aconteceu — antes a troca era muda e,
+  // se o banco recusasse, ninguém ficava sabendo.
+  function toggleActive(row: EditableRow, active: boolean) {
+    setTogglingId(row.id);
+    startToggle(async () => {
+      const result = await setRegistrationActive(kind, row.id, active);
+      setTogglingId(null);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(
+        `${String(row.name)} ${active ? "ativad" : "desativad"}${feminineItem ? "a" : "o"}.`,
+      );
+    });
   }
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">{title}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold">{title}</h2>
+              <Badge variant="neutral">{rows.length}</Badge>
+            </div>
             <p className="mt-1 text-sm text-muted-foreground">{description}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Badge variant="neutral">{rows.length}</Badge>
-            {modalForm ? (
-              <Button type="button" size="sm" onClick={openNewRegistration}>
-                <Plus className="size-3.5" aria-hidden="true" />
-                Adicionar
-              </Button>
-            ) : null}
-          </div>
+          {modalForm ? (
+            <Button type="button" size="sm" onClick={openNewRegistration}>
+              <Plus className="size-3.5" aria-hidden="true" />
+              {createLabel}
+            </Button>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className={modalForm ? "grid gap-3 py-3" : "grid gap-5"}>
@@ -1052,32 +1229,82 @@ function RegistrationSection({
           />
         ) : null}
 
+        {searchable ? (
+          <label className="relative">
+            <span className="sr-only">Buscar em {title.toLowerCase()}</span>
+            <MagnifyingGlass
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={`Buscar em ${title.toLowerCase()}`}
+              className="w-full pl-9"
+            />
+          </label>
+        ) : null}
+
         <div className="app-list-table-lg overflow-hidden rounded-md border border-border">
-          {rows.length ? (
-            <div className="app-list-row hidden grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_6rem_8rem] border-b border-border bg-muted text-label font-semibold text-foreground lg:grid">
+          {visibleRows.length ? (
+            <div className="app-list-row hidden grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_8rem_5.5rem] border-b border-border bg-muted text-label font-semibold text-foreground lg:grid">
               <span className="app-list-cell">Nome</span>
-              <span className="app-list-cell">Detalhamento</span>
-              <span className="app-list-cell">Status</span>
+              <span className="app-list-cell">Detalhes</span>
+              <span className="app-list-cell">Situação</span>
               <span className="app-list-cell">Ações</span>
             </div>
           ) : null}
-          {rows.length ? (
+          {visibleRows.length ? (
             <div className="divide-y divide-border">
-              {rows.map((row) => (
+              {visibleRows.map((row) => (
                 <div
                   key={row.id}
-                  className="app-list-row grid gap-2 px-4 py-3 transition-colors duration-[var(--motion-fast)] hover:bg-background sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_6rem_8rem]"
+                  className="app-list-row grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_8rem_5.5rem]"
                 >
                   <div className="app-list-cell min-w-0 text-sm font-medium">
-                    <span className="truncate">{String(row.name)}</span>
+                    {/* O nome abre a edição: é onde o olho já está. */}
+                    <button
+                      type="button"
+                      onClick={() => openEditRegistration(row)}
+                      className="max-w-full truncate text-left underline-offset-4 hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    >
+                      {String(row.name)}
+                    </button>
                   </div>
                   <div className="app-list-cell min-w-0 text-body-sm text-muted-foreground">
                     <span className="truncate">{summary(row)}</span>
                   </div>
                   <div className="app-list-cell">
-                    <Badge variant={row.active ? "success" : "neutral"}>
-                      {row.active ? "Ativo" : "Inativo"}
-                    </Badge>
+                    <span className="inline-flex items-center gap-2">
+                      <StatusToggle
+                        type="button"
+                        active={Boolean(row.active)}
+                        disabled={togglingId === row.id}
+                        label={`${row.active ? "Desativar" : "Ativar"} ${String(row.name)}`}
+                        onClick={() =>
+                          row.active
+                            ? (setDeactivateError(undefined),
+                              setConfirmingDeactivate(row))
+                            : toggleActive(row, true)
+                        }
+                      />
+                      <span
+                        className={
+                          row.active
+                            ? "text-body-sm text-success-foreground"
+                            : "text-body-sm text-muted-foreground"
+                        }
+                      >
+                        {row.active
+                          ? feminineItem
+                            ? "Ativa"
+                            : "Ativo"
+                          : feminineItem
+                            ? "Inativa"
+                            : "Inativo"}
+                      </span>
+                    </span>
                   </div>
                   <div className="app-list-cell flex shrink-0 gap-1">
                     <Button
@@ -1087,35 +1314,10 @@ function RegistrationSection({
                       className="border border-border bg-card text-primary hover:border-primary hover:bg-primary-muted hover:text-primary"
                       aria-label={`Editar ${String(row.name)}`}
                       title="Editar"
-                      onClick={() =>
-                        modalForm ? openEditRegistration(row) : setEditing(row)
-                      }
+                      onClick={() => openEditRegistration(row)}
                     >
                       <Pencil className="size-3.5" aria-hidden="true" />
                     </Button>
-                    {row.active ? (
-                      <StatusToggle
-                        type="button"
-                        active
-                        label={`Desativar ${String(row.name)}`}
-                        onClick={() => setConfirmingDeactivate(row)}
-                      />
-                    ) : (
-                      <form
-                        action={setRegistrationActive.bind(
-                          null,
-                          kind,
-                          row.id,
-                          true,
-                        )}
-                      >
-                        <StatusToggle
-                          type="submit"
-                          active={false}
-                          label={`Ativar ${String(row.name)}`}
-                        />
-                      </form>
-                    )}
                     {/* Desativar é para item com histórico; excluir é para o que
                       entrou por engano. O banco decide qual dos dois cabe — se
                       houver vínculo, a exclusão é recusada dizendo qual. */}
@@ -1130,10 +1332,27 @@ function RegistrationSection({
                 </div>
               ))}
             </div>
-          ) : (
+          ) : rows.length ? (
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              Nenhum cadastro nesta seção.
+              Nada encontrado para “{query.trim()}”.
             </p>
+          ) : (
+            <div className="grid justify-items-center gap-3 px-4 py-8 text-center">
+              <p className="max-w-md text-sm text-muted-foreground">
+                {emptyText ?? description}
+              </p>
+              {modalForm ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={openNewRegistration}
+                >
+                  <Plus className="size-3.5" aria-hidden="true" />
+                  {createLabel}
+                </Button>
+              ) : null}
+            </div>
           )}
         </div>
       </CardContent>
@@ -1145,10 +1364,18 @@ function RegistrationSection({
         description={`${String(confirmingDeactivate?.name ?? "Este cadastro")} deixará de estar disponível para novos registros. O histórico existente será preservado.`}
         confirmLabel="Desativar"
         pendingLabel="Desativando..."
-        destructive
+        error={deactivateError}
         onConfirm={async () => {
           if (!confirmingDeactivate) return false;
-          await setRegistrationActive(kind, confirmingDeactivate.id, false);
+          const row = confirmingDeactivate;
+          const result = await setRegistrationActive(kind, row.id, false);
+          if (result.error) {
+            setDeactivateError(result.error);
+            return false;
+          }
+          toast.success(
+            `${String(row.name)} desativad${feminineItem ? "a" : "o"}.`,
+          );
         }}
       />
 
@@ -1192,6 +1419,11 @@ function RegistrationSection({
       ) : null}
     </Card>
   );
+}
+
+/** Minúsculo e sem acento, para a busca das listas. */
+function foldText(value: string) {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
 function RegistrationForm({
@@ -1394,7 +1626,7 @@ function ProfessionalAccessFields({
           help={
             canManageUsers
               ? "Vincule uma conta já cadastrada nesta empresa. Cada usuário pode representar apenas um profissional."
-              : "É necessária a permissão config.usuarios para alterar este vínculo."
+              : "Só quem administra usuários da clínica pode alterar este vínculo."
           }
         >
           <Select
@@ -1578,6 +1810,20 @@ function DynamicField({
             </option>
           ))}
         </Select>
+      ) : field.type === "currency" ? (
+        <CurrencyInput
+          name={field.name}
+          required={field.required}
+          defaultValue={value == null ? 0 : Number(value)}
+        />
+      ) : field.type === "phone" ? (
+        <MaskedInput
+          name={field.name}
+          maskKind="phone"
+          inputMode="tel"
+          placeholder="(00) 00000-0000"
+          defaultValue={defaultValue}
+        />
       ) : field.type === "textarea" ? (
         <Textarea
           name={field.name}
@@ -1639,7 +1885,7 @@ function FormField({
 const unitFields: FieldDefinition[] = [
   textField("name", "Nome", true, "Unidade Centro"),
   textField("code", "Código interno"),
-  textField("phone", "Telefone"),
+  { ...textField("phone", "Telefone"), type: "phone" },
   { ...textField("email", "E-mail"), type: "email" },
   // Endereço vem do AddressFields (CEP preenche o resto), no RegistrationForm.
 ];

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import {
   SealCheck as BadgeCheck,
   Cake,
@@ -9,6 +9,7 @@ import {
   CalendarDots as CalendarClock,
   CalendarDots as CalendarDays,
   CurrencyCircleDollar as CircleDollarSign,
+  PencilSimple as Pencil,
   Plus,
   ArrowsClockwise as RefreshCw,
   FloppyDisk as Save,
@@ -18,15 +19,21 @@ import {
 import { toast } from "sonner";
 import {
   createPatientTagRule,
-  deletePatientTagRule,
+  deletePatientAutomationRule,
   setPatientTagRuleActive,
+  updatePatientAutomationRule,
   type CompanyActionState,
 } from "./company-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  CurrencyInput,
+  formatCurrencyInput,
+} from "@/components/ui/currency-input";
 import { ConfirmDialog, FormDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
+import { cn } from "@/lib/utils";
 
 export type PatientTagSettingsTag = {
   id: string;
@@ -105,17 +112,6 @@ const triggerDescriptions: Record<PatientTagTriggerType, string> = {
     "Executa quando o total pago pelo paciente atinge o valor informado.",
 };
 
-const triggerOrder: PatientTagTriggerType[] = [
-  "birthday",
-  "appointment_before",
-  "appointment_day",
-  "appointment_completed",
-  "appointment_scheduled",
-  "new_patient",
-  "first_visit",
-  "revenue_threshold",
-];
-
 const actionLabels: Record<PatientTagActionType, string> = {
   add_tag: "Adicionar tag",
   remove_tag: "Remover tag",
@@ -134,7 +130,8 @@ export function PatientTagAutomationSettings({
 }: {
   data: PatientTagAutomationData;
 }) {
-  const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
+  // null: fechado; "new": criando; regra: editando.
+  const [editor, setEditor] = useState<PatientTagRule | "new" | null>(null);
 
   return (
     <div className="grid gap-5">
@@ -152,7 +149,7 @@ export function PatientTagAutomationSettings({
           <Button
             type="button"
             size="sm"
-            onClick={() => setAutomationEditorOpen(true)}
+            onClick={() => setEditor("new")}
             disabled={!data.tags.length}
             title={
               data.tags.length
@@ -182,44 +179,118 @@ export function PatientTagAutomationSettings({
             tags={data.tags}
             schedules={data.schedules}
             professionals={data.professionals}
+            onEdit={(rule) => setEditor(rule)}
           />
         </CardContent>
       </Card>
 
-      <CreateRuleDialog
-        open={automationEditorOpen}
-        onOpenChange={setAutomationEditorOpen}
-        tags={data.tags}
-        schedules={data.schedules}
-        professionals={data.professionals}
-      />
+      {editor ? (
+        <RuleEditorDialog
+          key={editor === "new" ? "new" : editor.id}
+          rule={editor === "new" ? undefined : editor}
+          onOpenChange={(open) => {
+            if (!open) setEditor(null);
+          }}
+          tags={data.tags}
+          schedules={data.schedules}
+          professionals={data.professionals}
+        />
+      ) : null}
     </div>
   );
 }
 
-function CreateRuleDialog({
-  open,
+const triggerGroups: Array<{
+  label: string;
+  triggers: PatientTagTriggerType[];
+}> = [
+  {
+    label: "Agendamento",
+    triggers: [
+      "appointment_scheduled",
+      "appointment_before",
+      "appointment_day",
+      "appointment_completed",
+    ],
+  },
+  {
+    label: "Paciente",
+    triggers: ["new_patient", "first_visit", "birthday", "revenue_threshold"],
+  },
+];
+
+/** Como o gatilho entra na frase "Quando ..., adicionar a tag ...". */
+function triggerPhrase(
+  triggerType: PatientTagTriggerType,
+  daysBefore: number,
+  minimumPaid: string,
+) {
+  switch (triggerType) {
+    case "new_patient":
+      return "um paciente for cadastrado";
+    case "birthday":
+      return "for o aniversário do paciente";
+    case "appointment_scheduled":
+      return "um agendamento for criado";
+    case "appointment_before":
+      return `faltarem ${daysBefore || "N"} ${daysBefore === 1 ? "dia" : "dias"} para o agendamento`;
+    case "appointment_day":
+      return "chegar o dia do agendamento";
+    case "appointment_completed":
+      return "um atendimento for concluído";
+    case "first_visit":
+      return "o paciente tiver o primeiro atendimento";
+    case "revenue_threshold":
+      return `o total pago pelo paciente chegar a R$ ${minimumPaid || "…"}`;
+  }
+}
+
+function RuleEditorDialog({
   onOpenChange,
   tags,
   schedules,
   professionals,
+  rule,
 }: {
-  open: boolean;
   onOpenChange: OpenStateHandler;
   tags: PatientTagSettingsTag[];
   schedules: PatientAutomationSchedule[];
   professionals: PatientAutomationProfessional[];
+  /** Presente ao editar; ausente ao criar. */
+  rule?: PatientTagRule;
 }) {
-  const [state, action, pending] = useActionState(
-    createPatientTagRule,
-    initialState,
-  );
+  const serverAction = rule
+    ? updatePatientAutomationRule.bind(null, rule.id)
+    : createPatientTagRule;
+  const [state, action, pending] = useActionState(serverAction, initialState);
   const [triggerType, setTriggerType] = useState<PatientTagTriggerType>(
-    "appointment_completed",
+    rule?.trigger_type ?? "appointment_completed",
   );
-  const [actionType, setActionType] = useState<PatientTagActionType>("add_tag");
-  const [scheduleId, setScheduleId] = useState("");
-  const [professionalId, setProfessionalId] = useState("");
+  const [actionType, setActionType] = useState<PatientTagActionType>(
+    rule?.action_type ?? "add_tag",
+  );
+  const [scheduleId, setScheduleId] = useState(
+    stringValue(rule?.config.schedule_id),
+  );
+  const [professionalId, setProfessionalId] = useState(
+    stringValue(rule?.config.professional_id),
+  );
+  const [tagId, setTagId] = useState(rule?.tag_id ?? "");
+  const [daysBefore, setDaysBefore] = useState(
+    String(
+      positiveNumber(
+        rule?.config.days_before ??
+          rule?.config.days_offset ??
+          rule?.config.offset_days,
+      ) || 1,
+    ),
+  );
+  const [minimumPaid, setMinimumPaid] = useState(() => {
+    const value = positiveNumber(rule?.config.minimum_paid_amount);
+    return value ? formatCurrencyInput(value) : "";
+  });
+  const [name, setName] = useState(rule?.name ?? "");
+  const [nameTouched, setNameTouched] = useState(Boolean(rule));
   const supportsAppointmentScope = appointmentScopedTriggers.has(triggerType);
   const availableSchedules = professionalId
     ? schedules.filter(
@@ -231,22 +302,39 @@ function CreateRuleDialog({
   );
   useActionFeedback(state, onOpenChange);
 
+  const tag = tags.find((item) => item.id === tagId);
+  const schedule = schedules.find((item) => item.id === scheduleId);
+  const professional = professionals.find((item) => item.id === professionalId);
+  const scopePhrase = supportsAppointmentScope
+    ? [
+        professional ? ` com ${professional.name}` : "",
+        schedule ? ` na agenda ${schedule.name}` : "",
+      ].join("")
+    : "";
+  const sentence = `Quando ${triggerPhrase(triggerType, Number(daysBefore), minimumPaid)}${scopePhrase}, ${actionType === "add_tag" ? "adicionar" : "remover"} a tag ${tag ? `“${tag.name}”` : "…"}.`;
+  // Nome sugerido a partir da regra, até a pessoa escrever o próprio.
+  const suggestedName = tag
+    ? `${actionType === "add_tag" ? "Adicionar" : "Remover"} “${tag.name}” · ${triggerLabels[triggerType]}`.slice(
+        0,
+        120,
+      )
+    : "";
+  const effectiveName = nameTouched ? name : suggestedName;
+
   function changeProfessional(nextProfessionalId: string) {
     setProfessionalId(nextProfessionalId);
     if (
       scheduleId &&
       nextProfessionalId &&
-      schedules.find((schedule) => schedule.id === scheduleId)
-        ?.professional_id !== nextProfessionalId
+      schedules.find((item) => item.id === scheduleId)?.professional_id !==
+        nextProfessionalId
     ) {
       setScheduleId("");
     }
   }
 
-  function changeTrigger(nextTriggerType: string) {
-    const nextTrigger = nextTriggerType as PatientTagTriggerType;
+  function changeTrigger(nextTrigger: PatientTagTriggerType) {
     setTriggerType(nextTrigger);
-
     if (!appointmentScopedTriggers.has(nextTrigger)) {
       setProfessionalId("");
       setScheduleId("");
@@ -255,98 +343,67 @@ function CreateRuleDialog({
 
   return (
     <FormDialog
-      open={open}
+      open
       onClose={() => onOpenChange(false)}
-      title="Nova automação"
-      description="Defina quando a regra deve executar e o que ela fará."
+      title={rule ? "Editar automação" : "Nova automação"}
+      description="Escolha quando a regra age, para quem e o que ela faz."
       formAction={action}
       error={state.error}
       pending={pending}
-      confirmLabel="Salvar automação"
+      confirmLabel={rule ? "Salvar alterações" : "Criar automação"}
       pendingLabel="Salvando..."
-      confirmDisabled={!tags.length}
+      confirmDisabled={!tags.length || !tagId || !effectiveName.trim()}
       icon={Save}
     >
-      <label className="grid gap-1.5 text-sm font-medium">
-        Nome da regra
-        <Input
-          name="name"
-          placeholder="Ex.: Marcar pacientes após atendimento"
-          required
-        />
-      </label>
+      <input type="hidden" name="trigger_type" value={triggerType} />
+      <input type="hidden" name="action_type" value={actionType} />
 
-      <fieldset className="grid min-w-0 gap-3 rounded-lg border border-border p-4">
-        <legend className="px-1 text-sm font-semibold">Filtro</legend>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <label className="grid min-w-0 gap-1.5 text-sm font-medium">
-            Profissional
-            <Select
-              name="professional_id"
-              value={professionalId}
-              onValueChange={changeProfessional}
-              allowEmptyOption
-              disabled={!supportsAppointmentScope}
+      <fieldset className="grid min-w-0 gap-3">
+        <legend className="text-sm font-semibold">1. Quando acontecer</legend>
+        {triggerGroups.map((group) => (
+          <div key={group.label} className="grid gap-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              {group.label}
+            </p>
+            <div
+              role="radiogroup"
+              aria-label={`Gatilhos de ${group.label.toLowerCase()}`}
+              className="grid gap-2 sm:grid-cols-2"
             >
-              <option value="">Todos os profissionais</option>
-              {professionals.map((professional) => (
-                <option key={professional.id} value={professional.id}>
-                  {professional.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-
-          <label className="grid min-w-0 gap-1.5 text-sm font-medium">
-            Agenda
-            <Select
-              name="schedule_id"
-              value={scheduleId}
-              onValueChange={setScheduleId}
-              allowEmptyOption
-              disabled={!supportsAppointmentScope}
-            >
-              <option value="">Todas as agendas</option>
-              {availableSchedules.map((schedule) => (
-                <option key={schedule.id} value={schedule.id}>
-                  {formatScheduleName(schedule, professionalNamesById)}
-                </option>
-              ))}
-            </Select>
-          </label>
-        </div>
-
-        <p className="text-xs text-muted-foreground">
-          {supportsAppointmentScope
-            ? "Filtros opcionais. Ao selecionar um profissional, a lista de agendas mostra apenas as agendas dele."
-            : "Este gatilho não usa agenda ou profissional. A regra será aplicada globalmente."}
-        </p>
-      </fieldset>
-
-      <fieldset className="grid gap-3 rounded-lg border border-border p-4">
-        <legend className="px-1 text-sm font-semibold">Quando acontecer</legend>
-        <label className="grid gap-1.5 text-sm font-medium">
-          Gatilho
-          <Select
-            name="trigger_type"
-            value={triggerType}
-            onValueChange={changeTrigger}
-            required
-          >
-            {triggerOrder.map((value) => (
-              <option key={value} value={value}>
-                {triggerLabels[value]}
-              </option>
-            ))}
-          </Select>
-        </label>
-
-        <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-          {triggerDescriptions[triggerType]}
-        </p>
+              {group.triggers.map((value) => {
+                const selected = triggerType === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => changeTrigger(value)}
+                    className={cn(
+                      "flex min-w-0 items-start gap-2.5 rounded-lg border p-3 text-left transition-[border-color,background-color] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                      selected
+                        ? "border-primary bg-primary-muted/50"
+                        : "border-border bg-card hover:border-primary/50",
+                    )}
+                  >
+                    <RuleIcon triggerType={value} />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium">
+                        {triggerLabels[value]}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {triggerDescriptions[value]}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
 
         {triggerType === "appointment_before" ? (
-          <label className="grid gap-1.5 text-sm font-medium">
+          <label className="grid max-w-48 gap-1.5 text-sm font-medium">
             Quantos dias antes
             <Input
               name="days_offset"
@@ -354,63 +411,144 @@ function CreateRuleDialog({
               inputMode="numeric"
               min={1}
               max={365}
-              defaultValue={1}
+              value={daysBefore}
+              onChange={(event) => setDaysBefore(event.target.value)}
               required
             />
           </label>
         ) : null}
 
         {triggerType === "revenue_threshold" ? (
-          <label className="grid gap-1.5 text-sm font-medium">
+          <label className="grid max-w-56 gap-1.5 text-sm font-medium">
             Total pago mínimo
-            <Input
+            <CurrencyInput
               name="minimum_paid_amount"
-              inputMode="decimal"
-              placeholder="Ex.: 2.000,00"
               required
+              defaultValue={
+                minimumPaid
+                  ? Number(minimumPaid.replace(/\./g, "").replace(",", "."))
+                  : 0
+              }
+              onValueChange={setMinimumPaid}
             />
           </label>
         ) : null}
       </fieldset>
 
-      <fieldset className="grid gap-3 rounded-lg border border-border p-4">
-        <legend className="px-1 text-sm font-semibold">Fazer isto</legend>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="grid gap-1.5 text-sm font-medium">
-            Ação
-            <Select
-              name="action_type"
-              value={actionType}
-              onValueChange={(value) =>
-                setActionType(value as PatientTagActionType)
-              }
-              required
-            >
-              {Object.entries(actionLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-          </label>
+      {supportsAppointmentScope ? (
+        <fieldset className="grid min-w-0 gap-3 border-t border-border pt-4">
+          <legend className="text-sm font-semibold">
+            2. Para quais agendamentos
+          </legend>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <label className="grid min-w-0 gap-1.5 text-sm font-medium">
+              Profissional
+              <Select
+                name="professional_id"
+                value={professionalId}
+                onValueChange={changeProfessional}
+                allowEmptyOption
+              >
+                <option value="">Todos os profissionais</option>
+                {professionals.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="grid min-w-0 gap-1.5 text-sm font-medium">
+              Agenda
+              <Select
+                name="schedule_id"
+                value={scheduleId}
+                onValueChange={setScheduleId}
+                allowEmptyOption
+              >
+                <option value="">Todas as agendas</option>
+                {availableSchedules.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {formatScheduleName(item, professionalNamesById)}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
+        </fieldset>
+      ) : null}
 
+      <fieldset className="grid min-w-0 gap-3 border-t border-border pt-4">
+        <legend className="text-sm font-semibold">
+          {supportsAppointmentScope ? "3" : "2"}. Fazer isto
+        </legend>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div
+            role="radiogroup"
+            aria-label="Ação"
+            className="inline-flex h-10 items-center gap-1 self-end rounded-lg border border-border bg-muted p-1"
+          >
+            {(Object.keys(actionLabels) as PatientTagActionType[]).map(
+              (value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={actionType === value}
+                  onClick={() => setActionType(value)}
+                  className={cn(
+                    "h-8 flex-1 rounded-md px-3 text-sm font-medium transition-[background-color,color,box-shadow] duration-[var(--motion-fast)]",
+                    actionType === value
+                      ? "bg-card text-foreground shadow-[var(--shadow-soft)]"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {actionLabels[value]}
+                </button>
+              ),
+            )}
+          </div>
           <label className="grid gap-1.5 text-sm font-medium">
             {actionType === "add_tag" ? "Tag a adicionar" : "Tag a remover"}
-            <Select name="tag_id" required disabled={!tags.length}>
+            <Select
+              name="tag_id"
+              required
+              value={tagId}
+              onValueChange={setTagId}
+              disabled={!tags.length}
+            >
               <option value="">Selecione</option>
-              {tags.map((tag) => (
-                <option key={tag.id} value={tag.id}>
-                  {tag.name}
+              {tags.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
                 </option>
               ))}
             </Select>
           </label>
         </div>
-        <p className="text-xs text-muted-foreground">
-          As primeiras ações disponíveis trabalham com tags. Outras ações
-          poderão ser acrescentadas sem alterar a estrutura da regra.
-        </p>
       </fieldset>
+
+      {/* A regra em uma frase: dá para conferir antes de salvar. */}
+      <p
+        aria-live="polite"
+        className="rounded-md border border-primary/20 bg-primary-muted/40 px-3 py-2.5 text-sm text-foreground"
+      >
+        {sentence}
+      </p>
+
+      <label className="grid gap-1.5 text-sm font-medium">
+        Nome da automação
+        <Input
+          name="name"
+          value={effectiveName}
+          onChange={(event) => {
+            setNameTouched(true);
+            setName(event.target.value);
+          }}
+          maxLength={120}
+          placeholder="Escolha a tag para sugerirmos um nome"
+          required
+        />
+      </label>
     </FormDialog>
   );
 }
@@ -420,11 +558,13 @@ function RuleList({
   tags,
   schedules,
   professionals,
+  onEdit,
 }: {
   rules: PatientTagRule[];
   tags: PatientTagSettingsTag[];
   schedules: PatientAutomationSchedule[];
   professionals: PatientAutomationProfessional[];
+  onEdit: (rule: PatientTagRule) => void;
 }) {
   const tagsById = new Map(tags.map((tag) => [tag.id, tag]));
   const schedulesById = new Map(
@@ -437,7 +577,8 @@ function RuleList({
   if (!rules.length) {
     return (
       <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-5 text-center text-sm text-muted-foreground">
-        Nenhuma automação configurada.
+        Nenhuma automação ainda. Exemplo: marcar com a tag “Retorno” quem
+        concluiu um atendimento, ou “Aniversariante” no dia do aniversário.
       </p>
     );
   }
@@ -462,6 +603,7 @@ function RuleList({
             professional={professionalsById.get(
               stringValue(rule.config.professional_id),
             )}
+            onEdit={() => onEdit(rule)}
           />
         );
       })}
@@ -475,18 +617,29 @@ function RuleRow({
   schedule,
   scheduleProfessional,
   professional,
+  onEdit,
 }: {
   rule: PatientTagRule;
   tag?: PatientTagSettingsTag;
   schedule?: PatientAutomationSchedule;
   scheduleProfessional?: PatientAutomationProfessional;
   professional?: PatientAutomationProfessional;
+  onEdit: () => void;
 }) {
   const actionType = rule.action_type ?? "add_tag";
   const hasScheduleScope = Boolean(rule.config.schedule_id);
   const hasProfessionalScope = Boolean(rule.config.professional_id);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
+  const [toggling, startToggle] = useTransition();
+
+  // Desativar é reversível: vai direto, com aviso, sem pedir confirmação.
+  function toggleActive() {
+    startToggle(async () => {
+      const result = await setPatientTagRuleActive(rule.id, !rule.active);
+      if (result.error) toast.error(result.error);
+      else if (result.success) toast.success(result.success);
+    });
+  }
 
   return (
     <article className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center">
@@ -527,27 +680,31 @@ function RuleRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
-        {rule.active ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => setConfirmingDeactivate(true)}
-          >
-            Desativar
-          </Button>
-        ) : (
-          <form action={setPatientTagRuleActive.bind(null, rule.id, true)}>
-            <Button type="submit" variant="secondary" size="sm">
-              Ativar
-            </Button>
-          </form>
-        )}
+        <Button type="button" variant="secondary" size="sm" onClick={onEdit}>
+          <Pencil className="size-3.5" aria-hidden />
+          Editar
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={toggling}
+          onClick={toggleActive}
+        >
+          {toggling
+            ? rule.active
+              ? "Desativando..."
+              : "Ativando..."
+            : rule.active
+              ? "Desativar"
+              : "Ativar"}
+        </Button>
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
           aria-label={`Remover automação ${rule.name}`}
+          title="Remover"
           onClick={() => setConfirmingDelete(true)}
         >
           <Trash2 className="size-4" aria-hidden />
@@ -555,23 +712,17 @@ function RuleRow({
       </div>
 
       <ConfirmDialog
-        open={confirmingDeactivate}
-        onClose={() => setConfirmingDeactivate(false)}
-        title="Desativar automação?"
-        description={`A automação “${rule.name}” deixará de ser aplicada até que seja ativada novamente.`}
-        confirmLabel="Desativar automação"
-        destructive
-        formAction={setPatientTagRuleActive.bind(null, rule.id, false)}
-      />
-      <ConfirmDialog
         open={confirmingDelete}
         onClose={() => setConfirmingDelete(false)}
         title="Remover automação?"
-        description={`A automação "${rule.name}" deixará de ser aplicada aos pacientes e será removida permanentemente.`}
+        description={`A automação "${rule.name}" deixará de ser aplicada aos pacientes e será removida permanentemente. Para só pausar, use Desativar.`}
         destructive
         confirmLabel="Remover automação"
         pendingLabel="Removendo..."
-        formAction={deletePatientTagRule.bind(null, rule.id)}
+        onConfirm={async () => {
+          await deletePatientAutomationRule(rule.id);
+          toast.success("Automação removida.");
+        }}
       />
     </article>
   );

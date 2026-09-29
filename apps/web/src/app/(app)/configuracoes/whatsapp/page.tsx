@@ -1,5 +1,6 @@
 import { CompanyConfigurationPage } from "../configuration-page";
 import { requireCompanyConfigurationAccess } from "../_lib/server";
+import { ContactPhotoCacheCard } from "./contact-photo-cache-card";
 import { WhatsAppSettings } from "./whatsapp-settings";
 import {
   getPlatformEvolutionConfig,
@@ -14,15 +15,18 @@ export default async function WhatsAppConfigurationPage() {
   ]);
   return (
     <CompanyConfigurationPage access={access} route="whatsapp">
-      <WhatsAppSettings
-        initial={{
-          status: instance?.status ?? "disconnected",
-          phoneNumber: instance?.phone_number ?? null,
-          displayName: instance?.display_name ?? null,
-          profilePictureUrl: instance?.profile_picture_url ?? null,
-          platformConfigured: Boolean(platformConfig),
-        }}
-      />
+      <div className="grid gap-4">
+        <WhatsAppSettings
+          initial={{
+            status: instance?.status ?? "disconnected",
+            phoneNumber: instance?.phone_number ?? null,
+            displayName: instance?.display_name ?? null,
+            profilePictureUrl: instance?.profile_picture_url ?? null,
+            platformConfigured: Boolean(platformConfig),
+          }}
+        />
+        <ContactPhotoCacheCard />
+      </div>
     </CompanyConfigurationPage>
   );
 }

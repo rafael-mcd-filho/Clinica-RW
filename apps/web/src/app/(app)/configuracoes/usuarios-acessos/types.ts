@@ -32,6 +32,8 @@ export type CompanyAccessUser = {
   phone: string | null;
   status: "invited" | "active" | "suspended";
   authUserId: string | null;
+  /** Foto de perfil (URL assinada temporária); null mostra as iniciais. */
+  avatarUrl: string | null;
   lastSignInAt: string | null;
   createdAt: string;
   profileIds: string[];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   Image as ImageIcon,
   EnvelopeSimple as Mail,
@@ -30,6 +30,8 @@ export function PlatformSettingsForm({
     updatePlatformSettings,
     initialState,
   );
+  const [primaryColor, setPrimaryColor] = useState(settings.primary_color);
+  const isValidHex = /^#[0-9A-Fa-f]{6}$/.test(primaryColor.trim());
 
   useEffect(() => {
     if (state.success) {
@@ -57,37 +59,74 @@ export function PlatformSettingsForm({
             Cor principal
           </span>
           <div className="flex gap-2">
+            <span
+              className="h-10 w-10 shrink-0 rounded-md border border-border shadow-[var(--shadow-soft)]"
+              style={{
+                backgroundColor: isValidHex ? primaryColor : "transparent",
+              }}
+              aria-hidden="true"
+            />
             <Input
               name="primary_color"
-              defaultValue={settings.primary_color}
+              value={primaryColor}
+              onChange={(event) => setPrimaryColor(event.target.value)}
+              aria-invalid={!isValidHex}
               className="flex-1"
             />
             <input
               aria-label="Selecionar cor principal"
               type="color"
               name="primary_color_picker"
-              defaultValue={settings.primary_color}
+              value={isValidHex ? primaryColor : "#000000"}
               className="h-10 w-14 rounded-md border border-border bg-card p-1 shadow-[var(--shadow-soft)]"
-              onChange={(event) => {
-                const input =
-                  event.currentTarget.form?.elements.namedItem("primary_color");
-                if (input instanceof HTMLInputElement) {
-                  input.value = event.currentTarget.value;
-                }
-              }}
+              onChange={(event) => setPrimaryColor(event.currentTarget.value)}
             />
           </div>
+          {!isValidHex ? (
+            <span className="text-xs font-normal text-destructive">
+              Use uma cor hexadecimal válida, no formato #RRGGBB.
+            </span>
+          ) : null}
         </label>
 
-        <div className="grid gap-2 text-sm font-medium md:col-span-2">
-          <span className="flex items-center gap-2">
-            <ImageIcon
-              className="size-4 text-muted-foreground"
-              aria-hidden="true"
+        <div className="grid gap-4 md:col-span-2 md:grid-cols-2">
+          <div className="grid content-start gap-2 text-sm font-medium">
+            <span className="flex items-center gap-2">
+              <ImageIcon
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              Logo ícone
+            </span>
+            <LogoUploadField
+              currentUrl={settings.logo_url}
+              label="logo ícone"
             />
-            Logo
-          </span>
-          <LogoUploadField currentUrl={settings.logo_url} />
+            <p className="text-xs font-normal text-muted-foreground">
+              Usada no favicon e quando só há espaço para um ícone.
+            </p>
+          </div>
+          <div className="grid content-start gap-2 text-sm font-medium">
+            <span className="flex items-center gap-2">
+              <ImageIcon
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              Logo completa (com nome)
+            </span>
+            <LogoUploadField
+              name="logo_full"
+              currentUrl={settings.logo_full_url}
+              currentFieldName="current_logo_full_url"
+              removeFieldName="remove_logo_full"
+              variant="wide"
+              label="logo completa"
+            />
+            <p className="text-xs font-normal text-muted-foreground">
+              Usada no login e acima dos menus. Prefira uma imagem horizontal
+              com fundo transparente.
+            </p>
+          </div>
         </div>
 
         <label className="grid gap-2 text-sm font-medium">
