@@ -1,6 +1,8 @@
 "use server";
 
 import { getRequestContext } from "@/lib/auth/context";
+import { z } from "zod";
+import { databaseErrorMessage } from "@/lib/errors/database";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { draftReply } from "@/lib/whatsapp/ai-draft";
@@ -800,14 +802,48 @@ export async function linkPatientAction(
 ): Promise<AttendanceResult> {
   const auth = await requireAttendant();
   if (!auth) return { ok: false, error: "Acesso negado." };
+  if (
+    !z.string().uuid().safeParse(contactId).success ||
+    (patientId !== null && !z.string().uuid().safeParse(patientId).success)
+  ) {
+    return { ok: false, error: "Contato ou paciente inválido." };
+  }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase
+  if (patientId) {
+    const { data: patient, error } = await supabase
+      .from("patients")
+      .select("id")
+      .eq("organization_id", auth.organizationId)
+      .eq("id", patientId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (error || !patient)
+      return {
+        ok: false,
+        error:
+          "Paciente não encontrado ou sem permissão para acessar este cadastro.",
+      };
+  }
+  const { data, error } = await supabase
     .from("whatsapp_contacts")
-    .update({ patient_id: patientId })
+    .update({
+      patient_id: patientId,
+      patient_auto_link_disabled: patientId === null,
+    })
     .eq("organization_id", auth.organizationId)
-    .eq("id", contactId);
-  return error ? { ok: false, error: error.message } : { ok: true };
+    .eq("id", contactId)
+    .select("id")
+    .maybeSingle();
+  if (error)
+    return {
+      ok: false,
+      error: databaseErrorMessage(
+        error,
+        "Não foi possível atualizar o vínculo.",
+      ),
+    };
+  return data ? { ok: true } : { ok: false, error: "Contato não encontrado." };
 }
 
 export type SuggestReplyResult = {

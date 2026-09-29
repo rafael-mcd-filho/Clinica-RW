@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Archive,
@@ -96,15 +97,12 @@ const tabLabels: Record<InboxView, string> = {
 };
 
 // Abas da fila: ícone com a cor do estado + rótulo + contador flutuante no
-// canto. Concluídos deixou de ser um botão só de ícone e entrou na mesma
-// régua — quatro pílulas iguais, sem trilho cinza em volta.
+// canto. Fechados fica só com o ícone — o rótulo cortava para "Fech..." no
+// espaço apertado da régua, e o arquivo já é reconhecível sozinho.
 const inboxTabs: Array<{
   id: InboxView;
   icon: PhosphorIcon;
   tone: string;
-  /** Fechados vira só o ícone (maior, para compensar): o rótulo roubaria
-      largura dos três filtros do dia a dia, e o contador não diz nada — o
-      arquivo só cresce. O nome fica no aria-label e no title. */
   iconOnly?: boolean;
 }> = [
   { id: "new", icon: ChatCircleDots, tone: "text-success-foreground" },
@@ -768,8 +766,15 @@ export function AttendanceInbox({
           title="Selecione uma conversa"
           description={
             canConfigure && !evolutionReady
-              ? "Configure a integração do WhatsApp no .env.local para começar."
+              ? "Configure a integração do WhatsApp para receber e responder mensagens."
               : "Escolha um contato à esquerda para ver as mensagens."
+          }
+          actions={
+            canConfigure && !evolutionReady ? (
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/configuracoes/whatsapp">Configurar WhatsApp</Link>
+              </Button>
+            ) : undefined
           }
         />
       )}
@@ -869,34 +874,25 @@ function ConversationListColumn({
                 onClick={() => onTabChange(id)}
                 role="tab"
                 aria-selected={active}
-                aria-label={iconOnly ? tabLabels[id] : undefined}
                 title={tabLabels[id]}
+                aria-label={iconOnly ? tabLabels[id] : undefined}
                 className={cn(
                   "relative inline-flex h-9 cursor-pointer items-center justify-center gap-1 rounded-lg border text-control leading-none transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2",
-                  // Teto de largura: com a lista ocupando a tela do celular a
-                  // pílula esticava e o contador do canto ia parar longe do
-                  // rótulo, quase em cima da aba vizinha.
-                  iconOnly
-                    ? "ml-auto w-9 shrink-0"
-                    : "min-w-0 max-w-32 flex-1 px-2",
+                  iconOnly ? "shrink-0 px-2.5" : "min-w-0 max-w-32 flex-1 px-2",
                   active
                     ? "border-border-strong bg-card font-semibold text-foreground shadow-[var(--shadow-soft)]"
                     : "border-transparent font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Icon
-                  className={cn(
-                    "shrink-0",
-                    iconOnly ? "size-5" : "size-4",
-                    tone,
-                  )}
+                  className={cn("size-4 shrink-0", tone)}
                   weight={active ? "fill" : "regular"}
                   aria-hidden="true"
                 />
-                <span className={iconOnly ? "sr-only" : "truncate"}>
-                  {tabLabels[id]}
-                </span>
-                {!iconOnly && count > 0 ? (
+                {iconOnly ? null : (
+                  <span className="truncate">{tabLabels[id]}</span>
+                )}
+                {count > 0 ? (
                   <span className="absolute -right-1 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-caption font-semibold leading-none tabular-nums text-primary-foreground ring-2 ring-card">
                     {count}
                   </span>
@@ -1424,8 +1420,10 @@ function ConversationThread({
   // A thread é remontada a cada conversa (key no pai), então o fade de 150ms
   // marca a troca de contato sem atrasar a leitura.
   return (
+    // Sem fade ao trocar de conversa: é a ação mais repetida do dia, e o
+    // fade só atrasava a leitura da conversa aberta.
     <section
-      className="relative flex h-full min-h-0 animate-fade-in flex-col overflow-hidden bg-card"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-card"
       onDragOver={(event) => {
         if (!fileDropRef.current) return;
         if (!event.dataTransfer.types.includes("Files")) return;
@@ -2591,7 +2589,9 @@ function MessageComposer({
   return (
     <div className="shrink-0 border-t border-border bg-card px-3 py-2">
       {replyingTo && !isNoteMode ? (
-        <div className="mb-2 flex animate-fade-in items-center justify-between gap-3 rounded-lg border border-border bg-muted px-3 py-2">
+        // Sobe do campo de mensagem, de onde a resposta nasce; o fade puro
+        // não dizia de onde ela vinha.
+        <div className="mb-2 flex animate-content-enter items-center justify-between gap-3 rounded-lg border border-border bg-muted px-3 py-2">
           <span className="flex min-w-0 items-center gap-2">
             <ArrowBendUpLeft
               className="size-4 shrink-0 text-primary"
@@ -2674,7 +2674,7 @@ function MessageComposer({
         </div>
       ) : null}
       {attachments.length ? (
-        <div className="mb-2 grid animate-fade-in gap-2 rounded-lg border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
+        <div className="mb-2 grid animate-content-enter gap-2 rounded-lg border border-border bg-card p-2 shadow-[var(--shadow-soft)]">
           <ul className="flex flex-wrap gap-2">
             {attachments.map((file, index) => (
               <li
@@ -2941,11 +2941,13 @@ function MessageComposer({
 }
 
 function EmptyPanel({
+  actions,
   icon: Icon,
   title,
   description,
   className,
 }: {
+  actions?: React.ReactNode;
   icon: typeof Inbox;
   title: string;
   description: string;
@@ -2953,10 +2955,7 @@ function EmptyPanel({
 }) {
   return (
     <section
-      className={cn(
-        "flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]",
-        className,
-      )}
+      className={cn("flex min-h-0 flex-col overflow-hidden bg-card", className)}
     >
       <div className="flex flex-1 items-center justify-center p-6 text-center">
         <div>
@@ -2965,6 +2964,9 @@ function EmptyPanel({
           </div>
           <p className="mt-3 text-body font-medium">{title}</p>
           <p className="mt-1 text-label text-muted-foreground">{description}</p>
+          {actions ? (
+            <div className="mt-4 flex justify-center">{actions}</div>
+          ) : null}
         </div>
       </div>
     </section>
