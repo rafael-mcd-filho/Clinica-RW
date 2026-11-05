@@ -1,4 +1,5 @@
 import { fromZonedTime } from "date-fns-tz";
+import { appointmentOccupiesTime } from "./status";
 
 /**
  * O recorte da agenda de que o formulário de agendamento precisa: catálogos
@@ -46,6 +47,8 @@ export type AppointmentFormData = {
     schedule_id: string;
     start_at: string;
     end_at: string;
+    /** Cancelado e faltou liberam o horário (ver `appointmentOccupiesTime`). */
+    status?: string;
   }>;
   blocks: Array<{
     id: string;
@@ -195,6 +198,9 @@ export function hasScheduleConflict({
 }) {
   return (
     data.appointments.some((appointment) => {
+      if (appointment.status && !appointmentOccupiesTime(appointment.status)) {
+        return false;
+      }
       if (
         appointment.schedule_id !== schedule.id &&
         appointment.professional_id !== schedule.professional_id
@@ -237,7 +243,8 @@ export function resolveListPrice({
 }): number {
   if (!procedureId) return 0;
   if (healthInsuranceId) {
-    const tabled = data.insurancePrices?.[`${healthInsuranceId}:${procedureId}`];
+    const tabled =
+      data.insurancePrices?.[`${healthInsuranceId}:${procedureId}`];
     if (typeof tabled === "number") return tabled;
   }
   const procedure = data.procedures.find((item) => item.id === procedureId);

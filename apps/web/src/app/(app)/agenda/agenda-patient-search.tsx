@@ -39,6 +39,7 @@ export function AgendaPatientSearch({
   isInView,
   visibleCount,
   onOpenAppointment,
+  panelAlign = "end",
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -47,6 +48,8 @@ export function AgendaPatientSearch({
   /** Agendamentos da busca que já estão na tela. */
   visibleCount: number;
   onOpenAppointment: (result: AgendaSearchResult) => void;
+  /** Lado em que o painel de resultados se alinha à busca. */
+  panelAlign?: "start" | "end";
 }) {
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -167,7 +170,10 @@ export function AgendaPatientSearch({
       {showPanel ? (
         <div
           id={panelId}
-          className="absolute right-0 top-full z-30 mt-1 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-md)]"
+          className={cn(
+            "absolute top-full z-30 mt-1 w-[min(30rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-md)]",
+            panelAlign === "start" ? "left-0" : "right-0",
+          )}
         >
           <p
             role="status"

@@ -40,3 +40,12 @@ export function availableAppointmentStatuses(
       !(options.finishThroughEncounter && next === "attended"),
   );
 }
+
+/** Status que deixam o horário livre de novo. Faltou e cancelado liberam o
+    horário; atendido continua ocupando para a grade não desenhar um "livre"
+    por cima de quem já foi atendido. */
+const releasingStatuses = new Set(["cancelled", "no_show"]);
+
+export function appointmentOccupiesTime(status: string) {
+  return !releasingStatuses.has(status);
+}

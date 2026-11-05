@@ -1738,7 +1738,8 @@ export async function loadAppointmentFormData(): Promise<{
       .eq("organization_id", organizationId)
       .gte("start_at", rangeStart)
       .lte("start_at", rangeEnd)
-      .neq("status", "cancelled"),
+      // Cancelado e faltou liberam o horário, como na grade da agenda.
+      .not("status", "in", "(cancelled,no_show)"),
     supabase
       .from("schedule_blocks")
       .select("id, schedule_id, start_at, end_at")

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CaretDown,
   Check,
   CaretUpDown as ChevronsUpDown,
   MagnifyingGlass,
@@ -126,6 +127,10 @@ type MultiSelectProps = {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /** "chip": gatilho compacto para barras de filtro ("Status: Confirmado").
+      Pede `chipLabel`, o nome do filtro. */
+  variant?: "field" | "chip";
+  chipLabel?: string;
   "aria-describedby"?: string;
   "aria-invalid"?: boolean | "true" | "false";
   "aria-label"?: string;
@@ -548,6 +553,8 @@ export function MultiSelect({
   placeholder,
   disabled,
   className,
+  variant = "field",
+  chipLabel,
   "aria-describedby": ariaDescribedBy,
   "aria-invalid": ariaInvalid,
   "aria-label": ariaLabel,
@@ -575,10 +582,17 @@ export function MultiSelect({
   const openMenu = useCallback(() => {
     const trigger = triggerRef.current;
     if (trigger) {
-      setPanelLayout(measurePanelLayout(trigger, options.length + 1, 288));
+      setPanelLayout(
+        measurePanelLayout(
+          trigger,
+          options.length + 1,
+          288,
+          variant === "chip" ? 240 : 0,
+        ),
+      );
     }
     setOpen(true);
-  }, [options.length]);
+  }, [options.length, variant]);
 
   function toggle(nextValue: string) {
     if (selectedValues.has(nextValue)) {
@@ -642,39 +656,78 @@ export function MultiSelect({
   }
 
   const hasSelection = selectedOptions.length > 0;
+  const isChip = variant === "chip";
 
   return (
-    <div className={cn("relative min-w-0 max-w-full", className)}>
-      <button
-        id={triggerId}
-        ref={triggerRef}
-        type="button"
-        role="combobox"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listboxId}
-        aria-describedby={ariaDescribedBy}
-        aria-invalid={ariaInvalid}
-        aria-label={ariaLabel}
-        disabled={disabled}
-        onClick={() => (open ? setOpen(false) : openMenu())}
-        onKeyDown={onKeyDown}
-        className="peer flex h-10 w-full min-w-0 max-w-full items-center overflow-hidden rounded-md border border-border bg-card py-2 pl-3 pr-9 text-left font-sans text-control font-normal shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/15"
-      >
-        <span
+    <div
+      className={cn(
+        isChip ? "relative inline-flex min-w-0" : "relative min-w-0 max-w-full",
+        className,
+      )}
+    >
+      {isChip ? (
+        <button
+          id={triggerId}
+          ref={triggerRef}
+          type="button"
+          role="combobox"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-describedby={ariaDescribedBy}
+          aria-label={ariaLabel}
+          disabled={disabled}
+          onClick={() => (open ? setOpen(false) : openMenu())}
+          onKeyDown={onKeyDown}
           className={cn(
-            "w-0 min-w-0 flex-1 truncate",
-            selectedOptions.length ? "text-foreground" : "text-placeholder",
+            "inline-flex h-9 max-w-[16rem] min-w-0 items-center gap-1.5 rounded-md border px-3 font-sans text-label font-medium outline-none transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60",
+            hasSelection
+              ? "border-primary/40 bg-primary-muted text-primary-strong hover:bg-primary-muted-hover"
+              : "border-border bg-card text-secondary-foreground hover:border-border-strong hover:bg-muted",
           )}
         >
-          {label ?? placeholder ?? allLabel}
-        </span>
-      </button>
-      <ChevronsUpDown
-        className="pointer-events-none absolute right-3 top-1/2 size-4 shrink-0 -translate-y-1/2 text-muted-foreground peer-disabled:opacity-60"
-        aria-hidden="true"
-      />
-      {hasSelection && !disabled ? (
+          <span className="min-w-0 truncate">
+            {chipLabel}
+            {hasSelection ? (
+              <span className="font-normal">: {label}</span>
+            ) : null}
+          </span>
+          <CaretDown className="size-3.5 shrink-0" aria-hidden="true" />
+        </button>
+      ) : (
+        <button
+          id={triggerId}
+          ref={triggerRef}
+          type="button"
+          role="combobox"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={ariaInvalid}
+          aria-label={ariaLabel}
+          disabled={disabled}
+          onClick={() => (open ? setOpen(false) : openMenu())}
+          onKeyDown={onKeyDown}
+          className="peer flex h-10 w-full min-w-0 max-w-full items-center overflow-hidden rounded-md border border-border bg-card py-2 pl-3 pr-9 text-left font-sans text-control font-normal shadow-[var(--shadow-soft)] outline-none transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] disabled:cursor-not-allowed disabled:opacity-60 aria-expanded:border-primary aria-expanded:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)] aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/15"
+        >
+          <span
+            className={cn(
+              "w-0 min-w-0 flex-1 truncate",
+              selectedOptions.length ? "text-foreground" : "text-placeholder",
+            )}
+          >
+            {label ?? placeholder ?? allLabel}
+          </span>
+        </button>
+      )}
+      {isChip ? null : (
+        <ChevronsUpDown
+          className="pointer-events-none absolute right-3 top-1/2 size-4 shrink-0 -translate-y-1/2 text-muted-foreground peer-disabled:opacity-60"
+          aria-hidden="true"
+        />
+      )}
+      {hasSelection && !disabled && !isChip ? (
         <button
           type="button"
           aria-label={`Limpar ${ariaLabel ?? "seleção"}`}

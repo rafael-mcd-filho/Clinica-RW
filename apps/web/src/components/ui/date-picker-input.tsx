@@ -385,7 +385,7 @@ export function DateRangePickerInput({
   );
 }
 
-function CalendarPopover({
+export function CalendarPopover({
   align,
   anchorRef,
   ariaLabel,

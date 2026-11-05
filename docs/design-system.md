@@ -233,6 +233,17 @@ fica 4px mais baixo, alinhado só pela base.
   botões e tabelas continuam na escala operacional de 14px.
 - Cancelamento ou troca de modelo que descarte texto digitado exige confirmação.
 
+### Filtros
+
+- Barras de filtro usam `MultiSelect` com `variant="chip"` e `chipLabel` (o nome
+  do filtro): o gatilho mostra "Status" sem seleção e "Status: Confirmado" com
+  seleção, em azul-claro. Filtros raros ficam atrás de "Mais filtros" e
+  aparecem sozinhos quando têm valor.
+- "Limpar filtros" só aparece quando há filtro ativo.
+- Seleção única entre poucas opções visíveis (visão Dia/Semana/Mês, profissional
+  da semana) usa grupo de `Button` com `role="radiogroup"`/`role="radio"` e
+  `aria-checked`, não `Select`.
+
 ### Estados da interface
 
 - Carregamento de tabelas usa skeleton e `aria-busy`; carregamento de ações muda

@@ -20,10 +20,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Prohibit as Ban,
   CalendarDots as CalendarClock,
+  CaretDown,
   CaretLeft as ChevronLeft,
   CaretRight as ChevronRight,
   Check,
-  ArrowRight,
   Funnel,
   Clock as Clock3,
   FileText,
@@ -66,10 +66,18 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import detailsStyles from "./appointment-details.module.css";
 import {
+  appointmentOccupiesTime,
   appointmentStatusLabels as statusLabel,
   appointmentStatusDescriptions,
   availableAppointmentStatuses,
 } from "@/lib/agenda/status";
+import {
+  closedRanges,
+  listFreeSlots,
+  localMinuteRangeOnDate,
+  notBeforeMinuteFor,
+  windowsForSchedule,
+} from "@/lib/agenda/day-columns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -80,7 +88,16 @@ import { WaitlistSuggestionModal } from "@/components/agenda/waitlist-suggestion
 import { Input, MultiSelect, Select } from "@/components/ui/field";
 import { AgendaPatientSearch } from "./agenda-patient-search";
 import { Modal } from "@/components/ui/modal";
-import { DatePickerInput } from "@/components/ui/date-picker-input";
+import {
+  CalendarPopover,
+  DatePickerInput,
+} from "@/components/ui/date-picker-input";
+import {
+  DayByProfessional,
+  appointmentCardToneClass,
+  appointmentStatusTone,
+  type AgendaSlotSelection,
+} from "./day-by-professional";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import {
   addAgendaPeriod,
@@ -476,13 +493,15 @@ function AgendaCalendarView({
   const [procedureIds, setProcedureIds] = useState<string[]>([]);
   const [insuranceIds, setInsuranceIds] = useState<string[]>([]);
   const [patientQuery, setPatientQuery] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  const [newAppointmentSlot, setNewAppointmentSlot] = useState<{
-    date: string;
-    time: string;
-  } | null>(null);
-  const moreFiltersId = useId();
+  const [showCancelled, setShowCancelled] = useState(false);
+  // "auto": com mais de duas agendas a semana abre num profissional só (a
+  // grade de todos juntos vira faixas ilegíveis); com uma ou duas, todos.
+  const [weekScheduleId, setWeekScheduleId] = useState("auto");
+  const [newAppointmentSlot, setNewAppointmentSlot] =
+    useState<AgendaSlotSelection | null>(null);
+  const filtersId = useId();
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<
     string | null
   >(null);
@@ -535,7 +554,7 @@ function AgendaCalendarView({
   );
 
   const filteredAppointments = useMemo(() => {
-    const rawPatientQuery = patientQuery.trim().toLowerCase();
+    const rawPatientQuery = normalizeSearchText(patientQuery.trim());
     const patientDigits = rawPatientQuery.replace(/\D/g, "");
 
     return data.appointments.filter((item) => {
@@ -543,15 +562,14 @@ function AgendaCalendarView({
       if (!dateInView(itemDate, date, view)) return false;
       if (rawPatientQuery) {
         const itemPatient = patient.get(item.patient_id);
-        const textMatch = [
-          itemPatient?.full_name ?? "",
-          itemPatient?.social_name ?? "",
-          itemPatient?.email ?? "",
-          itemPatient?.id ?? "",
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(rawPatientQuery);
+        const textMatch = normalizeSearchText(
+          [
+            itemPatient?.full_name ?? "",
+            itemPatient?.social_name ?? "",
+            itemPatient?.email ?? "",
+            itemPatient?.id ?? "",
+          ].join(" "),
+        ).includes(rawPatientQuery);
         const digitMatch = patientDigits
           ? [
               itemPatient?.cpf ?? "",
@@ -656,6 +674,13 @@ function AgendaCalendarView({
   ]);
 
   const rangeLabel = formatRangeLabel(date, view);
+  const shortRangeLabel = formatRangeLabel(date, view, "short");
+  const moreFilterCount = [
+    specialtyIds,
+    procedureIds,
+    unitIds,
+    insuranceIds,
+  ].filter((items) => items.length).length;
   const activeFilterCount = [
     professionalIds,
     statusValues,
@@ -664,22 +689,86 @@ function AgendaCalendarView({
     procedureIds,
     insuranceIds,
   ].filter((list) => list.length > 0).length;
+  const hasFilters = activeFilterCount > 0 || patientQuery.trim().length > 0;
+  const showCancelledEffective =
+    showCancelled || statusValues.includes("cancelled");
+  // Cancelado libera o horário: na grade ele sai do caminho e fica a um
+  // clique ("Mostrar cancelados"), para a vaga aparecer como livre.
+  const gridAppointments = useMemo(
+    () =>
+      showCancelledEffective
+        ? filteredAppointments
+        : filteredAppointments.filter((item) => item.status !== "cancelled"),
+    [filteredAppointments, showCancelledEffective],
+  );
+  const cancelledCount =
+    filteredAppointments.length -
+    filteredAppointments.filter((item) => item.status !== "cancelled").length;
+  const activeAppointmentCount = filteredAppointments.length - cancelledCount;
   const appointmentsByDay = useMemo(
-    () => groupByLocalDay(filteredAppointments, data.timeZone),
-    [data.timeZone, filteredAppointments],
+    () => groupByLocalDay(gridAppointments, data.timeZone),
+    [data.timeZone, gridAppointments],
   );
   const blocksByDay = useMemo(
     () => groupBlocksByLocalDay(filteredBlocks, data.timeZone),
     [data.timeZone, filteredBlocks],
   );
   const agendaReturnTo = buildAgendaReturnTo(date, view);
-  const candidateSchedules = data.schedules.filter(
-    (item) =>
-      item.active &&
-      (!professionalIds.length ||
-        professionalIds.includes(item.professional_id)) &&
-      (!unitIds.length || unitIds.includes(item.unit_id)),
+  const candidateSchedules = useMemo(
+    () =>
+      data.schedules.filter((item) => {
+        if (!item.active) return false;
+        if (
+          professionalIds.length &&
+          !professionalIds.includes(item.professional_id)
+        )
+          return false;
+        if (unitIds.length && !unitIds.includes(item.unit_id)) return false;
+        if (specialtyIds.length) {
+          const specialtyId = professional.get(
+            item.professional_id,
+          )?.specialty_id;
+          if (!specialtyId || !specialtyIds.includes(specialtyId)) return false;
+        }
+        return true;
+      }),
+    [data.schedules, professional, professionalIds, specialtyIds, unitIds],
   );
+  const weekScheduleOptions = useMemo(() => {
+    const schedulesPerProfessional = new Map<string, number>();
+    for (const item of candidateSchedules) {
+      schedulesPerProfessional.set(
+        item.professional_id,
+        (schedulesPerProfessional.get(item.professional_id) ?? 0) + 1,
+      );
+    }
+    return candidateSchedules
+      .map((item) => {
+        const name = professional.get(item.professional_id)?.name ?? item.name;
+        return {
+          id: item.id,
+          label:
+            (schedulesPerProfessional.get(item.professional_id) ?? 0) > 1
+              ? `${name} · ${unit.get(item.unit_id)?.name ?? item.name}`
+              : name,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [candidateSchedules, professional, unit]);
+  const autoWeekScheduleId =
+    weekScheduleOptions.length === 1 || weekScheduleOptions.length > 2
+      ? weekScheduleOptions[0].id
+      : null;
+  const resolvedWeekScheduleId =
+    weekScheduleId === "all"
+      ? null
+      : weekScheduleId !== "auto" &&
+          weekScheduleOptions.some((item) => item.id === weekScheduleId)
+        ? weekScheduleId
+        : autoWeekScheduleId;
+  const weekSchedule = resolvedWeekScheduleId
+    ? (schedule.get(resolvedWeekScheduleId) ?? null)
+    : null;
 
   function navigateAgenda(nextDate: string, nextView: AgendaView) {
     const params = new URLSearchParams(searchParams.toString());
@@ -704,237 +793,310 @@ function AgendaCalendarView({
     setPatientQuery("");
   }
 
+  const summary = [
+    `${activeAppointmentCount} ${activeAppointmentCount === 1 ? "agendamento" : "agendamentos"}`,
+    filteredBlocks.length
+      ? `${filteredBlocks.length} ${filteredBlocks.length === 1 ? "bloqueio" : "bloqueios"}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="grid min-w-0 gap-4 xl:grid-cols-[17.5rem_minmax(0,1fr)] xl:items-start">
-      <AgendaSidebar
-        date={date}
-        view={view}
-        dayCounts={data.dayCounts}
-        open={sidebarOpen}
-        canClear={activeFilterCount > 0 || patientQuery.trim().length > 0}
-        onClearFilters={clearFilters}
-        onSelectDate={(nextDate) => navigateAgenda(nextDate, view)}
-        moreFiltersOpen={moreFiltersOpen}
-        moreFiltersId={moreFiltersId}
-        onToggleMoreFilters={() => setMoreFiltersOpen((value) => !value)}
-        moreFilterCount={
-          [specialtyIds, procedureIds, unitIds, insuranceIds].filter(
-            (items) => items.length,
-          ).length
-        }
+    <div className="min-w-0 rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+      <div
+        aria-busy={navigationPending}
+        className="grid grid-cols-[minmax(0,1fr)] gap-3 border-b border-border p-3"
       >
-        <FilterField label="Status">
-          <MultiSelect
-            value={statusValues}
-            onValueChange={setStatusValues}
-            allLabel="Todos os status"
-            aria-label="Filtrar status"
-            options={Object.entries(statusLabel).map(([value, label]) => ({
-              value,
-              label,
-            }))}
-          />
-        </FilterField>
-        <FilterField label="Profissional">
-          <MultiSelect
-            value={professionalIds}
-            onValueChange={setProfessionalIds}
-            allLabel="Todos os profissionais"
-            aria-label="Filtrar profissionais"
-            options={data.professionals.map((item) => ({
-              value: item.id,
-              label: item.name,
-            }))}
-          />
-        </FilterField>
-        <div id={moreFiltersId} hidden={!moreFiltersOpen} className="space-y-4">
-          <FilterField label="Especialidade">
-            <MultiSelect
-              value={specialtyIds}
-              onValueChange={setSpecialtyIds}
-              allLabel="Todas"
-              aria-label="Filtrar especialidades"
-              options={data.specialties.map((item) => ({
-                value: item.id,
-                label: item.name,
-              }))}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex min-w-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={navigationPending}
+              onClick={() => navigateAgenda(today, view)}
+            >
+              Hoje
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Período anterior"
+              disabled={navigationPending}
+              onClick={() => moveDate(-1)}
+            >
+              <ChevronLeft className="size-4" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Próximo período"
+              disabled={navigationPending}
+              onClick={() => moveDate(1)}
+            >
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </Button>
+            <AgendaDateButton
+              label={rangeLabel}
+              shortLabel={shortRangeLabel}
+              date={date}
+              view={view}
+              today={today}
+              dayCounts={data.dayCounts}
+              disabled={navigationPending}
+              onSelectDate={(nextDate) => navigateAgenda(nextDate, view)}
             />
-          </FilterField>
-          <FilterField label="Procedimento">
-            <MultiSelect
-              value={procedureIds}
-              onValueChange={setProcedureIds}
-              allLabel="Todos"
-              aria-label="Filtrar procedimentos"
-              options={data.procedures.map((item) => ({
-                value: item.id,
-                label: item.name,
-              }))}
-            />
-          </FilterField>
-          <FilterField label="Unidade">
-            <MultiSelect
-              value={unitIds}
-              onValueChange={setUnitIds}
-              allLabel="Todas"
-              aria-label="Filtrar unidades"
-              options={data.units.map((item) => ({
-                value: item.id,
-                label: item.name,
-              }))}
-            />
-          </FilterField>
-          <FilterField label="Convênio">
-            <MultiSelect
-              value={insuranceIds}
-              onValueChange={setInsuranceIds}
-              allLabel="Todos"
-              aria-label="Filtrar convenios"
-              options={data.insurances.map((item) => ({
-                value: item.id,
-                label: item.name,
-              }))}
-            />
-          </FilterField>
-        </div>
-      </AgendaSidebar>
-
-      <div className="order-2 min-w-0 rounded-xl border border-border bg-card shadow-[var(--shadow-soft)]">
-        <Card
-          aria-busy={navigationPending}
-          className="rounded-none rounded-t-xl border-0 border-b bg-card shadow-none"
-        >
-          <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
-            <div className="flex min-w-0 items-center gap-1">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={navigationPending}
-                onClick={() => navigateAgenda(today, view)}
-              >
-                Hoje
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="Período anterior"
-                disabled={navigationPending}
-                onClick={() => moveDate(-1)}
-              >
-                <ChevronLeft className="size-4" aria-hidden="true" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="Próximo período"
-                disabled={navigationPending}
-                onClick={() => moveDate(1)}
-              >
-                <ChevronRight className="size-4" aria-hidden="true" />
-              </Button>
-              <p className="min-w-0 px-2 text-base font-semibold tracking-tight first-letter:uppercase sm:text-xl">
-                {rangeLabel}
-              </p>
-              {navigationPending ? (
-                <RefreshCw
-                  className="size-4 animate-spin text-muted-foreground"
-                  aria-label="Atualizando"
-                />
-              ) : null}
-            </div>
-
-            {/* Com base zero este grupo cabia "ao lado" da navegação mesmo sem
-                espaço: no celular a busca virava só a lupa, "Filtros" cobria o
-                período e a visão saía cortada. A base de 22rem faz o grupo
-                descer de linha quando não cabe, e a base da busca faz o mesmo
-                dentro dele. */}
-            <div className="flex min-w-0 flex-1 basis-[22rem] flex-wrap items-center justify-end gap-2">
-              {/* Filtra a tela na hora e procura a pessoa em outras datas. */}
-              <AgendaPatientSearch
-                value={patientQuery}
-                onChange={setPatientQuery}
-                timeZone={data.timeZone}
-                isInView={(dateKey) => dateInView(dateKey, date, view)}
-                visibleCount={filteredAppointments.length}
-                onOpenAppointment={(result) => {
-                  navigateAgenda(
-                    localDateKey(result.startAt, data.timeZone),
-                    view,
-                  );
-                  setSelectedAppointmentId(result.id);
-                }}
+            {navigationPending ? (
+              <RefreshCw
+                className="size-4 animate-spin text-muted-foreground"
+                aria-label="Atualizando"
               />
-              <Badge
-                variant="neutral"
-                className="hidden rounded-full border-0 bg-muted/70 px-2.5 py-1 text-xs font-normal lg:inline-flex"
-              >
-                {filteredAppointments.length}{" "}
-                {filteredAppointments.length === 1
-                  ? "agendamento"
-                  : "agendamentos"}
+            ) : null}
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <AgendaViewSwitcher
+              value={view}
+              disabled={navigationPending}
+              onChange={(nextView) => navigateAgenda(date, nextView)}
+            />
+            {canCreate ? (
+              <AppointmentForm
+                data={data}
+                canExtra={canExtra}
+                canCreatePatient={canCreatePatient}
+                triggerClassName="hidden md:inline-flex"
+              />
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Filtra a tela na hora e procura a pessoa em outras datas. */}
+          <AgendaPatientSearch
+            value={patientQuery}
+            onChange={setPatientQuery}
+            timeZone={data.timeZone}
+            isInView={(dateKey) => dateInView(dateKey, date, view)}
+            visibleCount={filteredAppointments.length}
+            panelAlign="start"
+            onOpenAppointment={(result) => {
+              navigateAgenda(localDateKey(result.startAt, data.timeZone), view);
+              setSelectedAppointmentId(result.id);
+            }}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            aria-expanded={filtersOpen}
+            aria-controls={filtersId}
+            onClick={() => setFiltersOpen((value) => !value)}
+            className="shrink-0 md:hidden"
+          >
+            <SlidersHorizontal
+              className="size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
+            Filtros
+            {activeFilterCount > 0 ? (
+              <Badge variant="primary" className="h-5 px-1.5">
+                {activeFilterCount}
               </Badge>
-              {filteredBlocks.length ? (
-                <Badge variant="neutral" className="hidden lg:inline-flex">
-                  {filteredBlocks.length} bloqueios
-                </Badge>
-              ) : null}
+            ) : null}
+          </Button>
+          <div
+            id={filtersId}
+            className={cn(
+              "w-full flex-wrap items-center gap-2 md:flex md:w-auto",
+              filtersOpen ? "flex" : "hidden",
+            )}
+          >
+            <MultiSelect
+              variant="chip"
+              chipLabel="Profissional"
+              value={professionalIds}
+              onValueChange={setProfessionalIds}
+              allLabel="Todos os profissionais"
+              aria-label="Filtrar profissionais"
+              options={data.professionals.map((item) => ({
+                value: item.id,
+                label: item.name,
+              }))}
+            />
+            <MultiSelect
+              variant="chip"
+              chipLabel="Status"
+              value={statusValues}
+              onValueChange={setStatusValues}
+              allLabel="Todos os status"
+              aria-label="Filtrar status"
+              options={Object.entries(statusLabel).map(([value, label]) => ({
+                value,
+                label,
+              }))}
+            />
+            {moreFiltersOpen || moreFilterCount > 0 ? (
+              <>
+                {data.specialties.length > 1 ? (
+                  <MultiSelect
+                    variant="chip"
+                    chipLabel="Especialidade"
+                    value={specialtyIds}
+                    onValueChange={setSpecialtyIds}
+                    allLabel="Todas"
+                    aria-label="Filtrar especialidades"
+                    options={data.specialties.map((item) => ({
+                      value: item.id,
+                      label: item.name,
+                    }))}
+                  />
+                ) : null}
+                <MultiSelect
+                  variant="chip"
+                  chipLabel="Procedimento"
+                  value={procedureIds}
+                  onValueChange={setProcedureIds}
+                  allLabel="Todos"
+                  aria-label="Filtrar procedimentos"
+                  options={data.procedures.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                  }))}
+                />
+                {data.units.length > 1 ? (
+                  <MultiSelect
+                    variant="chip"
+                    chipLabel="Unidade"
+                    value={unitIds}
+                    onValueChange={setUnitIds}
+                    allLabel="Todas"
+                    aria-label="Filtrar unidades"
+                    options={data.units.map((item) => ({
+                      value: item.id,
+                      label: item.name,
+                    }))}
+                  />
+                ) : null}
+                <MultiSelect
+                  variant="chip"
+                  chipLabel="Convênio"
+                  value={insuranceIds}
+                  onValueChange={setInsuranceIds}
+                  allLabel="Todos"
+                  aria-label="Filtrar convênios"
+                  options={data.insurances.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                  }))}
+                />
+              </>
+            ) : null}
+            {moreFilterCount === 0 ? (
               <Button
                 type="button"
-                variant="secondary"
-                aria-expanded={sidebarOpen}
-                onClick={() => setSidebarOpen((value) => !value)}
-                className="shrink-0 xl:hidden"
+                variant="ghost"
+                size="sm"
+                aria-expanded={moreFiltersOpen}
+                onClick={() => setMoreFiltersOpen((value) => !value)}
               >
-                <SlidersHorizontal
-                  className="size-4 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                Filtros
-                {activeFilterCount > 0 ? (
-                  <Badge variant="primary" className="h-5 px-1.5">
-                    {activeFilterCount}
-                  </Badge>
-                ) : null}
+                <Funnel className="size-4" aria-hidden="true" />
+                {moreFiltersOpen ? "Menos filtros" : "Mais filtros"}
               </Button>
-              <Select
-                value={view}
-                onValueChange={(nextView) =>
-                  navigateAgenda(date, nextView as AgendaView)
-                }
-                disabled={navigationPending}
-                aria-label="Visão da agenda"
-                className="w-28 shrink-0"
+            ) : null}
+            {hasFilters ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={clearFilters}
+                className="px-1"
               >
-                <option value="day">Diária</option>
-                <option value="week">Semanal</option>
-                <option value="month">Mensal</option>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+                Limpar filtros
+              </Button>
+            ) : null}
+          </div>
+          <p className="ml-auto flex items-center gap-1 text-caption text-muted-foreground">
+            <span>{summary}</span>
+            {cancelledCount > 0 && view !== "month" ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  aria-pressed={showCancelledEffective}
+                  disabled={statusValues.includes("cancelled")}
+                  onClick={() => setShowCancelled((value) => !value)}
+                  className="h-auto px-0 text-caption font-normal"
+                >
+                  {showCancelledEffective
+                    ? `Ocultar ${cancelledCount} ${cancelledCount === 1 ? "cancelado" : "cancelados"}`
+                    : `Mostrar ${cancelledCount} ${cancelledCount === 1 ? "cancelado" : "cancelados"}`}
+                </Button>
+              </>
+            ) : null}
+          </p>
+        </div>
+      </div>
 
-        {view === "day" ? (
-          <DayAgenda
-            date={date}
-            appointments={filteredAppointments}
-            blocks={filteredBlocks}
-            patient={patient}
-            professional={professional}
-            procedure={procedure}
-            schedule={schedule}
-            canEdit={canEdit}
-            onSelectSlot={canCreate ? setNewAppointmentSlot : undefined}
-            onSelectAppointment={setSelectedAppointmentId}
-          />
-        ) : view === "week" ? (
+      {view === "day" ? (
+        <DayByProfessional
+          data={data}
+          date={date}
+          today={today}
+          timeZone={data.timeZone}
+          schedules={candidateSchedules}
+          appointments={gridAppointments}
+          showCancelled={showCancelledEffective}
+          patient={patient}
+          procedure={procedure}
+          insurance={insurance}
+          hasFilters={hasFilters}
+          onSelectSlot={canCreate ? setNewAppointmentSlot : undefined}
+          onSelectAppointment={setSelectedAppointmentId}
+        />
+      ) : view === "week" ? (
+        <>
+          {weekScheduleOptions.length > 1 ? (
+            <div
+              role="radiogroup"
+              aria-label="Profissional da semana"
+              className="flex gap-2 overflow-x-auto border-b border-border px-3 py-2"
+            >
+              {[{ id: "all", label: "Todos" }, ...weekScheduleOptions].map(
+                (option) => {
+                  const checked =
+                    option.id === "all"
+                      ? !weekSchedule
+                      : weekSchedule?.id === option.id;
+                  return (
+                    <Button
+                      key={option.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={checked}
+                      variant={checked ? "primary" : "secondary"}
+                      onClick={() => setWeekScheduleId(option.id)}
+                      className="max-w-[16rem] shrink-0 rounded-full"
+                    >
+                      <span className="truncate">{option.label}</span>
+                    </Button>
+                  );
+                },
+              )}
+            </div>
+          ) : null}
           <WeekAgenda
+            data={data}
             date={date}
+            today={today}
             dayCounts={data.dayCounts}
             onSelectSlot={canCreate ? setNewAppointmentSlot : undefined}
-            hasFilters={activeFilterCount > 0 || patientQuery.trim().length > 0}
+            hasFilters={hasFilters}
+            weekSchedule={weekSchedule}
             appointmentsByDay={appointmentsByDay}
             blocksByDay={blocksByDay}
             patient={patient}
@@ -943,30 +1105,34 @@ function AgendaCalendarView({
             schedule={schedule}
             onSelectAppointment={setSelectedAppointmentId}
           />
-        ) : (
-          <MonthAgenda
-            date={date}
-            appointmentsByDay={appointmentsByDay}
-            blocksByDay={blocksByDay}
-            patient={patient}
-            professional={professional}
-            procedure={procedure}
-            schedule={schedule}
-            onSelectAppointment={setSelectedAppointmentId}
-          />
-        )}
-      </div>
+        </>
+      ) : (
+        <MonthAgenda
+          date={date}
+          appointmentsByDay={appointmentsByDay}
+          blocksByDay={blocksByDay}
+          patient={patient}
+          professional={professional}
+          procedure={procedure}
+          schedule={schedule}
+          onSelectAppointment={setSelectedAppointmentId}
+        />
+      )}
 
       {newAppointmentSlot ? (
         <AppointmentFormModal
           open
           onClose={() => setNewAppointmentSlot(null)}
           data={data}
-          defaultStart={newAppointmentSlot}
+          defaultStart={{
+            date: newAppointmentSlot.date,
+            time: newAppointmentSlot.time,
+          }}
           defaultScheduleId={
-            candidateSchedules.length === 1
+            newAppointmentSlot.scheduleId ??
+            (candidateSchedules.length === 1
               ? candidateSchedules[0].id
-              : undefined
+              : undefined)
           }
           canExtra={canExtra}
           canCreatePatient={canCreatePatient}
@@ -1006,48 +1172,141 @@ function AgendaCalendarView({
   );
 }
 
-// Coluna fixa da agenda: mini calendário do mês para saltar entre datas e,
-// logo abaixo, os filtros do período visível. Abaixo de xl ela sai do fluxo
-// e é aberta pelo botão "Filtros" da barra superior.
-function AgendaSidebar({
-  canClear,
-  children,
+/** Busca sem diferenciar acento e maiúscula: "joao" acha "João". */
+function normalizeSearchText(value: string) {
+  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+const viewOptions: Array<{ value: AgendaView; label: string }> = [
+  { value: "day", label: "Dia" },
+  { value: "week", label: "Semana" },
+  { value: "month", label: "Mês" },
+];
+
+function AgendaViewSwitcher({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: AgendaView;
+  disabled?: boolean;
+  onChange: (value: AgendaView) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Visão da agenda"
+      className="inline-flex rounded-md border border-border bg-muted p-0.5"
+    >
+      {viewOptions.map((option) => (
+        <Button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          variant="ghost"
+          size="sm"
+          disabled={disabled}
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "h-8 px-3",
+            value === option.value &&
+              "bg-card text-foreground shadow-[var(--shadow-soft)] hover:bg-card",
+          )}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+// Mini calendário do mês (com a ocupação de cada dia) num popover preso ao
+// título do período: ocupava uma coluna inteira da tela antes.
+function AgendaDateButton({
+  label,
+  shortLabel,
   date,
   view,
+  today,
   dayCounts,
-  onClearFilters,
+  disabled,
   onSelectDate,
-  open,
-  moreFiltersOpen,
-  moreFiltersId,
-  moreFilterCount,
-  onToggleMoreFilters,
 }: {
-  canClear: boolean;
-  children: React.ReactNode;
+  label: string;
+  /** Versão curta para o celular ("qui, 05 de nov."). */
+  shortLabel: string;
   date: string;
   view: AgendaView;
+  today: string;
   dayCounts: Record<string, number>;
-  onClearFilters: () => void;
+  disabled?: boolean;
   onSelectDate: (nextDate: string) => void;
-  open: boolean;
-  moreFiltersOpen: boolean;
-  moreFiltersId: string;
-  moreFilterCount: number;
-  onToggleMoreFilters: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
   const selectedDay = useMemo(() => calendarDateFromKey(date), [date]);
   const density = useMemo(() => buildDayDensity(dayCounts), [dayCounts]);
 
+  useEffect(() => {
+    if (!open) return;
+    function closeOnPointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+      if (
+        !triggerRef.current?.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
+        setOpen(false);
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    window.addEventListener("pointerdown", closeOnPointerDown);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnPointerDown);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
   return (
-    <div
-      className={cn(
-        "order-1 min-w-0 content-start gap-4 xl:sticky xl:top-[calc(var(--app-sticky-offset,0rem)+0.5rem)] xl:grid xl:max-h-[calc(100svh-var(--app-sticky-offset,0rem)-1.5rem)] xl:overflow-y-auto xl:pr-1",
-        open ? "grid" : "hidden",
-      )}
-    >
-      <Card className="relative rounded-xl shadow-none">
-        <CardContent className="p-4">
+    <>
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="ghost"
+        disabled={disabled}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        onClick={() => setOpen((value) => !value)}
+        className="h-9 min-w-0 gap-2 px-2 text-heading-sm font-semibold text-foreground sm:text-heading"
+      >
+        <span className="truncate first-letter:uppercase sm:hidden">
+          {shortLabel}
+        </span>
+        <span className="hidden truncate first-letter:uppercase sm:inline">
+          {label}
+        </span>
+        <CaretDown
+          className="size-4 shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+      </Button>
+      {open ? (
+        <CalendarPopover
+          id={panelId}
+          ariaLabel="Escolher data"
+          anchorRef={triggerRef}
+          panelRef={panelRef}
+          align="start"
+        >
           <AgendaDayDensityContext.Provider value={density}>
             <DayPicker
               mode="single"
@@ -1055,18 +1314,14 @@ function AgendaSidebar({
               weekStartsOn={1}
               navLayout="around"
               showOutsideDays
-              // O mês exibido segue o dia selecionado, então as setas do mini
-              // calendário movem o próprio período da agenda — é assim que a
-              // ocupação do mês novo chega junto na navegação.
-              month={selectedDay}
-              onMonthChange={(nextMonth) =>
-                onSelectDate(sameDayOfMonth(nextMonth, selectedDay.getDate()))
-              }
+              defaultMonth={selectedDay}
               selected={selectedDay}
               onSelect={(nextDay) => {
-                if (nextDay) onSelectDate(calendarKeyFromDate(nextDay));
+                if (!nextDay) return;
+                onSelectDate(calendarKeyFromDate(nextDay));
+                setOpen(false);
+                triggerRef.current?.focus();
               }}
-              // O fundo da semana conecta o período; cada botão mostra sua ocupação.
               modifiers={{
                 visiblePeriod: (day) =>
                   dateInView(calendarKeyFromDate(day), date, view),
@@ -1080,7 +1335,7 @@ function AgendaSidebar({
                 MonthCaption: AgendaCalendarCaption,
               }}
               classNames={{
-                root: "relative w-full",
+                root: "relative w-[17rem]",
                 caption_label:
                   "text-sm font-semibold first-letter:uppercase text-foreground",
                 chevron: "size-4 fill-current",
@@ -1100,8 +1355,7 @@ function AgendaSidebar({
               }}
             />
           </AgendaDayDensityContext.Provider>
-
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-2.5 text-caption text-secondary-foreground">
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-2 text-caption text-secondary-foreground">
             {densityLegend.map((item) => (
               <span key={item.level} className="flex items-center gap-1">
                 <span
@@ -1115,52 +1369,23 @@ function AgendaSidebar({
               </span>
             ))}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-xl shadow-none">
-        <CardContent className="grid gap-4 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="flex items-center gap-2 text-sm font-semibold">
-              <Funnel className="size-4" weight="fill" aria-hidden="true" />
-              Filtros
-            </p>
+          <div className="mt-2 flex justify-end border-t border-border pt-2">
             <Button
               type="button"
-              variant="ghost"
               size="sm"
-              aria-expanded={moreFiltersOpen}
-              aria-controls={moreFiltersId}
-              onClick={onToggleMoreFilters}
-              className="h-7 px-0 text-xs font-normal text-primary hover:bg-transparent hover:text-primary"
+              variant="ghost"
+              onClick={() => {
+                onSelectDate(today);
+                setOpen(false);
+                triggerRef.current?.focus();
+              }}
             >
-              {moreFiltersOpen ? "Menos filtros" : "Mais filtros"}
-              {moreFilterCount > 0 ? (
-                <span className="rounded-full bg-primary-muted px-1.5">
-                  {moreFilterCount}
-                </span>
-              ) : null}
-              <ArrowRight
-                className={cn("size-3.5", moreFiltersOpen && "rotate-90")}
-                aria-hidden="true"
-              />
+              Ir para hoje
             </Button>
           </div>
-          {children}
-          {canClear ? (
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              onClick={onClearFilters}
-              className="h-auto justify-self-start p-0 text-caption"
-            >
-              Limpar filtros
-            </Button>
-          ) : null}
-        </CardContent>
-      </Card>
-    </div>
+        </CalendarPopover>
+      ) : null}
+    </>
   );
 }
 
@@ -1264,221 +1489,31 @@ function AgendaDayButton({
   );
 }
 
-function FilterField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="grid min-w-0 gap-1.5">
-      <span className="text-xs font-medium text-secondary-foreground">
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-function DayAgenda({
-  date,
-  appointments,
-  blocks,
-  patient,
-  professional,
-  procedure,
-  schedule,
-  canEdit,
-  onSelectSlot,
-  onSelectAppointment,
-}: {
-  date: string;
-  appointments: AgendaData["appointments"];
-  blocks: AgendaData["blocks"];
-  patient: Map<string, AgendaData["patients"][number]>;
-  professional: Map<string, AgendaData["professionals"][number]>;
-  procedure: Map<string, AgendaData["procedures"][number]>;
-  schedule: Map<string, AgendaData["schedules"][number]>;
-  canEdit: boolean;
-  onSelectSlot?: (slot: { date: string; time: string }) => void;
-  onSelectAppointment: (appointmentId: string) => void;
-}) {
-  const timeZone = useAgendaTimeZone();
-  const dayAppointments = appointments.filter(
-    (item) => localDateKey(item.start_at, timeZone) === date,
-  );
-  const dayBlocks = blocks.filter(
-    (item) => localDateKey(item.start_at, timeZone) === date,
-  );
-  const periods = [
-    {
-      id: "morning",
-      label: "Manhã",
-      rangeLabel: "06:00-11:59",
-      startMinute: 6 * 60,
-      endMinute: 12 * 60,
-    },
-    {
-      id: "afternoon",
-      label: "Tarde",
-      rangeLabel: "12:00-17:59",
-      startMinute: 12 * 60,
-      endMinute: 18 * 60,
-    },
-    {
-      id: "evening",
-      label: "Noite",
-      rangeLabel: "18:00-23:59",
-      startMinute: 18 * 60,
-      endMinute: 24 * 60,
-    },
-  ];
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {periods.map((period) => {
-        const periodAppointments = dayAppointments.filter((item) =>
-          localIntervalIntersectsMinuteRange(
-            item.start_at,
-            item.end_at,
-            period.startMinute,
-            period.endMinute,
-            timeZone,
-          ),
-        );
-        const periodBlocks = dayBlocks.filter((item) =>
-          localIntervalIntersectsMinuteRange(
-            item.start_at,
-            item.end_at,
-            period.startMinute,
-            period.endMinute,
-            timeZone,
-          ),
-        );
-        const slots = buildTimelineSlots(period.startMinute, period.endMinute);
-        const totalHeight =
-          ((period.endMinute - period.startMinute) / weekTimelineStepMinutes) *
-          weekTimelineRowHeight;
-        const items = layoutTimedWeekItems({
-          appointments: periodAppointments,
-          blocks: periodBlocks,
-          startMinute: period.startMinute,
-          timeZone,
-        });
-
-        return (
-          <Card key={period.id} className="overflow-hidden">
-            <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] border-b border-border bg-card">
-              <div className="border-r border-border" />
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-heading-sm font-semibold">
-                      {period.label}
-                    </h2>
-                    <Badge variant="primary" className="rounded-md">
-                      {periodAppointments.length}
-                    </Badge>
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {period.rangeLabel}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div
-              className="grid grid-cols-[3.25rem_minmax(0,1fr)]"
-              style={{ height: totalHeight }}
-            >
-              <div className="relative border-r border-border bg-card">
-                {slots
-                  .filter((slot) => slot.minute < period.endMinute)
-                  .map((slot) => (
-                    <div
-                      key={slot.minute}
-                      className="absolute right-1.5 translate-y-1 rounded bg-card px-1 text-caption tabular-nums text-muted-foreground"
-                      style={{ top: slot.top }}
-                    >
-                      {slot.label}
-                    </div>
-                  ))}
-              </div>
-              <div
-                className="relative overflow-hidden bg-card"
-                style={{ height: totalHeight }}
-              >
-                {slots.map((slot, index) => (
-                  <div
-                    key={slot.minute}
-                    className={`absolute left-0 right-0 ${
-                      index % 2 === 0
-                        ? "border-t border-border"
-                        : "border-t border-dashed border-border"
-                    }`}
-                    style={{ top: slot.top }}
-                  />
-                ))}
-                <TimelineSlotButtons
-                  date={date}
-                  slots={slots}
-                  endMinute={period.endMinute}
-                  onSelectSlot={onSelectSlot}
-                />
-                {items.map((item) =>
-                  item.type === "block" ? (
-                    <TimelineBlockItem
-                      key={item.id}
-                      item={item}
-                      schedule={schedule.get(item.block.schedule_id)}
-                    />
-                  ) : (
-                    <TimelineAppointmentItem
-                      key={item.id}
-                      item={item}
-                      appointment={item.appointment}
-                      patient={patient.get(item.appointment.patient_id)}
-                      professional={professional.get(
-                        item.appointment.professional_id,
-                      )}
-                      procedure={procedure.get(item.appointment.procedure_id)}
-                      schedule={schedule.get(item.appointment.schedule_id)}
-                      canEdit={canEdit}
-                      onSelect={() => onSelectAppointment(item.appointment.id)}
-                    />
-                  ),
-                )}
-                {!items.length ? (
-                  <div className="pointer-events-none absolute inset-x-6 top-8 rounded-lg border border-dashed border-border bg-card/90 px-4 py-8 text-center text-sm text-muted-foreground">
-                    Sem agendamentos neste turno.
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
 function WeekAgenda({
+  data,
   date,
+  today,
   dayCounts,
   hasFilters,
   onSelectSlot,
-  appointmentsByDay,
-  blocksByDay,
+  weekSchedule,
+  appointmentsByDay: allAppointmentsByDay,
+  blocksByDay: allBlocksByDay,
   patient,
   professional,
   procedure,
   schedule,
   onSelectAppointment,
 }: {
+  data: AgendaData;
   date: string;
+  today: string;
   dayCounts: Record<string, number>;
   hasFilters: boolean;
-  onSelectSlot?: (slot: { date: string; time: string }) => void;
+  onSelectSlot?: (slot: AgendaSlotSelection) => void;
+  /** Com um profissional escolhido a semana mostra só a agenda dele, com o
+      expediente e os horários livres de cada dia. */
+  weekSchedule: AgendaData["schedules"][number] | null;
   appointmentsByDay: Map<string, AgendaData["appointments"]>;
   blocksByDay: Map<string, AgendaData["blocks"]>;
   patient: Map<string, AgendaData["patients"][number]>;
@@ -1490,18 +1525,70 @@ function WeekAgenda({
   const timeZone = useAgendaTimeZone();
   const days = weekDays(date);
   const density = buildDayDensity(dayCounts);
+  const appointmentsByDay = useMemo(() => {
+    if (!weekSchedule) return allAppointmentsByDay;
+    return new Map(
+      [...allAppointmentsByDay].map(([key, items]) => [
+        key,
+        items.filter(
+          (item) => item.professional_id === weekSchedule.professional_id,
+        ),
+      ]),
+    );
+  }, [allAppointmentsByDay, weekSchedule]);
+  const blocksByDay = useMemo(() => {
+    if (!weekSchedule) return allBlocksByDay;
+    return new Map(
+      [...allBlocksByDay].map(([key, items]) => [
+        key,
+        items.filter((item) => item.schedule_id === weekSchedule.id),
+      ]),
+    );
+  }, [allBlocksByDay, weekSchedule]);
   const isEmpty =
     !Array.from(appointmentsByDay.values()).some((items) => items.length) &&
     !Array.from(blocksByDay.values()).some((items) => items.length);
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-  }).format(new Date());
-  const timelineRange = getWeekTimelineRange(
+  const scheduleHasAvailability = weekSchedule
+    ? data.availability.some((item) => item.schedule_id === weekSchedule.id)
+    : false;
+  const windowsByDay = new Map(
+    days.map((day) => [
+      dateKey(day),
+      weekSchedule
+        ? windowsForSchedule(
+            data.availability,
+            weekSchedule.id,
+            day.getUTCDay(),
+          )
+        : [],
+    ]),
+  );
+  const baseRange = getWeekTimelineRange(
     days,
     appointmentsByDay,
     blocksByDay,
     timeZone,
   );
+  const allWindows = [...windowsByDay.values()].flat();
+  const timelineRange = allWindows.length
+    ? {
+        startMinute: Math.min(
+          baseRange.startMinute,
+          floorToStep(
+            Math.min(...allWindows.map((item) => item.startMinute)),
+            weekTimelineStepMinutes,
+          ),
+        ),
+        endMinute: Math.max(
+          baseRange.endMinute,
+          ceilToStep(
+            Math.max(...allWindows.map((item) => item.endMinute)),
+            weekTimelineStepMinutes,
+          ),
+        ),
+      }
+    : baseRange;
+  const nowMinute = currentMinuteInTimeZone(timeZone);
   const slots = buildTimelineSlots(
     timelineRange.startMinute,
     timelineRange.endMinute,
@@ -1510,6 +1597,46 @@ function WeekAgenda({
     ((timelineRange.endMinute - timelineRange.startMinute) /
       weekTimelineStepMinutes) *
     weekTimelineRowHeight;
+  const minuteToTop = (minute: number) =>
+    ((minute - timelineRange.startMinute) / weekTimelineStepMinutes) *
+    weekTimelineRowHeight;
+
+  function freeSlotsFor(dayKey: string) {
+    if (!weekSchedule || !onSelectSlot) return [];
+    const busy = [
+      ...data.appointments
+        .filter(
+          (item) =>
+            item.professional_id === weekSchedule.professional_id &&
+            appointmentOccupiesTime(item.status),
+        )
+        .flatMap((item) => {
+          const minutes = localMinuteRangeOnDate(
+            item.start_at,
+            item.end_at,
+            dayKey,
+            timeZone,
+          );
+          return minutes ? [minutes] : [];
+        }),
+      ...data.blocks
+        .filter((item) => item.schedule_id === weekSchedule.id)
+        .flatMap((item) => {
+          const minutes = localMinuteRangeOnDate(
+            item.start_at,
+            item.end_at,
+            dayKey,
+            timeZone,
+          );
+          return minutes ? [minutes] : [];
+        }),
+    ];
+    return listFreeSlots({
+      windows: windowsByDay.get(dayKey) ?? [],
+      busy,
+      notBeforeMinute: notBeforeMinuteFor(dayKey, today, nowMinute),
+    });
+  }
 
   // Em notebook (~1366px) a semana não cabe inteira e o fim de semana fica
   // atrás da rolagem lateral — inclusive "hoje", num sábado. Ao abrir ou
@@ -1532,7 +1659,7 @@ function WeekAgenda({
   }, [date]);
 
   return (
-    <Card className="overflow-hidden rounded-none rounded-b-xl border-0 shadow-none">
+    <Card className="overflow-hidden rounded-none rounded-b-lg border-0 shadow-none">
       {/* relative: é a referência do offsetLeft das colunas lido acima. */}
       <div
         ref={scrollerRef}
@@ -1620,6 +1747,26 @@ function WeekAgenda({
                   }`}
                   style={{ height: totalHeight }}
                 >
+                  {weekSchedule && scheduleHasAvailability
+                    ? closedRanges(
+                        windowsByDay.get(dayKey) ?? [],
+                        timelineRange,
+                      ).map((range) => (
+                        <div
+                          key={`closed-${range.startMinute}`}
+                          aria-hidden="true"
+                          className="absolute inset-x-0 bg-surface-sunken"
+                          style={{
+                            backgroundImage:
+                              "repeating-linear-gradient(135deg, var(--muted) 0 6px, transparent 6px 12px)",
+                            top: minuteToTop(range.startMinute),
+                            height:
+                              minuteToTop(range.endMinute) -
+                              minuteToTop(range.startMinute),
+                          }}
+                        />
+                      ))
+                    : null}
                   {slots.map((slot, index) => (
                     <div
                       key={slot.minute}
@@ -1631,12 +1778,55 @@ function WeekAgenda({
                       style={{ top: slot.top }}
                     />
                   ))}
-                  <TimelineSlotButtons
-                    date={dayKey}
-                    slots={slots}
-                    endMinute={timelineRange.endMinute}
-                    onSelectSlot={onSelectSlot}
-                  />
+                  {weekSchedule && scheduleHasAvailability ? (
+                    freeSlotsFor(dayKey).map((slot) => (
+                      <Button
+                        key={slot.time}
+                        type="button"
+                        variant="ghost"
+                        aria-label={`Agendar em ${formatFullDay(dayKey)} às ${slot.time}`}
+                        onClick={() =>
+                          onSelectSlot?.({
+                            date: dayKey,
+                            time: slot.time,
+                            scheduleId: weekSchedule.id,
+                          })
+                        }
+                        className="group absolute inset-x-1 h-auto items-start justify-start gap-1 rounded-md border border-dashed border-border-strong/70 bg-card/70 px-1.5 py-0.5 text-caption font-normal text-muted-foreground hover:border-primary hover:bg-primary-muted hover:text-primary focus-visible:border-primary focus-visible:bg-primary-muted active:translate-y-0"
+                        style={{
+                          top: minuteToTop(slot.startMinute) + 1,
+                          height: Math.max(
+                            20,
+                            minuteToTop(slot.endMinute) -
+                              minuteToTop(slot.startMinute) -
+                              2,
+                          ),
+                        }}
+                      >
+                        <span className="tabular-nums">{slot.time}</span>
+                        <span className="group-hover:hidden">Livre</span>
+                        <Plus
+                          className="hidden size-3.5 group-hover:block"
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    ))
+                  ) : (
+                    <TimelineSlotButtons
+                      date={dayKey}
+                      slots={slots}
+                      endMinute={timelineRange.endMinute}
+                      onSelectSlot={
+                        onSelectSlot
+                          ? (slot) =>
+                              onSelectSlot({
+                                ...slot,
+                                scheduleId: weekSchedule?.id,
+                              })
+                          : undefined
+                      }
+                    />
+                  )}
                   {items.map((item) =>
                     item.type === "block" ? (
                       <TimelineBlockItem
@@ -1655,6 +1845,7 @@ function WeekAgenda({
                         )}
                         procedure={procedure.get(item.appointment.procedure_id)}
                         schedule={schedule.get(item.appointment.schedule_id)}
+                        hideProfessional={Boolean(weekSchedule)}
                         onSelect={() =>
                           onSelectAppointment(item.appointment.id)
                         }
@@ -1671,11 +1862,11 @@ function WeekAgenda({
                 timeZone={timeZone}
               />
             ) : null}
-            {isEmpty ? (
+            {isEmpty && !weekSchedule ? (
               <div className="pointer-events-none absolute inset-x-0 top-28 z-10 flex justify-center pl-[4.5rem]">
                 <div
                   role="status"
-                  className="max-w-sm rounded-xl border border-border bg-card/95 px-7 py-5 text-center shadow-[var(--shadow-soft)]"
+                  className="max-w-sm rounded-lg border border-border bg-card/95 px-7 py-5 text-center shadow-[var(--shadow-soft)]"
                 >
                   <CalendarClock
                     className="mx-auto mb-2 size-6 text-muted-foreground"
@@ -1822,6 +2013,7 @@ function TimelineAppointmentItem({
   procedure,
   schedule,
   canEdit,
+  hideProfessional = false,
   onSelect,
 }: {
   item: Extract<TimedWeekItem, { type: "appointment" }>;
@@ -1831,25 +2023,24 @@ function TimelineAppointmentItem({
   procedure?: AgendaData["procedures"][number];
   schedule?: AgendaData["schedules"][number];
   canEdit?: boolean;
+  /** A semana de um profissional só: repetir o nome em cada card é ruído. */
+  hideProfessional?: boolean;
   onSelect?: () => void;
 }) {
   const timeZone = useAgendaTimeZone();
   const patientName = patient?.social_name || patient?.full_name || "Paciente";
-  const tone =
-    appointment.status === "cancelled" || appointment.status === "no_show"
-      ? "destructive"
-      : appointment.status === "waiting"
-        ? "warning"
-        : appointment.status === "confirmed" ||
-            appointment.status === "attended"
-          ? "success"
-          : "primary";
+  const tone = appointmentStatusTone[appointment.status] ?? "primary";
+  const label = statusLabel[appointment.status] ?? appointment.status;
+  const finished =
+    appointment.status === "attended" ||
+    appointment.status === "cancelled" ||
+    appointment.status === "no_show";
   const width = `calc(${100 / item.laneCount}% - 6px)`;
   const left = `calc(${(100 / item.laneCount) * item.lane}% + 3px)`;
   const summary = `${formatTime(appointment.start_at, timeZone)} - ${formatTime(
     appointment.end_at,
     timeZone,
-  )} · ${patientName} · ${statusLabel[appointment.status] ?? appointment.status} · ${procedure?.name ?? "Procedimento"} · ${professional?.name ?? schedule?.name ?? ""}`;
+  )} · ${patientName} · ${label} · ${procedure?.name ?? "Procedimento"} · ${professional?.name ?? schedule?.name ?? ""}`;
 
   return (
     <div
@@ -1859,51 +2050,39 @@ function TimelineAppointmentItem({
       onClick={onSelect}
       onKeyDown={(event) => handleAppointmentCardKeyDown(event, onSelect)}
       className={cn(
-        "absolute z-10 overflow-hidden rounded-md border px-2 py-1 text-xs",
+        "absolute z-10 overflow-hidden rounded-md border border-l-[3px] px-2 py-1 text-caption",
+        appointmentCardToneClass[tone],
+        finished && "opacity-70 hover:opacity-100",
         onSelect &&
-          "cursor-pointer transition-shadow duration-[var(--motion-fast)] hover:shadow-[var(--shadow-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+          "cursor-pointer transition-shadow duration-[var(--motion-fast)] hover:z-20 hover:shadow-[var(--shadow-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
       )}
-      style={{
-        top: item.top,
-        height: item.height,
-        left,
-        width,
-        backgroundColor: `color-mix(in srgb, var(--${tone}) 7%, var(--card))`,
-        borderColor: `color-mix(in srgb, var(--${tone}) 18%, var(--card))`,
-        borderLeft: `3px solid var(--${tone})`,
-      }}
+      style={{ top: item.top, height: item.height, left, width }}
       title={summary}
     >
       {item.height >= 44 ? (
         <div className="mb-0.5 flex min-w-0 items-center justify-between gap-1">
           <span className="shrink-0 text-caption leading-tight tabular-nums text-secondary-foreground">
-            {formatTime(appointment.start_at, timeZone)} –{" "}
-            {formatTime(appointment.end_at, timeZone)}
+            {formatTime(appointment.start_at, timeZone)}
           </span>
-          <span
-            className="truncate rounded-full px-1.5 py-0.5 text-caption font-medium leading-none"
-            style={{
-              backgroundColor: `var(--${tone}-muted)`,
-              color: `var(--${tone === "primary" ? "primary-strong" : `${tone}-foreground`})`,
-            }}
-          >
-            {statusLabel[appointment.status] ?? appointment.status}
-          </span>
+          <Badge variant={tone} className="h-5 min-w-0 px-1.5">
+            <span className="truncate">{label}</span>
+          </Badge>
         </div>
       ) : null}
-      <p className="truncate font-semibold leading-tight text-foreground">
+      <p
+        className={cn(
+          "truncate font-semibold leading-tight text-foreground",
+          appointment.status === "cancelled" && "line-through",
+        )}
+      >
         {patientName}
       </p>
       {item.height >= 60 ? (
-        <p className="mt-0.5 flex min-w-0 items-center gap-1 text-caption leading-tight text-muted-foreground">
-          <span
-            className="size-1 shrink-0 rounded-full bg-muted-foreground/50"
-            aria-hidden="true"
-          />
-          <span className="truncate">{procedure?.name ?? "Procedimento"}</span>
+        <p className="mt-0.5 truncate text-caption leading-tight text-muted-foreground">
+          {procedure?.name ?? "Procedimento"}
         </p>
       ) : null}
-      {item.height >= 72 ? (
+      {item.height >= 72 && !hideProfessional ? (
         <p className="mt-0.5 flex min-w-0 items-center gap-1 text-caption leading-tight text-muted-foreground">
           <UserRound className="size-3 shrink-0" aria-hidden="true" />
           <span className="truncate">
@@ -3449,6 +3628,7 @@ function AppointmentForm({
   floatingTrigger = false,
   onTrigger,
   triggerTabIndex,
+  triggerClassName,
 }: {
   data: AgendaData;
   canExtra: boolean;
@@ -3456,6 +3636,7 @@ function AppointmentForm({
   floatingTrigger?: boolean;
   onTrigger?: () => void;
   triggerTabIndex?: number;
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -3470,11 +3651,11 @@ function AppointmentForm({
           setOpen(true);
           onTrigger?.();
         }}
-        className={
-          floatingTrigger
-            ? "h-11 rounded-full px-4 shadow-[var(--shadow-hover)]"
-            : undefined
-        }
+        className={cn(
+          floatingTrigger &&
+            "h-11 rounded-full px-4 shadow-[var(--shadow-hover)]",
+          triggerClassName,
+        )}
       >
         <Plus className="size-4" aria-hidden="true" />
         Novo agendamento
@@ -3944,17 +4125,6 @@ function calendarKeyFromDate(value: Date) {
   ].join("-");
 }
 
-function sameDayOfMonth(month: Date, day: number) {
-  const lastDay = new Date(
-    month.getFullYear(),
-    month.getMonth() + 1,
-    0,
-  ).getDate();
-  return calendarKeyFromDate(
-    new Date(month.getFullYear(), month.getMonth(), Math.min(day, lastDay), 12),
-  );
-}
-
 function calendarWeekdayLabel(value: Date) {
   return new Intl.DateTimeFormat("pt-BR", { weekday: "short" })
     .format(value)
@@ -4042,15 +4212,21 @@ function groupBlocksByLocalDay(items: AgendaData["blocks"], timeZone: string) {
   return grouped;
 }
 
-function formatRangeLabel(date: string, view: "day" | "week" | "month") {
+function formatRangeLabel(
+  date: string,
+  view: "day" | "week" | "month",
+  size: "long" | "short" = "long",
+) {
   const base = localDateFromKey(date);
   if (view === "day") {
     return new Intl.DateTimeFormat("pt-BR", {
-      weekday: "long",
+      weekday: size,
       day: "2-digit",
       month: "short",
       timeZone: "UTC",
-    }).format(base);
+    })
+      .format(base)
+      .replace(".,", ",");
   }
   if (view === "month") {
     return new Intl.DateTimeFormat("pt-BR", {
@@ -4153,23 +4329,6 @@ function getWeekTimelineRange(
     startMinute: Math.max(0, startMinute),
     endMinute: Math.min(24 * 60, Math.max(endMinute, startMinute + 4 * 60)),
   };
-}
-
-function localIntervalIntersectsMinuteRange(
-  startAt: string,
-  endAt: string,
-  rangeStartMinute: number,
-  rangeEndMinute: number,
-  timeZone: string,
-) {
-  const startMinute = minutesOfLocalDay(new Date(startAt), timeZone);
-  const durationMinutes = Math.max(
-    15,
-    (new Date(endAt).getTime() - new Date(startAt).getTime()) / 60_000,
-  );
-  const endMinute = startMinute + durationMinutes;
-
-  return startMinute < rangeEndMinute && endMinute > rangeStartMinute;
 }
 
 function buildTimelineSlots(startMinute: number, endMinute: number) {
