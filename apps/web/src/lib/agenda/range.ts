@@ -43,9 +43,16 @@ export function parseAgendaLocalDateTime(
   return roundTrip === value ? parsed : null;
 }
 
+/** Cookie com a visão preferida da agenda neste navegador (Raio-X A12). */
+export const agendaViewCookie = "hi_agenda_view";
+
+export function isAgendaView(value: unknown): value is AgendaView {
+  return typeof value === "string" && agendaViews.has(value as AgendaView);
+}
+
 export function resolveAgendaSelection(
   input: SearchParamsInput,
-  options: { now?: Date; timeZone?: string } = {},
+  options: { now?: Date; timeZone?: string; preferredView?: string } = {},
 ): AgendaSelection {
   const now = options.now ?? new Date();
   const timeZone = normalizeAgendaTimeZone(options.timeZone);
@@ -53,10 +60,15 @@ export function resolveAgendaSelection(
   const requestedDate = readParam(input, "date");
 
   return {
-    // Sem view valida na URL a agenda abre na semana: e o recorte padrao de
-    // trabalho da recepcao, que precisa enxergar os proximos dias de uma vez.
+    // Sem view valida na URL a agenda abre na última visão usada neste
+    // navegador; na primeira vez, na semana: e o recorte padrao de trabalho
+    // da recepcao, que precisa enxergar os proximos dias de uma vez.
     view:
-      requestedView && agendaViews.has(requestedView) ? requestedView : "week",
+      requestedView && agendaViews.has(requestedView)
+        ? requestedView
+        : isAgendaView(options.preferredView)
+          ? options.preferredView
+          : "week",
     date: isDateKey(requestedDate)
       ? requestedDate
       : formatInTimeZone(now, timeZone, "yyyy-MM-dd"),

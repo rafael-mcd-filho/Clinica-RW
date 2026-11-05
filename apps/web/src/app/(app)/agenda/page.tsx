@@ -1,7 +1,9 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AgendaBoard, type AgendaData } from "./agenda-board";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import {
+  agendaViewCookie,
   normalizeAgendaTimeZone,
   resolveAgendaMonthGridRange,
   resolveAgendaSelection,
@@ -127,7 +129,10 @@ export default async function AgendaPage({
   ]);
 
   const timeZone = normalizeAgendaTimeZone(organizationSettings?.timezone);
-  const selection = resolveAgendaSelection(requestedParams, { timeZone });
+  const selection = resolveAgendaSelection(requestedParams, {
+    timeZone,
+    preferredView: (await cookies()).get(agendaViewCookie)?.value,
+  });
   const requestedDate = firstParam(requestedParams.date);
   const requestedView = firstParam(requestedParams.view);
   // Redireciona apenas para normalizar params explícitos inválidos. A

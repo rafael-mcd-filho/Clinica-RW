@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useActionState,
   useCallback,
   createContext,
@@ -35,6 +36,7 @@ import {
   Door,
   IdentificationCard,
   Info,
+  Keyboard,
   Lightning,
   PencilSimple,
   Printer,
@@ -108,6 +110,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/dialog";
 import {
   addAgendaPeriod,
+  agendaViewCookie,
   buildAgendaEncounterHref,
   buildAgendaReturnTo,
   defaultAgendaTimeZone,
@@ -270,6 +273,17 @@ export type AgendaData = {
 };
 
 const initialState: AgendaActionState = {};
+
+const agendaShortcuts: Array<[string[], string]> = [
+  [["T"], "Ir para hoje"],
+  [["←", "→"], "Período anterior e próximo"],
+  [["D"], "Visão do dia"],
+  [["S"], "Visão da semana"],
+  [["M"], "Visão do mês"],
+  [["N"], "Novo agendamento"],
+  [["/"], "Buscar paciente"],
+  [["?"], "Mostrar os atalhos"],
+];
 const AgendaTimeZoneContext = createContext(defaultAgendaTimeZone);
 
 function useAgendaTimeZone() {
@@ -512,6 +526,7 @@ function AgendaCalendarView({
   const [insuranceIds, setInsuranceIds] = useState<string[]>([]);
   const [patientQuery, setPatientQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
   const [dayGroupBy, setDayGroupBy] = useState<"professional" | "room">(
@@ -795,6 +810,10 @@ function AgendaCalendarView({
     const params = new URLSearchParams(searchParams.toString());
     params.set("date", nextDate);
     params.set("view", nextView);
+    if (nextView !== view) {
+      // A agenda volta a abrir na última visão usada (Raio-X A12).
+      document.cookie = `${agendaViewCookie}=${nextView}; path=/; max-age=31536000; samesite=lax`;
+    }
     startNavigation(() => {
       router.push(`${pathname}?${params.toString()}`, { scroll: false });
     });
@@ -803,6 +822,54 @@ function AgendaCalendarView({
   function moveDate(direction: -1 | 1) {
     navigateAgenda(addAgendaPeriod(date, view, direction), view);
   }
+
+  // Raio-X A12: atalhos de teclado. Ficam fora quando há um campo ou uma
+  // janela em foco, para não atrapalhar a digitação.
+  const shortcutRef = useRef<(event: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    shortcutRef.current = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey) return;
+      if (event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+      const key = event.key.toLowerCase();
+      if (key === "t") navigateAgenda(today, view);
+      else if (event.key === "ArrowLeft") moveDate(-1);
+      else if (event.key === "ArrowRight") moveDate(1);
+      else if (key === "d") navigateAgenda(date, "day");
+      else if (key === "s") navigateAgenda(date, "week");
+      else if (key === "m") navigateAgenda(date, "month");
+      else if (key === "n" && canCreate) {
+        const trigger = [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-shortcut="new-appointment"]',
+          ),
+        ].find((element) => element.offsetParent !== null);
+        if (!trigger) return;
+        trigger.click();
+      } else if (event.key === "/") {
+        const search = document.querySelector<HTMLInputElement>(
+          '[data-shortcut="patient-search"]',
+        );
+        if (!search) return;
+        search.focus();
+      } else if (event.key === "?") setShortcutsOpen(true);
+      else return;
+      event.preventDefault();
+    };
+  });
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => shortcutRef.current(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
 
   function clearFilters() {
     setProfessionalIds([]);
@@ -902,6 +969,17 @@ function AgendaCalendarView({
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="hidden md:inline-flex"
+              aria-label="Atalhos de teclado"
+              title="Atalhos de teclado (?)"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              <Keyboard className="size-4" aria-hidden="true" />
+            </Button>
             <AgendaViewSwitcher
               value={view}
               disabled={navigationPending}
@@ -1225,6 +1303,31 @@ function AgendaCalendarView({
           canCreatePatient={canCreatePatient}
         />
       ) : null}
+      <Modal
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+        title="Atalhos da agenda"
+        description="Funcionam quando nenhum campo está sendo editado."
+        className="max-w-md"
+      >
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 text-body-sm">
+          {agendaShortcuts.map(([keys, label]) => (
+            <Fragment key={label}>
+              <dt className="flex gap-1">
+                {keys.map((key) => (
+                  <kbd
+                    key={key}
+                    className="min-w-7 rounded-md border border-border bg-muted px-1.5 py-0.5 text-center font-mono text-caption text-foreground"
+                  >
+                    {key}
+                  </kbd>
+                ))}
+              </dt>
+              <dd className="text-secondary-foreground">{label}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </Modal>
       {selectedAppointment ? (
         <AppointmentDetailsModal
           key={selectedAppointment.id}
@@ -3790,6 +3893,7 @@ function AppointmentForm({
       <Button
         type="button"
         tabIndex={triggerTabIndex}
+        data-shortcut="new-appointment"
         onClick={() => {
           setOpen(true);
           onTrigger?.();

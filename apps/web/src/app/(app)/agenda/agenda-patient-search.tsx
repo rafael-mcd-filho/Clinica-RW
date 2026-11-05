@@ -133,6 +133,7 @@ export function AgendaPatientSearch({
       </span>
       <Input
         type="search"
+        data-shortcut="patient-search"
         value={value}
         onChange={(event) => {
           onChange(event.target.value);
