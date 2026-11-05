@@ -36,7 +36,42 @@ export async function updateSession(request: NextRequest) {
   // aqui, no proxy, que os cookies rotacionados conseguem ser persistidos
   // — Server Components não podem escrever cookies. Evita o round-trip que
   // getUser() faria a cada request.
-  await supabase.auth.getClaims();
+  const { data: claims } = await supabase.auth.getClaims();
+
+  // Verificação em duas etapas (Raio-X S9): com o fator ativado, a sessão só
+  // vale para o sistema depois do código do aplicativo (AAL2). As páginas de
+  // entrada, o agendamento público e as APIs com segredo próprio ficam de fora.
+  if (claims?.claims && !isMfaExemptPath(request.nextUrl.pathname)) {
+    const { data: assurance } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assurance?.nextLevel === "aal2" && assurance.currentLevel !== "aal2") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login/verificacao";
+      url.search = "";
+      const redirectResponse = NextResponse.redirect(url);
+      response.cookies
+        .getAll()
+        .forEach((cookie) => redirectResponse.cookies.set(cookie));
+      return redirectResponse;
+    }
+  }
 
   return response;
+}
+
+const mfaExemptPrefixes = [
+  "/login",
+  "/auth",
+  "/esqueci-senha",
+  "/redefinir-senha",
+  "/agendar",
+  "/api/whatsapp/webhook",
+  "/api/jobs",
+  "/api/public-booking",
+];
+
+function isMfaExemptPath(pathname: string) {
+  return mfaExemptPrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
 }

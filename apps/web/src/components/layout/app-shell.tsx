@@ -34,6 +34,7 @@ import { endImpersonation } from "@/app/(app)/suporte/actions";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
+import { IdleLock } from "@/components/layout/idle-lock";
 import { SidebarAccountMenu } from "@/components/layout/sidebar-account-menu";
 import { TodayAppointmentsRail } from "@/components/layout/today-appointments-rail";
 import {
@@ -286,6 +287,7 @@ export function AppShell({
       )}
     >
       <NavigationProgress />
+      <IdleLock userName={userName} />
 
       {sidebarPinned ? (
         <Sidebar

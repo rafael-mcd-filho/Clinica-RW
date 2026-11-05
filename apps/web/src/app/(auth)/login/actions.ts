@@ -39,6 +39,41 @@ export async function signInWithPassword(
     return { error: "Credenciais inválidas ou usuário sem acesso." };
   }
 
+  // Quem ativou a verificação em duas etapas confirma o código do aplicativo
+  // antes de entrar (Raio-X S9).
+  const { data: assurance } =
+    await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (assurance?.nextLevel === "aal2" && assurance.currentLevel !== "aal2") {
+    redirect("/login/verificacao");
+  }
+
+  redirect("/dashboard");
+}
+
+export type MfaVerifyState = { error?: string };
+
+export async function verifyMfaCode(
+  _previousState: MfaVerifyState,
+  formData: FormData,
+): Promise<MfaVerifyState> {
+  const code = String(formData.get("code") ?? "").replace(/\D/g, "");
+  if (code.length !== 6) {
+    return { error: "Informe os 6 dígitos do aplicativo autenticador." };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data: factors, error: factorsError } =
+    await supabase.auth.mfa.listFactors();
+  const factor = factors?.totp.find((item) => item.status === "verified");
+  if (factorsError || !factor) {
+    return { error: "Sessão expirada. Entre de novo com e-mail e senha." };
+  }
+  const { error } = await supabase.auth.mfa.challengeAndVerify({
+    factorId: factor.id,
+    code,
+  });
+  if (error) {
+    return { error: "Código inválido ou expirado. Tente o código atual." };
+  }
   redirect("/dashboard");
 }
 
@@ -85,7 +120,7 @@ export async function requestPasswordReset(
 
 const passwordUpdateSchema = z
   .object({
-    password: z.string().min(8, "Use uma senha com pelo menos 8 caracteres."),
+    password: z.string().min(10, "Use uma senha com pelo menos 10 caracteres."),
     password_confirmation: z.string(),
   })
   .refine((data) => data.password === data.password_confirmation, {

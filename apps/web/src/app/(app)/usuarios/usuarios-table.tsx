@@ -481,7 +481,7 @@ function PasswordDialog({
                   type="password"
                   minLength={8}
                   autoComplete="new-password"
-                  placeholder="Mínimo de 8 caracteres"
+                  placeholder="Mínimo de 10 caracteres"
                 />
               </label>
             </>

@@ -294,7 +294,7 @@ export async function resendEmailChange(): Promise<ProfileActionState> {
 const passwordSchema = z
   .object({
     current_password: z.string().min(1, "Informe a sua senha atual."),
-    password: z.string().min(8, "Use pelo menos 8 caracteres."),
+    password: z.string().min(10, "Use pelo menos 10 caracteres."),
     password_confirmation: z.string(),
     sign_out_others: z.boolean(),
   })

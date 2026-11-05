@@ -33,6 +33,7 @@ import {
   type ProfileActionState,
 } from "./actions";
 import { AvatarCropDialog } from "./avatar-crop-dialog";
+import { MfaSection } from "./mfa-section";
 import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -148,6 +149,14 @@ export function ProfileEditor({
           className={styles.passwordCard}
         >
           <PasswordSection email={profile.email} readOnly={readOnly} />
+        </SettingsCard>
+        <SettingsCard
+          title="Verificação em duas etapas"
+          description="Um código do celular, além da senha, para entrar."
+          tone="purple"
+          icon={ShieldCheck}
+        >
+          <MfaSection readOnly={readOnly} />
         </SettingsCard>
         <SettingsCard
           title="Sessões"
@@ -686,7 +695,7 @@ function PasswordSection({
   const nextId = useId();
   const confirmationId = useId();
   const rules = [
-    { label: "Pelo menos 8 caracteres", met: next.length >= 8 },
+    { label: "Pelo menos 10 caracteres", met: next.length >= 10 },
     {
       label: "Diferente da senha atual",
       met: next.length > 0 && next !== current,

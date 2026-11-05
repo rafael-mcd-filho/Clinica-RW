@@ -18,7 +18,7 @@ export function PasswordUpdateForm() {
         Nova senha
         <Input
           required
-          minLength={8}
+          minLength={10}
           name="password"
           type="password"
           autoComplete="new-password"
@@ -29,7 +29,7 @@ export function PasswordUpdateForm() {
         Confirmar nova senha
         <Input
           required
-          minLength={8}
+          minLength={10}
           name="password_confirmation"
           type="password"
           autoComplete="new-password"

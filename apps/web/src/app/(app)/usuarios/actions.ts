@@ -163,12 +163,12 @@ const passwordSchema = z
   .superRefine((data, ctx) => {
     if (
       data.mode === "manual" &&
-      (!data.password || data.password.length < 8)
+      (!data.password || data.password.length < 10)
     ) {
       ctx.addIssue({
         code: "custom",
         path: ["password"],
-        message: "A senha precisa ter pelo menos 8 caracteres.",
+        message: "A senha precisa ter pelo menos 10 caracteres.",
       });
     }
   });

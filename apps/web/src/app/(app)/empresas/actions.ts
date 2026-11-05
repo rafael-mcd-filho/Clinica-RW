@@ -58,12 +58,12 @@ const createEmpresaSchema = z
 
     if (
       data.access_method === "password" &&
-      (!data.owner_password || data.owner_password.length < 8)
+      (!data.owner_password || data.owner_password.length < 10)
     ) {
       ctx.addIssue({
         code: "custom",
         path: ["owner_password"],
-        message: "A senha inicial precisa ter pelo menos 8 caracteres.",
+        message: "A senha inicial precisa ter pelo menos 10 caracteres.",
       });
     }
   });
