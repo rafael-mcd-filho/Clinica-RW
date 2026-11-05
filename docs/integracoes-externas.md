@@ -89,3 +89,22 @@ agendamento online.
   `/api/payments/webhook` que, ao receber "pago", chama a mesma função de
   baixa usada em "Registrar recebimento". O sinal do agendamento online
   entra no fluxo de `src/app/agendar/[slug]`.
+
+## C5. Cobrança recorrente das clínicas (plano e assinatura)
+
+**Pronto:** tela Configurações > Plano e assinatura (permissão
+`config.plano`) com o plano contratado, a situação da assinatura, o uso da
+clínica (usuários, profissionais, pacientes, agendamentos do mês) e o
+contato do suporte para mudar de plano.
+
+**Falta:** cobrança automática da mensalidade e limites por plano.
+
+- Provedores: os mesmos do FI4 (Asaas, Pagar.me, Stripe, Efí), usando a
+  assinatura recorrente deles (cartão, Pix automático ou boleto).
+- Contrato: conta da plataforma (não da clínica) no provedor.
+- Onde entra: ao criar a empresa (`src/app/(app)/empresas/actions.ts`),
+  criar o cliente e a assinatura no provedor; um webhook
+  (`/api/billing/webhook`) atualiza `organizations.status` (ativa, pagamento
+  pendente, suspensa). Os limites por plano (ex.: número de profissionais)
+  entram como checagem nas funções do banco que criam esses cadastros.
+

@@ -3,6 +3,7 @@ import {
   CalendarDots,
   ChatCircleText,
   ChatsCircle,
+  CreditCard,
   FileText,
   Globe,
   Lightning,
@@ -82,6 +83,13 @@ export const configurationSections: Record<
     pageDescription: (name) =>
       `Fichas de atendimento e documentos clínicos de ${name}.`,
     cardDescription: "Templates de prontuário e documentos.",
+  },
+  plano: {
+    title: "Plano e assinatura",
+    icon: CreditCard,
+    pageDescription: (name) =>
+      `Plano contratado, uso e contato para mudanças da assinatura de ${name}.`,
+    cardDescription: "Plano contratado, uso e mudanças de assinatura.",
   },
 };
 

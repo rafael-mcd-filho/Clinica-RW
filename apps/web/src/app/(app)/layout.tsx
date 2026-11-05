@@ -354,6 +354,14 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     });
   }
 
+  if (permissionCodes.has("config.plano")) {
+    configurationChildren.push({
+      href: "/configuracoes/plano",
+      label: "Plano e assinatura",
+      icon: "financeiro",
+    });
+  }
+
   if (canCreateClinicalTemplate) {
     configurationChildren.push({
       href: "/configuracoes/modelos-clinicos",

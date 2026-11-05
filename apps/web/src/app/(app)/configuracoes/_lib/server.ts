@@ -89,7 +89,8 @@ export type CompanyConfigurationRoute =
   | "whatsapp"
   | "tags-automacoes"
   | "mensagens"
-  | "modelos-clinicos";
+  | "modelos-clinicos"
+  | "plano";
 
 export const companyConfigurationPaths: Record<
   CompanyConfigurationRoute,
@@ -103,6 +104,7 @@ export const companyConfigurationPaths: Record<
   "tags-automacoes": "/configuracoes/tags-automacoes",
   mensagens: "/configuracoes/mensagens",
   "modelos-clinicos": "/configuracoes/modelos-clinicos",
+  plano: "/configuracoes/plano",
 };
 
 const configurationPermissionCodes = [
@@ -129,6 +131,7 @@ export type CompanyConfigurationAccess = {
   canManageOnlineBooking: boolean;
   canCreateClinicalTemplate: boolean;
   canConfigureWhatsApp: boolean;
+  canManagePlan: boolean;
 };
 
 type PlatformConfigurationAccess = {
@@ -170,6 +173,7 @@ export async function getConfigurationAccess(): Promise<ConfigurationAccess> {
       "clinico.criar_template",
     ),
     canConfigureWhatsApp: context.permissionCodes.has("atendimento.configurar"),
+    canManagePlan: context.permissionCodes.has("config.plano"),
   };
 }
 
@@ -214,6 +218,8 @@ export function canAccessCompanyConfigurationRoute(
       return access.canCreateClinicalTemplate;
     case "whatsapp":
       return access.canConfigureWhatsApp;
+    case "plano":
+      return access.canManagePlan;
   }
 }
 
