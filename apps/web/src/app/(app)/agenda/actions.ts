@@ -1639,6 +1639,59 @@ export async function sendDayReminders(
   };
 }
 
+export type TelehealthLinkResult =
+  | { url: string; patientMessage: string; error?: never }
+  | { error: string; url?: never; patientMessage?: never };
+
+/**
+ * Raio-X E14: link da sala de vídeo de um agendamento, para o profissional
+ * entrar e para enviar ao paciente com o aviso de consentimento.
+ */
+export async function getTelehealthLink(
+  appointmentId: string,
+): Promise<TelehealthLinkResult> {
+  if (!z.string().uuid().safeParse(appointmentId).success) {
+    return { error: "Agendamento inválido." };
+  }
+  const context = await requireAgendaPermission("agenda.ver");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const supabase = await createSupabaseServerClient();
+  const { data: appointment } = await supabase
+    .from("appointments")
+    .select("id, start_at, status, professionals(name)")
+    .eq("organization_id", context.organization.id)
+    .eq("id", appointmentId)
+    .maybeSingle<{
+      id: string;
+      start_at: string;
+      status: string;
+      professionals: { name: string } | null;
+    }>();
+  if (!appointment) return { error: "Agendamento não encontrado." };
+  if (["cancelled", "no_show", "attended"].includes(appointment.status)) {
+    return { error: "Este agendamento não está mais em aberto." };
+  }
+  const { telehealthRoomUrl } = await import("@/lib/telehealth/room");
+  const timeZone = await getAgendaTimeZone(supabase, context.organization.id);
+  const when = new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(appointment.start_at));
+  const url = telehealthRoomUrl(appointment.id);
+  const professional = appointment.professionals?.name;
+  return {
+    url,
+    patientMessage: [
+      `Sua teleconsulta${professional ? ` com ${professional}` : ""} é em ${when.replace(",", " às")}.`,
+      `Na hora, entre por este link (celular ou computador, com câmera e microfone): ${url}`,
+      "Ao entrar, você concorda com o atendimento por vídeo, nos termos da Resolução CFM 2.314/2022. A consulta não é gravada.",
+    ].join("\n\n"),
+  };
+}
+
 export async function startAppointmentEncounter(
   appointmentId: string,
   _state: AgendaActionState,

@@ -129,6 +129,7 @@ import {
   ReminderLine,
 } from "@/components/agenda/reminder-indicator";
 import { DayRemindersButton } from "./day-reminders-button";
+import { TelehealthButton } from "./telehealth-button";
 import { useCoalescedRouterRefresh } from "@/hooks/use-coalesced-router-refresh";
 
 type Option = { id: string; name: string };
@@ -2740,41 +2741,53 @@ function AppointmentDetailsModal({
                   ) : null}
                 </div>
               </div>
-              <Badge
-                variant={
-                  appointment.status === "cancelled" ||
-                  appointment.status === "no_show"
-                    ? "destructive"
-                    : appointment.status === "confirmed" ||
-                        appointment.status === "attended"
-                      ? "success"
-                      : appointment.status === "waiting"
-                        ? "warning"
-                        : "primary"
-                }
-                className="gap-2 rounded-full px-3 py-2"
-              >
-                <CalendarClock className="size-4" aria-hidden="true" />
-                {appointmentStatus}
-              </Badge>
-              {/* Raio-X V9: falar com o paciente sem descer até os contatos. */}
-              {patient?.whatsapp || patient?.phone ? (
-                <Button asChild variant="secondary" size="sm">
-                  <a
-                    href={appointmentWhatsappHref(
-                      patient.whatsapp || patient.phone || "",
-                      patientName,
-                      appointment.start_at,
-                      timeZone,
-                    )}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <WhatsappLogo className="size-4" aria-hidden="true" />
-                    WhatsApp
-                  </a>
-                </Button>
-              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant={
+                    appointment.status === "cancelled" ||
+                    appointment.status === "no_show"
+                      ? "destructive"
+                      : appointment.status === "confirmed" ||
+                          appointment.status === "attended"
+                        ? "success"
+                        : appointment.status === "waiting"
+                          ? "warning"
+                          : "primary"
+                  }
+                  className="gap-2 rounded-full px-3 py-2"
+                >
+                  <CalendarClock className="size-4" aria-hidden="true" />
+                  {appointmentStatus}
+                </Badge>
+                {procedure &&
+                /tele|v[ií]deo|online/i.test(procedure.name) &&
+                !["cancelled", "no_show", "attended"].includes(
+                  appointment.status,
+                ) ? (
+                  <TelehealthButton
+                    appointmentId={appointment.id}
+                    patientPhone={patient?.whatsapp || patient?.phone || null}
+                  />
+                ) : null}
+                {/* Raio-X V9: falar com o paciente sem descer até os contatos. */}
+                {patient?.whatsapp || patient?.phone ? (
+                  <Button asChild variant="secondary" size="sm">
+                    <a
+                      href={appointmentWhatsappHref(
+                        patient.whatsapp || patient.phone || "",
+                        patientName,
+                        appointment.start_at,
+                        timeZone,
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <WhatsappLogo className="size-4" aria-hidden="true" />
+                      WhatsApp
+                    </a>
+                  </Button>
+                ) : null}
+              </div>
             </div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {/* Sem a permissão o CPF nem chega ao navegador; com ela,
