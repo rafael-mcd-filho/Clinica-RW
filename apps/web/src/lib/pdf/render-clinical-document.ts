@@ -1,4 +1,6 @@
 import "server-only";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import QRCode from "qrcode";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { documentVerificationUrl } from "@/lib/clinical/document-verification";
@@ -8,13 +10,35 @@ import {
   asRecord,
   buildDocumentPdf,
   buildRenderContext,
+  pdfFontFiles,
   slug,
+  type PdfFontBytes,
   type ClinicRow,
   type DocumentRow,
   type OrganizationRow,
   type PatientRow,
   type ProfessionalRow,
 } from "@/lib/pdf/clinical-document";
+
+let fontBytes: Promise<PdfFontBytes | undefined> | null = null;
+
+/**
+ * Fonte Unicode dos PDFs (Raio-X E13), lida uma vez por instância. As mesmas
+ * fontes ficam em /public para a prévia no navegador medir igual. Se não
+ * estiverem no pacote, o PDF sai com as fontes padrão.
+ */
+function loadPdfFonts() {
+  fontBytes ??= Promise.all([
+    readFile(join(process.cwd(), "public", pdfFontFiles.regular)),
+    readFile(join(process.cwd(), "public", pdfFontFiles.bold)),
+  ])
+    .then(([regular, bold]) => ({
+      regular: new Uint8Array(regular),
+      bold: new Uint8Array(bold),
+    }))
+    .catch(() => undefined);
+  return fontBytes;
+}
 
 /**
  * Gera o PDF de um documento clínico já carregado. Usado pela rota interna
@@ -99,6 +123,7 @@ export async function renderClinicalDocumentPdf(
     layout,
     consent,
     verification,
+    fonts: await loadPdfFonts(),
   });
   return {
     bytes,

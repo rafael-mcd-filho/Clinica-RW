@@ -30,6 +30,13 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Fonte Unicode dos PDFs clínicos (Raio-X E13): as rotas que geram PDF
+  // leem o arquivo de public/ no servidor, então ele vai junto da função.
+  outputFileTracingIncludes: {
+    "/documentos/**": ["./public/fonts/pdf/*.ttf"],
+    "/(app)/documentos/**": ["./public/fonts/pdf/*.ttf"],
+    "/d/**": ["./public/fonts/pdf/*.ttf"],
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

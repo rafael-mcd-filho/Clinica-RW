@@ -240,3 +240,40 @@ describe("shared document pagination", () => {
     );
   });
 });
+
+describe("símbolos no PDF (Raio-X E13)", () => {
+  it("sem a fonte Unicode, troca os símbolos por equivalentes legíveis", async () => {
+    const { sanitizePdfText } = await import("./clinical-document");
+    expect(sanitizePdfText("PA ≥ 140 mmHg → retorno ✓")).toBe(
+      "PA >= 140 mmHg -> retorno (ok)",
+    );
+    expect(sanitizePdfText("Glicemia ≤ 99 • jejum…")).toBe(
+      "Glicemia <= 99 • jejum…",
+    );
+    expect(sanitizePdfText("emoji 😀")).toBe("emoji ?");
+  });
+
+  it("com a fonte Unicode, mantém o texto e gera o PDF", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { pdfFontFiles, sanitizePdfText } =
+      await import("./clinical-document");
+    const root = join(__dirname, "../../../public");
+    const fonts = {
+      regular: new Uint8Array(await readFile(join(root, pdfFontFiles.regular))),
+      bold: new Uint8Array(await readFile(join(root, pdfFontFiles.bold))),
+    };
+    expect(sanitizePdfText("PA ≥ 140 → ✓", true)).toBe("PA ≥ 140 → ✓");
+    const result = await renderClinicalDocument({
+      ...input("PA ≥ 140 mmHg → retorno em 7 dias ✓\nGlicemia ≤ 99 mg/dL"),
+      fonts,
+    });
+    const pdf = await PDFDocument.load(result.bytes);
+    expect(pdf.getPageCount()).toBeGreaterThan(0);
+    const text = (await read(result.bytes))
+      .flatMap((page) => page.lines.map((line) => line.str))
+      .join("\n");
+    expect(text).toContain("≥ 140");
+    expect(text).toContain("≤ 99");
+  });
+});

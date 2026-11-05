@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type {
   DocumentMeasurement,
   DocumentRenderInput,
+  PdfFontBytes,
 } from "@/lib/pdf/clinical-document";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,25 @@ type PreviewState = {
   measurement?: DocumentMeasurement;
   error?: string;
 };
+let previewFonts: Promise<PdfFontBytes | undefined> | null = null;
+
+/** As mesmas fontes do PDF final, para a prévia medir as páginas igual. */
+function loadPreviewFonts(files: { regular: string; bold: string }) {
+  previewFonts ??= Promise.all(
+    [files.regular, files.bold].map(async (file) => {
+      const response = await fetch(`/${file}`);
+      if (!response.ok) throw new Error("fonte indisponível");
+      return new Uint8Array(await response.arrayBuffer());
+    }),
+  )
+    .then(([regular, bold]) => ({ regular, bold }))
+    .catch(() => {
+      previewFonts = null;
+      return undefined;
+    });
+  return previewFonts;
+}
+
 export function useDocumentPreview(input: DocumentRenderInput, enabled = true) {
   const [result, setResult] = useState<PreviewState>();
   useEffect(() => {
@@ -37,10 +57,15 @@ export function useDocumentPreview(input: DocumentRenderInput, enabled = true) {
     let cancelled = false;
     const timeout = setTimeout(async () => {
       try {
-        const { renderClinicalDocument } =
+        const { renderClinicalDocument, pdfFontFiles } =
           await import("@/lib/pdf/clinical-document");
         if (cancelled) return;
-        const { bytes, measurement } = await renderClinicalDocument(input);
+        const fonts = await loadPreviewFonts(pdfFontFiles);
+        if (cancelled) return;
+        const { bytes, measurement } = await renderClinicalDocument({
+          ...input,
+          fonts,
+        });
         if (cancelled) return;
         const url = URL.createObjectURL(
           new Blob([new Uint8Array(bytes)], { type: "application/pdf" }),

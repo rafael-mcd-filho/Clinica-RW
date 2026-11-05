@@ -4,6 +4,7 @@ import {
 } from "../clinical/document-types";
 import type { ConsentDetails } from "../clinical/consent";
 import { appendConsentEvidence } from "./consent-evidence";
+import fontkit from "@pdf-lib/fontkit";
 import {
   PDFDocument,
   rgb,
@@ -125,7 +126,40 @@ type DocumentRenderInput = {
   consent?: ConsentDetails;
   /** QR Code de verificação (Raio-X E5): endereço e imagem PNG. */
   verification?: { url: string; qrPng: Uint8Array };
+  /**
+   * Fonte Unicode (Raio-X E13): com ela "≥", "≤", "→" e "✓" saem como foram
+   * escritos. Sem ela, as fontes padrão do PDF só têm o alfabeto latino.
+   */
+  fonts?: PdfFontBytes;
 };
+
+export type PdfFontBytes = { regular: Uint8Array; bold: Uint8Array };
+
+/** Caminho público das fontes (servidas em /fonts/pdf, lidas pelo servidor). */
+export const pdfFontFiles = {
+  regular: "fonts/pdf/DejaVuSansCondensed.ttf",
+  bold: "fonts/pdf/DejaVuSansCondensed-Bold.ttf",
+};
+
+async function embedDocumentFonts(pdfDoc: PDFDocument, fonts?: PdfFontBytes) {
+  if (fonts) {
+    try {
+      pdfDoc.registerFontkit(fontkit);
+      const [regular, bold] = await Promise.all([
+        pdfDoc.embedFont(fonts.regular, { subset: true }),
+        pdfDoc.embedFont(fonts.bold, { subset: true }),
+      ]);
+      return { regular, bold, unicode: true };
+    } catch {
+      // Arquivo de fonte inválido: segue com as fontes padrão.
+    }
+  }
+  const [regular, bold] = await Promise.all([
+    pdfDoc.embedFont(StandardFonts.Helvetica),
+    pdfDoc.embedFont(StandardFonts.HelveticaBold),
+  ]);
+  return { regular, bold, unicode: false };
+}
 
 async function buildDocumentPdf(input: DocumentRenderInput) {
   return (await renderClinicalDocument(input)).bytes;
@@ -137,10 +171,11 @@ export async function renderClinicalDocument({
   layout,
   consent,
   verification,
+  fonts,
 }: DocumentRenderInput) {
   const pdfDoc = await PDFDocument.create();
-  const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const { regular, bold, unicode } = await embedDocumentFonts(pdfDoc, fonts);
+  const safeText = (value: string) => sanitizePdfText(value, unicode);
   const logo =
     layout.header.enabled && layout.header.showLogo
       ? await embedSafeLogo(pdfDoc, context.clinic.logoUrl)
@@ -971,13 +1006,47 @@ function validTimeZone(value: string) {
   }
 }
 
-function safeText(value: string) {
-  return value
+// Sem a fonte Unicode: símbolos comuns em texto clínico viram equivalentes
+// legíveis, em vez de "?" (que mudava o sentido de "PA ≥ 140").
+const latinFallbacks: Array<[RegExp, string]> = [
+  [/≥/g, ">="],
+  [/≤/g, "<="],
+  [/≠/g, "<>"],
+  [/≈/g, "~"],
+  [/→|⟶|➔/g, "->"],
+  [/←/g, "<-"],
+  [/↔/g, "<->"],
+  [/⇒/g, "=>"],
+  [/↑/g, "(aumento)"],
+  [/↓/g, "(redução)"],
+  [/[✓✔]/g, "(ok)"],
+  [/[✗✘]/g, "(x)"],
+  [/Δ/g, "Delta"],
+  [/∞/g, "infinito"],
+];
+
+export function sanitizePdfText(value: string, unicode = false) {
+  const normalized = value
     .normalize("NFC")
     .replace(/[\u2010-\u2015]/g, "-")
     .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u00FF]/g, "?");
+    .replace(/[\u201C\u201D]/g, '"');
+  if (unicode) {
+    // Só tira caracteres de controle; o resto a fonte desenha.
+    return normalized.replace(
+      /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,
+      "",
+    );
+  }
+  let latin = normalized;
+  for (const [pattern, replacement] of latinFallbacks) {
+    latin = latin.replace(pattern, replacement);
+  }
+  // Ficam o latino e os sinais que as fontes padrão do PDF têm (• … ‰ € ™).
+  return latin.replace(
+    /[^\x09\x0A\x0D\x20-\x7E\u00A0-\u00FF\u2022\u2026\u2030\u20AC\u2122]/gu,
+    "?",
+  );
 }
 
 function formatDate(value: string) {
@@ -1018,7 +1087,7 @@ function isJpeg(bytes: Uint8Array) {
 
 function slug(value: string) {
   return (
-    safeText(value)
+    sanitizePdfText(value)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
