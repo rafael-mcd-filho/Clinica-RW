@@ -169,15 +169,32 @@ export default async function AgendaPage({
   const patientIds = [
     ...new Set(appointmentRows.map((appointment) => appointment.patient_id)),
   ];
+  const patientColumns: string = context.permissionCodes.has(
+    "paciente.ver_dados_sensiveis",
+  )
+    ? "id, full_name, social_name, cpf, email, phone, whatsapp"
+    : "id, full_name, social_name, email, phone, whatsapp";
   const [patients, encounters] = await Promise.all([
     patientIds.length
       ? supabase
           .from("patients")
-          .select("id, full_name, social_name, cpf, email, phone, whatsapp")
+          // CPF só vai para o navegador de quem pode vê-lo (Raio-X S7).
+          .select(patientColumns)
           .eq("organization_id", organizationId)
           .is("deleted_at", null)
           .in("id", patientIds)
           .order("full_name")
+          .returns<
+            Array<{
+              id: string;
+              full_name: string;
+              social_name: string | null;
+              cpf?: string | null;
+              email: string | null;
+              phone: string | null;
+              whatsapp: string | null;
+            }>
+          >()
       : Promise.resolve({ data: [] }),
     canSeeClinicalRecords && appointmentIds.length
       ? supabase

@@ -30,6 +30,8 @@ import {
   Buildings,
   Copy,
   CreditCard,
+  Eye,
+  EyeSlash,
   CurrencyDollar,
   Door,
   IdentificationCard,
@@ -109,7 +111,7 @@ import {
 import { defaultScheduleColor } from "@/lib/colors";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
-import { formatCPF, formatPhoneBR } from "@/lib/validation/br";
+import { formatCPF, formatPhoneBR, maskCPF } from "@/lib/validation/br";
 import { useCoalescedRouterRefresh } from "@/hooks/use-coalesced-router-refresh";
 
 type Option = { id: string; name: string };
@@ -2575,11 +2577,21 @@ function AppointmentDetailsModal({
               </Badge>
             </div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <SummaryItem
-                label="CPF"
-                icon={IdentificationCard}
-                value={patient?.cpf ? formatCPF(patient.cpf) : "Não informado"}
-              />
+              {/* Sem a permissão o CPF nem chega ao navegador; com ela,
+                  aparece mascarado até alguém pedir para ver. */}
+              {patient && "cpf" in patient ? (
+                <SummaryItem
+                  label="CPF"
+                  icon={IdentificationCard}
+                  value={
+                    patient.cpf ? (
+                      <MaskedCpfValue cpf={patient.cpf} />
+                    ) : (
+                      "Não informado"
+                    )
+                  }
+                />
+              ) : null}
               <SummaryItem
                 label="Telefone"
                 icon={Phone}
@@ -3166,6 +3178,31 @@ function StartEncounterForm({
         </p>
       ) : null}
     </form>
+  );
+}
+
+function MaskedCpfValue({ cpf }: { cpf: string }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums">
+      {visible ? formatCPF(cpf) : maskCPF(cpf)}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-pressed={visible}
+        aria-label={visible ? "Ocultar CPF" : "Mostrar CPF"}
+        title={visible ? "Ocultar CPF" : "Mostrar CPF"}
+        onClick={() => setVisible((value) => !value)}
+        className="size-7"
+      >
+        {visible ? (
+          <EyeSlash className="size-4" aria-hidden="true" />
+        ) : (
+          <Eye className="size-4" aria-hidden="true" />
+        )}
+      </Button>
+    </span>
   );
 }
 

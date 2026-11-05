@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { dispatchPendingJobs, runScheduledMaintenance } from "@/lib/jobs/worker";
+import {
+  dispatchPendingJobs,
+  runScheduledMaintenance,
+} from "@/lib/jobs/worker";
+import { secretsMatch } from "@/lib/security/secrets";
 
 /**
  * Batida do cron: entrega as notificacoes enfileiradas e roda as varreduras de
@@ -32,7 +36,7 @@ export async function POST(request: NextRequest) {
     request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
     request.headers.get("x-worker-secret") ??
     "";
-  if (provided !== secret) {
+  if (!secretsMatch(provided, secret)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

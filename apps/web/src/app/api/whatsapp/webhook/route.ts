@@ -8,6 +8,7 @@ import {
 } from "@/lib/whatsapp/ingest";
 import { type MessageStatus } from "@/lib/whatsapp/types";
 import { getInstanceWebhookSecret } from "@/lib/whatsapp/credentials";
+import { secretsMatch } from "@/lib/security/secrets";
 import { getEvolutionConfigByInstance } from "@/lib/whatsapp/credentials";
 import { getMediaMessageBase64 } from "@/lib/whatsapp/evolution-client";
 import { parseEvolutionUpsertMessage } from "@/lib/whatsapp/webhook-message";
@@ -18,8 +19,10 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
  * persiste no Supabase (via service role, dentro de ingest.ts). Responde 200
  * rápido: a Evolution reenvia em caso de erro.
  *
- * Proteção: se WHATSAPP_WEBHOOK_SECRET estiver definido, exigimos o mesmo valor
- * no header `x-webhook-secret` (ou `apikey`).
+ * Proteção: exige o segredo da instância (ou WHATSAPP_WEBHOOK_SECRET) no
+ * header `x-webhook-secret` (ou `apikey`). Sem segredo configurado a rota
+ * recusa tudo: antes ela aceitava qualquer POST, e dava para injetar
+ * mensagens falsas na caixa de entrada de uma clínica.
  */
 export async function POST(request: NextRequest) {
   let payload: EvolutionEvent;
@@ -32,13 +35,21 @@ export async function POST(request: NextRequest) {
   const secret = payload.instance
     ? ((await getInstanceWebhookSecret(payload.instance)) ?? getWebhookSecret())
     : getWebhookSecret();
-  if (secret) {
-    const provided =
-      request.headers.get("x-webhook-secret") ??
-      request.headers.get("apikey") ??
-      "";
-    if (provided !== secret)
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!secret) {
+    console.error(
+      "[whatsapp webhook] recusado: nenhum segredo configurado para a instância nem WHATSAPP_WEBHOOK_SECRET.",
+    );
+    return NextResponse.json(
+      { error: "webhook secret not configured" },
+      { status: 503 },
+    );
+  }
+  const provided =
+    request.headers.get("x-webhook-secret") ??
+    request.headers.get("apikey") ??
+    "";
+  if (!secretsMatch(provided, secret)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   try {

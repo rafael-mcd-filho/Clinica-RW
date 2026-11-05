@@ -1,6 +1,46 @@
 import type { NextConfig } from "next";
 
+/**
+ * Cabeçalhos de segurança em todas as respostas (Raio-X S10).
+ *
+ * A CSP fica nas diretivas que não dependem de nonce: impedir que outro site
+ * embuta o sistema (clickjacking), trocar a base dos links e enviar
+ * formulários para fora. Restringir scripts exige nonce por requisição no
+ * proxy e vem num passo separado.
+ */
+const securityHeaders = [
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains; preload",
+  },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  {
+    // Microfone só para gravar áudio no atendimento do WhatsApp.
+    key: "Permissions-Policy",
+    value: "camera=(), geolocation=(), payment=(), usb=(), microphone=(self)",
+  },
+  {
+    key: "Content-Security-Policy",
+    value:
+      "frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'",
+  },
+];
+
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  async headers() {
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // O link de acompanhamento do agendamento leva um token na URL: nada
+      // de enviá-lo como referência para sites de fora.
+      {
+        source: "/agendar/acompanhar/:path*",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+    ];
+  },
   experimental: {
     serverActions: {
       // Accommodates a logo up to 2 MB plus multipart/form-data overhead.

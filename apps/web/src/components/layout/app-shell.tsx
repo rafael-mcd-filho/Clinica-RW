@@ -256,6 +256,26 @@ export function AppShell({
     }
   }
 
+  const header = (
+    <GlobalHeader
+      pages={searchPages}
+      patientSearchEnabled={patientSearchEnabled}
+      sidebarPinned={sidebarPinned}
+      onOpenMenu={() => setDrawerOpen(true)}
+      todayRailEnabled={hasTodayRail}
+      todayRailOpen={todayRailOpen || todayRailPinned}
+      todayAppointmentCount={todayAppointmentCount}
+      onToggleTodayRail={() => {
+        if (todayRailOpen || todayRailPinned) {
+          if (todayRailPinned) updateTodayRailPinned(false);
+          setTodayRailOpen(false);
+        } else {
+          setTodayRailOpen(true);
+        }
+      }}
+    />
+  );
+
   return (
     <div
       className={cn(
@@ -320,7 +340,11 @@ export function AppShell({
 
       <div
         className={cn(
-          "min-w-0 w-full [--app-sticky-offset:4rem] [--today-rail-offset:0rem]",
+          "min-w-0 w-full [--today-rail-offset:0rem]",
+          // A faixa de suporte soma 2.5rem ao que fica preso no topo.
+          impersonation
+            ? "[--app-sticky-offset:6.5rem]"
+            : "[--app-sticky-offset:4rem]",
           pathname.startsWith("/atendimento") ? "h-full overflow-hidden" : "",
           sidebarPinned ? "lg:pl-72" : "lg:pl-0",
           hasTodayRail && todayRailPinned ? "xl:pr-[21rem]" : "",
@@ -329,23 +353,14 @@ export function AppShell({
             : "",
         )}
       >
-        <GlobalHeader
-          pages={searchPages}
-          patientSearchEnabled={patientSearchEnabled}
-          sidebarPinned={sidebarPinned}
-          onOpenMenu={() => setDrawerOpen(true)}
-          todayRailEnabled={hasTodayRail}
-          todayRailOpen={todayRailOpen || todayRailPinned}
-          todayAppointmentCount={todayAppointmentCount}
-          onToggleTodayRail={() => {
-            if (todayRailOpen || todayRailPinned) {
-              if (todayRailPinned) updateTodayRailPinned(false);
-              setTodayRailOpen(false);
-            } else {
-              setTodayRailOpen(true);
-            }
-          }}
-        />
+        {impersonation ? (
+          <div className="sticky top-0 z-20">
+            <SupportBanner impersonation={impersonation} />
+            {header}
+          </div>
+        ) : (
+          header
+        )}
 
         <main
           className={cn(
@@ -712,6 +727,41 @@ function isNavRouteActive(pathname: string, href: string) {
   return (
     pathname === href ||
     (href !== "/dashboard" && pathname.startsWith(`${href}/`))
+  );
+}
+
+/**
+ * Faixa fixa no topo durante o suporte (impersonação): o aviso ficava só no
+ * rodapé do menu e sumia com o menu recolhido — dava para agir como outra
+ * pessoa sem perceber.
+ */
+function SupportBanner({
+  impersonation,
+}: {
+  impersonation: NonNullable<AppShellProps["impersonation"]>;
+}) {
+  return (
+    <div
+      role="status"
+      className="flex h-10 items-center gap-3 border-b border-warning/50 bg-warning-muted px-3 text-body-sm text-warning-foreground sm:px-5"
+    >
+      <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />
+      <p
+        className="min-w-0 flex-1 truncate"
+        title={`${impersonation.organizationName} como ${impersonation.targetUserName}`}
+      >
+        <span className="font-semibold">Modo suporte</span> ·{" "}
+        {impersonation.organizationName} como {impersonation.targetUserName}
+        <span className="hidden sm:inline">
+          . Tudo o que você fizer fica registrado.
+        </span>
+      </p>
+      <form action={endImpersonation}>
+        <Button type="submit" size="sm" variant="secondary" className="h-7">
+          Encerrar suporte
+        </Button>
+      </form>
+    </div>
   );
 }
 
