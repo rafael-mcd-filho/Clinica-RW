@@ -1515,15 +1515,21 @@ export async function changeAppointmentStatus(
   appointmentId: string,
   nextStatus: string,
   _state: AgendaActionState,
+  reason?: string,
 ): Promise<AgendaActionState> {
   void _state;
   const context = await requireAgendaPermission("agenda.editar_agendamento");
   if (!context?.organization) return { error: "Acesso negado." };
+  // Cancelamento pede motivo (Raio-X A5); falta aceita observação.
+  const cleanReason = (reason ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (nextStatus === "cancelled" && cleanReason.length < 3) {
+    return { error: "Informe o motivo do cancelamento." };
+  }
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.rpc("transition_appointment_status_v2", {
     p_appointment_id: appointmentId,
     p_to_status: nextStatus,
-    p_reason: nextStatus === "cancelled" ? "Cancelado pela agenda" : null,
+    p_reason: cleanReason || null,
     p_impersonation_session_id: context.impersonation?.id ?? null,
   });
   if (error) return { error: friendlyError(error.message, error.code) };

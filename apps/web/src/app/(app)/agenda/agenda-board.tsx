@@ -86,6 +86,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AddToWaitlistModal } from "@/components/agenda/add-to-waitlist-modal";
 import { AgendaCalendarCaption } from "@/components/agenda/calendar-caption";
 import { AppointmentFormModal } from "@/components/agenda/appointment-form-modal";
+import {
+  CancellationReasonFields,
+  emptyCancellationReason,
+  formatCancellationReason,
+  isCancellationReasonComplete,
+} from "@/components/agenda/cancellation-reason";
 import { WaitlistSuggestionModal } from "@/components/agenda/waitlist-suggestion-modal";
 import { Input, MultiSelect, Select } from "@/components/ui/field";
 import { AgendaPatientSearch } from "./agenda-patient-search";
@@ -2888,6 +2894,7 @@ function AppointmentStatusSelector({
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
+  const [cancelReason, setCancelReason] = useState(emptyCancellationReason);
   const [waitlistCandidates, setWaitlistCandidates] = useState<
     WaitlistCandidate[] | null
   >(null);
@@ -2912,6 +2919,9 @@ function AppointmentStatusSelector({
         appointment.id,
         selectedStatus,
         initialState,
+        selectedStatus === "cancelled"
+          ? formatCancellationReason(cancelReason)
+          : undefined,
       );
       if (result.error) {
         setError(result.error);
@@ -3032,12 +3042,26 @@ function AppointmentStatusSelector({
         pendingLabel="Atualizando..."
         destructive={destructive}
         error={error}
+        confirmDisabled={
+          selectedStatus === "cancelled" &&
+          !isCancellationReasonComplete(cancelReason)
+        }
         onConfirm={async () => {
           const success = await applyStatus();
-          if (success) setConfirming(false);
+          if (success) {
+            setConfirming(false);
+            setCancelReason(emptyCancellationReason);
+          }
           return success;
         }}
-      />
+      >
+        {selectedStatus === "cancelled" ? (
+          <CancellationReasonFields
+            value={cancelReason}
+            onChange={setCancelReason}
+          />
+        ) : null}
+      </ConfirmDialog>
       {waitlistCandidates ? (
         <WaitlistSuggestionModal
           candidates={waitlistCandidates}
@@ -3839,30 +3863,32 @@ function StatusActions({
   fullLabels?: boolean;
 }) {
   if (["attended", "no_show", "cancelled"].includes(status)) return null;
-  const cancelLabel = fullLabels ? "Cancelar agendamento" : "Cancelar";
-  const noShowLabel = fullLabels ? "Registrar falta" : "Faltou";
-  const actions =
-    status === "scheduled"
-      ? [
-          ["confirmed", "Confirmar", Check],
-          ["cancelled", cancelLabel, X],
-        ]
-      : status === "confirmed"
-        ? [
-            ["waiting", "Check-in", UserCheck],
-            ["cancelled", cancelLabel, X],
-          ]
-        : status === "waiting"
-          ? [
-              ["in_progress", "Iniciar", Clock3],
-              ["no_show", noShowLabel, X],
-            ]
-          : [["attended", "Finalizar", Check]];
-  const visibleActions = actions.filter(
-    ([next]) =>
-      !(hideInProgressAction && next === "in_progress") &&
-      !(hideAttendedAction && next === "attended"),
-  );
+  // Todas as transições que o banco aceita (Raio-X A4): chegada direta sem
+  // confirmação e falta antes do check-in também são caminhos válidos.
+  const statusActionLabels: Record<
+    string,
+    [string, string, React.ComponentType<{ className?: string }>]
+  > = {
+    confirmed: ["Confirmar", "Confirmar presença", Check],
+    waiting: ["Check-in", "Registrar chegada", UserCheck],
+    in_progress: ["Iniciar", "Iniciar atendimento", Clock3],
+    attended: ["Finalizar", "Finalizar atendimento", Check],
+    no_show: ["Faltou", "Registrar falta", X],
+    cancelled: ["Cancelar", "Cancelar agendamento", X],
+  };
+  const visibleActions = availableAppointmentStatuses(status, {
+    startThroughEncounter: hideInProgressAction,
+    finishThroughEncounter: hideAttendedAction,
+  })
+    .filter((next) => statusActionLabels[next])
+    .map(
+      (next) =>
+        [
+          next,
+          statusActionLabels[next][fullLabels ? 1 : 0],
+          statusActionLabels[next][2],
+        ] as const,
+    );
   return (
     <div className="flex flex-wrap justify-end gap-2">
       <RescheduleForm appointmentId={appointmentId} startAt={startAt} />
@@ -3905,6 +3931,7 @@ function StatusActionForm({
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
+  const [cancelReason, setCancelReason] = useState(emptyCancellationReason);
   const [waitlistCandidates, setWaitlistCandidates] = useState<
     WaitlistCandidate[] | null
   >(null);
@@ -3915,6 +3942,9 @@ function StatusActionForm({
       appointmentId,
       nextStatus,
       initialState,
+      nextStatus === "cancelled"
+        ? formatCancellationReason(cancelReason)
+        : undefined,
     );
     if (result.error) {
       setError(result.error);
@@ -3939,6 +3969,7 @@ function StatusActionForm({
   function closeConfirmation() {
     setConfirming(false);
     setError(undefined);
+    setCancelReason(emptyCancellationReason);
   }
 
   const waitlistSuggestion = waitlistCandidates ? (
@@ -3990,8 +4021,19 @@ function StatusActionForm({
           pendingLabel="Atualizando..."
           destructive={destructive}
           error={error}
+          confirmDisabled={
+            nextStatus === "cancelled" &&
+            !isCancellationReasonComplete(cancelReason)
+          }
           onConfirm={updateStatus}
-        />
+        >
+          {nextStatus === "cancelled" ? (
+            <CancellationReasonFields
+              value={cancelReason}
+              onChange={setCancelReason}
+            />
+          ) : null}
+        </ConfirmDialog>
         {waitlistSuggestion}
       </>
     );

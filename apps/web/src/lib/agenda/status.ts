@@ -49,3 +49,13 @@ const releasingStatuses = new Set(["cancelled", "no_show"]);
 export function appointmentOccupiesTime(status: string) {
   return !releasingStatuses.has(status);
 }
+
+/** Motivos de cancelamento oferecidos na agenda (Raio-X A5). */
+export const cancellationReasons = [
+  "Paciente desmarcou",
+  "Paciente pediu para remarcar",
+  "Profissional indisponível",
+  "Clínica precisou remarcar",
+  "Marcado por engano ou duplicado",
+  "Outro motivo",
+] as const;

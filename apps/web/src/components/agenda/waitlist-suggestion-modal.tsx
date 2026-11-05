@@ -107,7 +107,9 @@ function CandidateRow({
         </p>
         <p className="truncate text-body-sm text-muted-foreground">
           {candidate.procedure_name ?? "Qualquer procedimento"}
-          {candidate.professional_name ? ` · ${candidate.professional_name}` : ""}
+          {candidate.professional_name
+            ? ` · ${candidate.professional_name}`
+            : ""}
         </p>
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-body-sm text-muted-foreground">
           <span className="inline-flex items-center gap-1">

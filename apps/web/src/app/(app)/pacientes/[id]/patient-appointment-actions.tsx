@@ -24,6 +24,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import {
+  CancellationReasonFields,
+  emptyCancellationReason,
+  formatCancellationReason,
+  isCancellationReasonComplete,
+} from "@/components/agenda/cancellation-reason";
 import { FormError } from "@/components/ui/form-error";
 import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/utils";
@@ -85,40 +91,44 @@ type AppointmentAction = {
 // Os rótulos dizem o que acontece: "Cancelar" sozinho, dentro de um modal, lê
 // como "fechar a janela", e "Faltou" descreve em vez de agir. Mesmos textos
 // do modal da agenda.
+const registerArrival: AppointmentAction = {
+  nextStatus: "waiting",
+  label: "Registrar chegada",
+  icon: UserCheck,
+};
+const registerNoShow: AppointmentAction = {
+  nextStatus: "no_show",
+  label: "Registrar falta",
+  icon: X,
+  requiresConfirmation: true,
+  destructive: true,
+};
+const cancelAppointment: AppointmentAction = {
+  nextStatus: "cancelled",
+  label: "Cancelar agendamento",
+  icon: X,
+  requiresConfirmation: true,
+  destructive: true,
+};
+
+// Todas as transições que o banco aceita (Raio-X A4): chegada sem
+// confirmação prévia e falta antes do check-in também valem.
 const actionsByStatus: Record<string, AppointmentAction[]> = {
   scheduled: [
     { nextStatus: "confirmed", label: "Confirmar", icon: Check },
-    {
-      nextStatus: "cancelled",
-      label: "Cancelar agendamento",
-      icon: X,
-      requiresConfirmation: true,
-      destructive: true,
-    },
+    registerArrival,
+    registerNoShow,
+    cancelAppointment,
   ],
-  confirmed: [
-    { nextStatus: "waiting", label: "Check-in", icon: UserCheck },
-    {
-      nextStatus: "cancelled",
-      label: "Cancelar agendamento",
-      icon: X,
-      requiresConfirmation: true,
-      destructive: true,
-    },
-  ],
+  confirmed: [registerArrival, registerNoShow, cancelAppointment],
   waiting: [
     {
       nextStatus: "in_progress",
       label: "Marcar em atendimento",
       icon: Clock,
     },
-    {
-      nextStatus: "no_show",
-      label: "Registrar falta",
-      icon: X,
-      requiresConfirmation: true,
-      destructive: true,
-    },
+    registerNoShow,
+    cancelAppointment,
   ],
   in_progress: [
     {
@@ -127,6 +137,7 @@ const actionsByStatus: Record<string, AppointmentAction[]> = {
       icon: Check,
       requiresConfirmation: true,
     },
+    cancelAppointment,
   ],
 };
 
@@ -155,6 +166,7 @@ export function PatientAppointmentActions({
 }: PatientAppointmentActionsProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState(emptyCancellationReason);
   const [confirmation, setConfirmation] = useState<AppointmentAction | null>(
     null,
   );
@@ -186,7 +198,14 @@ export function PatientAppointmentActions({
     setPendingStatus(action.nextStatus);
 
     try {
-      const result = await changeAppointmentStatus(id, action.nextStatus, {});
+      const result = await changeAppointmentStatus(
+        id,
+        action.nextStatus,
+        {},
+        action.nextStatus === "cancelled"
+          ? formatCancellationReason(cancelReason)
+          : undefined,
+      );
 
       if (result.error) {
         setActionError(result.error);
@@ -415,8 +434,19 @@ export function PatientAppointmentActions({
           destructive={confirmation.destructive}
           pending={pendingStatus === confirmation.nextStatus}
           error={actionError}
+          confirmDisabled={
+            confirmation.nextStatus === "cancelled" &&
+            !isCancellationReasonComplete(cancelReason)
+          }
           onConfirm={() => updateStatus(confirmation)}
-        />
+        >
+          {confirmation.nextStatus === "cancelled" ? (
+            <CancellationReasonFields
+              value={cancelReason}
+              onChange={setCancelReason}
+            />
+          ) : null}
+        </ConfirmDialog>
       ) : null}
     </>
   );
