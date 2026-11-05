@@ -2322,6 +2322,82 @@ const RPC = {
       },
     };
   },
+  // Mesmo formato do RPC real (migração 20261105200000), sobre os dados
+  // fictícios do atendimento.
+  whatsapp_attendance_report: (p) => {
+    const at = (m) => m.sent_at || m.created_at;
+    const messages = (db.whatsapp_messages || []).filter(
+      (m) => !["note", "system"].includes(m.message_type),
+    );
+    const firstInbound = new Map();
+    for (const m of messages) {
+      if (m.direction !== "inbound" || at(m) < p.p_from || at(m) >= p.p_to)
+        continue;
+      const current = firstInbound.get(m.conversation_id);
+      if (!current || at(m) < current)
+        firstInbound.set(m.conversation_id, at(m));
+    }
+    const responses = [...firstInbound].map(([conversationId, askedAt]) => {
+      const reply = messages
+        .filter(
+          (m) =>
+            m.conversation_id === conversationId &&
+            m.direction === "outbound" &&
+            m.sender_user_id &&
+            at(m) >= askedAt,
+        )
+        .sort((a, b) => at(a).localeCompare(at(b)))[0];
+      return {
+        user: reply?.sender_user_id ?? null,
+        minutes: reply
+          ? (new Date(at(reply)) - new Date(askedAt)) / 60000
+          : null,
+      };
+    });
+    const answered = responses.filter((r) => r.minutes != null);
+    const median = (values) => {
+      if (!values.length) return null;
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const value =
+        sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      return Math.round(value * 10) / 10;
+    };
+    const people = new Map();
+    for (const m of messages) {
+      if (m.direction !== "outbound" || !m.sender_user_id) continue;
+      if (at(m) < p.p_from || at(m) >= p.p_to) continue;
+      const entry = people.get(m.sender_user_id) || { sent: 0 };
+      entry.sent += 1;
+      people.set(m.sender_user_id, entry);
+    }
+    return {
+      conversations: responses.length,
+      answered: answered.length,
+      unanswered: responses.length - answered.length,
+      median_first_response_minutes: median(answered.map((r) => r.minutes)),
+      average_first_response_minutes: answered.length
+        ? Math.round(
+            (answered.reduce((sum, r) => sum + r.minutes, 0) /
+              answered.length) *
+              10,
+          ) / 10
+        : null,
+      answered_within_hour: answered.filter((r) => r.minutes <= 60).length,
+      converted: Math.round(responses.length * 0.18),
+      by_attendant: [...people].map(([userId, entry]) => ({
+        user_id: userId,
+        name: db.app_users.find((u) => u.id === userId)?.name ?? "Equipe",
+        sessions: Math.max(1, Math.round(entry.sent / 3)),
+        conversations: Math.max(1, Math.round(entry.sent / 4)),
+        messages_sent: entry.sent,
+        first_replies: answered.filter((r) => r.user === userId).length,
+        median_first_response_minutes: median(
+          answered.filter((r) => r.user === userId).map((r) => r.minutes),
+        ),
+      })),
+    };
+  },
   send_appointment_reminders_for_day: (p) => {
     let count = 0;
     const nowIso = new Date().toISOString();

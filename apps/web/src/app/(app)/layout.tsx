@@ -246,6 +246,17 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       });
     }
 
+    if (
+      canViewOperationalReports ||
+      permissionCodes.has("atendimento.configurar")
+    ) {
+      reportChildren.push({
+        href: "/relatorios/whatsapp",
+        label: "WhatsApp",
+        icon: "atendimento",
+      });
+    }
+
     if (canViewFinancialReports) {
       reportChildren.push({
         href: "/relatorios/financeiro",
