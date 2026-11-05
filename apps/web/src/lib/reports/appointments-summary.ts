@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultAgendaTimeZone } from "@/lib/agenda/range";
 import { zonedDateKey, zonedDayEndExclusive, zonedDayStart } from "./time-zone";
+import { fetchAllRows } from "@/lib/supabase/paginate";
 
 export type AppointmentSummaryFilters = {
   from: string;
@@ -52,7 +53,9 @@ export type AppointmentSummaryData = {
 };
 
 type SearchParamsInput =
-  URLSearchParams | Record<string, string | string[] | undefined> | undefined;
+  | URLSearchParams
+  | Record<string, string | string[] | undefined>
+  | undefined;
 
 type AppointmentRow = {
   id: string;
@@ -161,35 +164,43 @@ export async function buildAppointmentSummaryData({
   /** Fuso da clínica: o "-03:00" fixo errava quem não está nele. */
   timeZone: string;
 }): Promise<AppointmentSummaryData> {
-  let appointmentsQuery = supabase
-    .from("appointments")
-    .select(
-      "id, patient_id, procedure_id, health_insurance_id, unit_id, payment_method_id, status, start_at, end_at, price, patients(full_name, social_name), procedures(name, base_price), health_insurances(name), units(name), payment_methods(name)",
-    )
-    .eq("organization_id", organizationId)
-    .gte("start_at", zonedDayStart(filters.from, timeZone).toISOString())
-    .lt("start_at", zonedDayEndExclusive(filters.to, timeZone).toISOString())
-    .order("start_at", { ascending: true })
-    .limit(1000);
+  // Paginado (Raio-X R1): o corte em 1.000 linhas deixava o resumo errado
+  // sem aviso em clínicas com mais agendamentos no período.
+  const appointmentsPromise = fetchAllRows<AppointmentRow>((from, to) => {
+    let appointmentsQuery = supabase
+      .from("appointments")
+      .select(
+        "id, patient_id, procedure_id, health_insurance_id, unit_id, payment_method_id, status, start_at, end_at, price, patients(full_name, social_name), procedures(name, base_price), health_insurances(name), units(name), payment_methods(name)",
+      )
+      .eq("organization_id", organizationId)
+      .gte("start_at", zonedDayStart(filters.from, timeZone).toISOString())
+      .lt("start_at", zonedDayEndExclusive(filters.to, timeZone).toISOString());
 
-  if (filters.unitId) {
-    appointmentsQuery = appointmentsQuery.eq("unit_id", filters.unitId);
-  }
-  if (filters.healthInsuranceId) {
-    appointmentsQuery = appointmentsQuery.eq(
-      "health_insurance_id",
-      filters.healthInsuranceId,
-    );
-  }
-  if (filters.procedureId) {
-    appointmentsQuery = appointmentsQuery.eq(
-      "procedure_id",
-      filters.procedureId,
-    );
-  }
-  if (filters.statuses.length) {
-    appointmentsQuery = appointmentsQuery.in("status", filters.statuses);
-  }
+    if (filters.unitId) {
+      appointmentsQuery = appointmentsQuery.eq("unit_id", filters.unitId);
+    }
+    if (filters.healthInsuranceId) {
+      appointmentsQuery = appointmentsQuery.eq(
+        "health_insurance_id",
+        filters.healthInsuranceId,
+      );
+    }
+    if (filters.procedureId) {
+      appointmentsQuery = appointmentsQuery.eq(
+        "procedure_id",
+        filters.procedureId,
+      );
+    }
+    if (filters.statuses.length) {
+      appointmentsQuery = appointmentsQuery.in("status", filters.statuses);
+    }
+
+    return appointmentsQuery
+      .order("start_at", { ascending: true })
+      .order("id")
+      .range(from, to)
+      .returns<AppointmentRow[]>();
+  });
 
   const [unitsResult, insurancesResult, proceduresResult, appointmentsResult] =
     await Promise.all([
@@ -214,7 +225,7 @@ export async function buildAppointmentSummaryData({
         .eq("active", true)
         .order("name")
         .returns<AppointmentSummaryOption[]>(),
-      appointmentsQuery.returns<AppointmentRow[]>(),
+      appointmentsPromise,
     ]);
 
   const appointmentRows = filterByPatientQuery(

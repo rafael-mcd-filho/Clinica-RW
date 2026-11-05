@@ -8,6 +8,7 @@ import {
   zonedDayEndExclusive,
   zonedDayStart,
 } from "./time-zone";
+import { fetchAllRows } from "@/lib/supabase/paginate";
 
 export type ReportFilters = {
   from: string;
@@ -109,7 +110,9 @@ export type ReportData = {
 };
 
 type SearchParamsInput =
-  URLSearchParams | Record<string, string | string[] | undefined> | undefined;
+  | URLSearchParams
+  | Record<string, string | string[] | undefined>
+  | undefined;
 
 type AppointmentRow = {
   id: string;
@@ -487,25 +490,33 @@ async function queryAppointmentContext({
   periodEndExclusive: Date;
   supabase: SupabaseClient;
 }) {
-  let query = supabase
-    .from("appointments")
-    .select(
-      "id, patient_id, professional_id, procedure_id, unit_id, health_insurance_id, status, start_at, end_at",
-    )
-    .eq("organization_id", organizationId)
-    .lt("start_at", periodEndExclusive.toISOString());
+  // Paginado: com o limite de 1.000 linhas por requisição, clínicas maiores
+  // recebiam só os agendamentos mais antigos e os números saíam errados.
+  return fetchAllRows<AppointmentRow>((from, to) => {
+    let query = supabase
+      .from("appointments")
+      .select(
+        "id, patient_id, professional_id, procedure_id, unit_id, health_insurance_id, status, start_at, end_at",
+      )
+      .eq("organization_id", organizationId)
+      .lt("start_at", periodEndExclusive.toISOString());
 
-  if (filters.professionalId) {
-    query = query.eq("professional_id", filters.professionalId);
-  }
-  if (filters.unitId) query = query.eq("unit_id", filters.unitId);
-  if (filters.healthInsuranceId) {
-    query = query.eq("health_insurance_id", filters.healthInsuranceId);
-  }
-  if (filters.procedureId)
-    query = query.eq("procedure_id", filters.procedureId);
+    if (filters.professionalId) {
+      query = query.eq("professional_id", filters.professionalId);
+    }
+    if (filters.unitId) query = query.eq("unit_id", filters.unitId);
+    if (filters.healthInsuranceId) {
+      query = query.eq("health_insurance_id", filters.healthInsuranceId);
+    }
+    if (filters.procedureId)
+      query = query.eq("procedure_id", filters.procedureId);
 
-  return query.order("start_at").returns<AppointmentRow[]>();
+    return query
+      .order("start_at")
+      .order("id")
+      .range(from, to)
+      .returns<AppointmentRow[]>();
+  });
 }
 
 async function querySchedules({
