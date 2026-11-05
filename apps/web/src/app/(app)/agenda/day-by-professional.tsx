@@ -24,6 +24,12 @@ import {
   appointmentStatusLabels as statusLabel,
 } from "@/lib/agenda/status";
 import { cn } from "@/lib/utils";
+import { ReminderIndicator } from "@/components/agenda/reminder-indicator";
+import {
+  describeReminder,
+  reminderStatusLabels,
+  type AppointmentReminder,
+} from "@/lib/agenda/reminder-status";
 import type { AgendaData } from "./agenda-board";
 
 type Appointment = AgendaData["appointments"][number];
@@ -434,6 +440,7 @@ export function DayByProfessional({
     patient,
     procedure,
     insurance,
+    reminders: data.reminders ?? {},
     onSelectSlot: groupBy === "room" ? undefined : onSelectSlot,
     onSelectAppointment,
   };
@@ -461,6 +468,7 @@ type ViewProps = {
   patient: Map<string, AgendaData["patients"][number]>;
   procedure: Map<string, AgendaData["procedures"][number]>;
   insurance: Map<string, { id: string; name: string }>;
+  reminders: Record<string, AppointmentReminder>;
   onSelectSlot?: (slot: AgendaSlotSelection) => void;
   onSelectAppointment: (appointmentId: string) => void;
 };
@@ -476,6 +484,7 @@ function DayColumnsGrid({
   patient,
   procedure,
   insurance,
+  reminders,
   onSelectSlot,
   onSelectAppointment,
 }: ViewProps) {
@@ -586,6 +595,7 @@ function DayColumnsGrid({
               patient={patient}
               procedure={procedure}
               insurance={insurance}
+              reminders={reminders}
               onSelectSlot={onSelectSlot}
               onSelectAppointment={onSelectAppointment}
             />
@@ -681,6 +691,7 @@ function ColumnBody({
   patient,
   procedure,
   insurance,
+  reminders,
   onSelectSlot,
   onSelectAppointment,
 }: {
@@ -692,6 +703,7 @@ function ColumnBody({
   patient: ViewProps["patient"];
   procedure: ViewProps["procedure"];
   insurance: ViewProps["insurance"];
+  reminders: ViewProps["reminders"];
   onSelectSlot?: ViewProps["onSelectSlot"];
   onSelectAppointment: ViewProps["onSelectAppointment"];
 }) {
@@ -888,6 +900,7 @@ function ColumnBody({
                 : undefined
             }
             professionalName={column.professionalName}
+            reminder={reminders[item.appointment.id]}
             onSelect={() => onSelectAppointment(item.appointment.id)}
           />
         );
@@ -905,6 +918,7 @@ function AppointmentBlock({
   procedureName,
   insuranceName,
   professionalName,
+  reminder,
   onSelect,
 }: {
   appointment: Appointment;
@@ -915,6 +929,7 @@ function AppointmentBlock({
   procedureName?: string;
   insuranceName?: string;
   professionalName: string;
+  reminder?: AppointmentReminder;
   onSelect: () => void;
 }) {
   const tone = appointmentStatusTone[appointment.status] ?? "primary";
@@ -931,7 +946,19 @@ function AppointmentBlock({
   ]
     .filter(Boolean)
     .join(" · ");
-  const summary = `${start}–${end} · ${patientName} · ${label} · ${detail} · ${professionalName}`;
+  // Lembrete só interessa enquanto o paciente não confirmou.
+  const visibleReminder =
+    reminder && appointment.status === "scheduled" ? reminder : undefined;
+  const summary = [
+    `${start}–${end}`,
+    patientName,
+    label,
+    detail,
+    professionalName,
+    visibleReminder ? describeReminder(visibleReminder, timeZone) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div
@@ -959,11 +986,16 @@ function AppointmentBlock({
           <span className="hidden @[14rem]:inline">–{end}</span>
           {appointment.is_extra ? " · encaixe" : ""}
         </span>
-        {height >= 40 ? (
-          <Badge variant={tone} className="h-5 shrink-0 px-1.5">
-            {label}
-          </Badge>
-        ) : null}
+        <span className="flex shrink-0 items-center gap-1">
+          {visibleReminder ? (
+            <ReminderIndicator reminder={visibleReminder} timeZone={timeZone} />
+          ) : null}
+          {height >= 40 ? (
+            <Badge variant={tone} className="h-5 shrink-0 px-1.5">
+              {label}
+            </Badge>
+          ) : null}
+        </span>
       </div>
       <p
         className={cn(
@@ -993,6 +1025,7 @@ function DayAgendaList({
   patient,
   procedure,
   insurance,
+  reminders,
   onSelectSlot,
   onSelectAppointment,
 }: ViewProps) {
@@ -1153,6 +1186,7 @@ function DayAgendaList({
                   ]
                     .filter(Boolean)
                     .join(" · ")}
+                  reminder={reminders[row.appointment.id]}
                   onSelect={() => onSelectAppointment(row.appointment.id)}
                 />
               ) : row.kind === "block" ? (
@@ -1213,14 +1247,18 @@ function ListAppointmentRow({
   timeZone,
   patientName,
   detail,
+  reminder,
   onSelect,
 }: {
   appointment: Appointment;
   timeZone: string;
   patientName: string;
   detail: string;
+  reminder?: AppointmentReminder;
   onSelect: () => void;
 }) {
+  const visibleReminder =
+    reminder && appointment.status === "scheduled" ? reminder : undefined;
   const tone = appointmentStatusTone[appointment.status] ?? "primary";
   const label = statusLabel[appointment.status] ?? appointment.status;
   const finished =
@@ -1254,6 +1292,12 @@ function ListAppointmentRow({
         <span className="truncate text-caption text-muted-foreground">
           {detail}
         </span>
+        {visibleReminder ? (
+          <span className="flex items-center gap-1 text-caption text-muted-foreground">
+            <ReminderIndicator reminder={visibleReminder} timeZone={timeZone} />
+            {reminderStatusLabels[visibleReminder.status]}
+          </span>
+        ) : null}
       </span>
       <Badge variant={tone} className="shrink-0">
         {label}

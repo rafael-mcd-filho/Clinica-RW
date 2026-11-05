@@ -8,6 +8,11 @@ import {
   resolveAgendaVisibleRange,
 } from "@/lib/agenda/range";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  buildReminderMap,
+  type ReminderEventRow,
+} from "@/lib/agenda/reminder-status";
 
 export default async function AgendaPage({
   searchParams,
@@ -174,7 +179,15 @@ export default async function AgendaPage({
   )
     ? "id, full_name, social_name, cpf, email, phone, whatsapp"
     : "id, full_name, social_name, email, phone, whatsapp";
-  const [patients, encounters] = await Promise.all([
+  // Lembrete só importa para quem ainda vai ser atendido.
+  const reminderAppointmentIds = appointmentRows
+    .filter(
+      (appointment) =>
+        appointment.status === "scheduled" ||
+        appointment.status === "confirmed",
+    )
+    .map((appointment) => appointment.id);
+  const [patients, encounters, reminderEvents] = await Promise.all([
     patientIds.length
       ? supabase
           .from("patients")
@@ -211,6 +224,7 @@ export default async function AgendaPage({
             }>
           >()
       : Promise.resolve({ data: [] }),
+    loadReminderEvents(organizationId, reminderAppointmentIds),
   ]);
 
   const data: AgendaData = {
@@ -234,6 +248,7 @@ export default async function AgendaPage({
     // aplicada o mapa de calor apenas não aparece — o resto da agenda segue.
     dayCounts: isDayCountMap(dayCounts.data) ? dayCounts.data : {},
     encounters: encounters.data ?? [],
+    reminders: buildReminderMap(reminderEvents),
     clinicalTemplates: (clinicalTemplates.data ?? []).flatMap((template) => {
       const versions = Array.isArray(template.clinical_template_versions)
         ? template.clinical_template_versions
@@ -277,6 +292,39 @@ export default async function AgendaPage({
       }
     />
   );
+}
+
+/**
+ * Situação do lembrete de cada agendamento (Raio-X A7). O registro de eventos
+ * é restrito a quem administra automações; aqui a leitura é feita pelo
+ * servidor, só da situação (sem texto nem telefone) e só dos agendamentos que
+ * a pessoa já está vendo. Sem a chave de servidor, a agenda segue sem ícones.
+ */
+async function loadReminderEvents(
+  organizationId: string,
+  appointmentIds: string[],
+): Promise<ReminderEventRow[]> {
+  if (!appointmentIds.length) return [];
+  try {
+    const admin = createSupabaseAdminClient();
+    const rows: ReminderEventRow[] = [];
+    for (let index = 0; index < appointmentIds.length; index += 150) {
+      const { data, error } = await admin
+        .from("app_events")
+        .select(
+          "aggregate_id, occurred_at, notification_outbox(status, sent_at, created_at)",
+        )
+        .eq("organization_id", organizationId)
+        .eq("event_type", "appointment.reminder_due")
+        .in("aggregate_id", appointmentIds.slice(index, index + 150))
+        .returns<ReminderEventRow[]>();
+      if (error) return rows;
+      rows.push(...(data ?? []));
+    }
+    return rows;
+  } catch {
+    return [];
+  }
 }
 
 function firstParam(value: string | string[] | undefined) {

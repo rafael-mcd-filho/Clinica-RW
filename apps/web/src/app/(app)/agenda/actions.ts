@@ -1585,6 +1585,60 @@ export async function changeAppointmentStatus(
   return { success: "Status do agendamento atualizado." };
 }
 
+/**
+ * Raio-X A7: pede confirmação a todos os agendados de um dia de uma vez, pelo
+ * mesmo lembrete automático (modelo, janela de envio e opt-out). Quem já
+ * recebeu o lembrete daquela consulta não recebe de novo.
+ */
+export async function sendDayReminders(
+  date: string,
+): Promise<AgendaActionState & { count?: number }> {
+  const context = await getRequestContext();
+  if (
+    !context.organization ||
+    !(
+      context.permissionCodes.has("agenda.editar_agendamento") ||
+      context.permissionCodes.has("agenda.criar_agendamento")
+    )
+  ) {
+    return { error: "Acesso negado." };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Data inválida." };
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc(
+    "send_appointment_reminders_for_day",
+    {
+      p_date: date,
+      p_impersonation_session_id: context.impersonation?.id ?? null,
+    },
+  );
+  if (error) {
+    if (error.code === "PGRST202" || error.message.includes("Could not find")) {
+      return {
+        error:
+          "O envio em massa ainda não está disponível. Aplique a migração de lembretes no banco.",
+      };
+    }
+    if (error.message.includes("Reminder rule is disabled")) {
+      return {
+        error:
+          "O lembrete está desligado. Ative em Configurações > Mensagens automáticas.",
+      };
+    }
+    return { error: friendlyError(error.message, error.code) };
+  }
+  const count = typeof data === "number" ? data : Number(data ?? 0);
+  revalidatePath("/agenda");
+  return {
+    ok: true,
+    count,
+    success:
+      count === 0
+        ? "Todos os agendados deste dia já receberam o lembrete."
+        : `${count} ${count === 1 ? "lembrete entrou" : "lembretes entraram"} na fila de envio.`,
+  };
+}
+
 export async function startAppointmentEncounter(
   appointmentId: string,
   _state: AgendaActionState,

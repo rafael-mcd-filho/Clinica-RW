@@ -118,6 +118,15 @@ import { defaultScheduleColor } from "@/lib/colors";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils";
 import { formatCPF, formatPhoneBR, maskCPF } from "@/lib/validation/br";
+import {
+  describeReminder,
+  type AppointmentReminder,
+} from "@/lib/agenda/reminder-status";
+import {
+  ReminderIndicator,
+  ReminderLine,
+} from "@/components/agenda/reminder-indicator";
+import { DayRemindersButton } from "./day-reminders-button";
 import { useCoalescedRouterRefresh } from "@/hooks/use-coalesced-router-refresh";
 
 type Option = { id: string; name: string };
@@ -190,6 +199,8 @@ export type AgendaData = {
     status: string;
     started_at: string;
   }>;
+  /** Situação do lembrete por agendamento (Raio-X A7). */
+  reminders?: Record<string, AppointmentReminder>;
   clinicalTemplates: Array<{
     id: string;
     name: string;
@@ -804,6 +815,29 @@ function AgendaCalendarView({
     setPatientQuery("");
   }
 
+  // O envio em massa vale para o dia inteiro, independente dos filtros.
+  const dayReminderCandidates = useMemo(
+    () =>
+      view === "day"
+        ? data.appointments
+            .filter(
+              (item) =>
+                item.status === "scheduled" &&
+                localDateKey(item.start_at, data.timeZone) === date,
+            )
+            .map((item) => {
+              const itemPatient = patient.get(item.patient_id);
+              return {
+                id: item.id,
+                startAt: item.start_at,
+                hasPhone: Boolean(itemPatient?.whatsapp || itemPatient?.phone),
+                reminded: Boolean(data.reminders?.[item.id]),
+              };
+            })
+        : [],
+    [data.appointments, data.reminders, data.timeZone, date, patient, view],
+  );
+
   const summary = [
     `${activeAppointmentCount} ${activeAppointmentCount === 1 ? "agendamento" : "agendamentos"}`,
     filteredBlocks.length
@@ -1029,7 +1063,19 @@ function AgendaCalendarView({
               </Button>
             ) : null}
           </div>
-          <p className="ml-auto flex items-center gap-1 text-caption text-muted-foreground">
+          {view === "day" && canEdit && date >= today ? (
+            <DayRemindersButton
+              date={date}
+              appointments={dayReminderCandidates}
+              className="ml-auto"
+            />
+          ) : null}
+          <p
+            className={cn(
+              "flex items-center gap-1 text-caption text-muted-foreground",
+              !(view === "day" && canEdit && date >= today) && "ml-auto",
+            )}
+          >
             <span>{summary}</span>
             {cancelledCount > 0 && view !== "month" ? (
               <>
@@ -1202,6 +1248,7 @@ function AgendaCalendarView({
           paymentMethods={data.paymentMethods}
           clinicalTemplates={data.clinicalTemplates}
           encounter={encounterByAppointment.get(selectedAppointment.id)}
+          reminder={data.reminders?.[selectedAppointment.id]}
           canEdit={canEdit}
           canViewPatient={canViewPatient}
           canViewClinical={canViewClinical}
@@ -1888,6 +1935,7 @@ function WeekAgenda({
                         procedure={procedure.get(item.appointment.procedure_id)}
                         schedule={schedule.get(item.appointment.schedule_id)}
                         hideProfessional={Boolean(weekSchedule)}
+                        reminder={data.reminders?.[item.appointment.id]}
                         onSelect={() =>
                           onSelectAppointment(item.appointment.id)
                         }
@@ -2056,6 +2104,7 @@ function TimelineAppointmentItem({
   schedule,
   canEdit,
   hideProfessional = false,
+  reminder,
   onSelect,
 }: {
   item: Extract<TimedWeekItem, { type: "appointment" }>;
@@ -2067,6 +2116,7 @@ function TimelineAppointmentItem({
   canEdit?: boolean;
   /** A semana de um profissional só: repetir o nome em cada card é ruído. */
   hideProfessional?: boolean;
+  reminder?: AppointmentReminder;
   onSelect?: () => void;
 }) {
   const timeZone = useAgendaTimeZone();
@@ -2079,10 +2129,21 @@ function TimelineAppointmentItem({
     appointment.status === "no_show";
   const width = `calc(${100 / item.laneCount}% - 6px)`;
   const left = `calc(${(100 / item.laneCount) * item.lane}% + 3px)`;
-  const summary = `${formatTime(appointment.start_at, timeZone)} - ${formatTime(
-    appointment.end_at,
-    timeZone,
-  )} · ${patientName} · ${label} · ${procedure?.name ?? "Procedimento"} · ${professional?.name ?? schedule?.name ?? ""}`;
+  const visibleReminder =
+    reminder && appointment.status === "scheduled" ? reminder : undefined;
+  const summary = [
+    `${formatTime(appointment.start_at, timeZone)} - ${formatTime(
+      appointment.end_at,
+      timeZone,
+    )}`,
+    patientName,
+    label,
+    procedure?.name ?? "Procedimento",
+    professional?.name ?? schedule?.name ?? "",
+    visibleReminder ? describeReminder(visibleReminder, timeZone) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div
@@ -2103,8 +2164,14 @@ function TimelineAppointmentItem({
     >
       {item.height >= 44 ? (
         <div className="mb-0.5 flex min-w-0 items-center justify-between gap-1">
-          <span className="shrink-0 text-caption leading-tight tabular-nums text-secondary-foreground">
+          <span className="flex shrink-0 items-center gap-1 text-caption leading-tight tabular-nums text-secondary-foreground">
             {formatTime(appointment.start_at, timeZone)}
+            {visibleReminder ? (
+              <ReminderIndicator
+                reminder={visibleReminder}
+                timeZone={timeZone}
+              />
+            ) : null}
           </span>
           <Badge variant={tone} className="h-5 min-w-0 px-1.5">
             <span className="truncate">{label}</span>
@@ -2461,6 +2528,7 @@ function AppointmentDetailsModal({
   paymentMethods,
   clinicalTemplates,
   encounter,
+  reminder,
   canEdit,
   canViewPatient,
   canViewClinical,
@@ -2479,6 +2547,7 @@ function AppointmentDetailsModal({
   paymentMethods: AgendaData["paymentMethods"];
   clinicalTemplates: AgendaData["clinicalTemplates"];
   encounter?: AgendaData["encounters"][number];
+  reminder?: AppointmentReminder;
   canEdit: boolean;
   canViewPatient: boolean;
   canViewClinical: boolean;
@@ -2683,6 +2752,15 @@ function AppointmentDetailsModal({
                 }
               />
             </div>
+            {reminder &&
+            (appointment.status === "scheduled" ||
+              appointment.status === "confirmed") ? (
+              <ReminderLine
+                reminder={reminder}
+                timeZone={timeZone}
+                className="mt-4"
+              />
+            ) : null}
           </section>
 
           <section className="rounded-xl border border-border bg-card p-5">
