@@ -18,7 +18,7 @@ async function requireFinancePermission(code: string) {
 
 function friendlyError(message: string) {
   if (message.includes("payment_methods_organization_id_name_key")) {
-    return "Ja existe uma forma de pagamento com esse nome.";
+    return "Já existe uma forma de pagamento com esse nome.";
   }
   if (message.includes("exceeds remaining balance")) {
     return "O valor informado excede o saldo em aberto.";

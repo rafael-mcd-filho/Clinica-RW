@@ -197,9 +197,9 @@ export function RecordsList({
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Digite nome, codigo, telefone, e-mail ou CPF..."
+            placeholder="Digite nome, telefone, e-mail ou CPF..."
             className="w-full pl-9"
-            aria-label="Buscar prontuarios"
+            aria-label="Buscar prontuários"
           />
         </div>
         <Select

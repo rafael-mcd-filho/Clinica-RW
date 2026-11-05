@@ -100,16 +100,16 @@ function friendlyError(message: string, code?: string) {
     message.includes("appointments_payment_method_fk") ||
     message.includes("payment_method_id")
   ) {
-    return "Forma de pagamento invalida.";
+    return "Forma de pagamento inválida.";
   }
   if (message.includes("foreign key")) {
     return "Um dos cadastros vinculados não é mais válido. Atualize a página e revise o agendamento.";
   }
   if (message.includes("Not allowed to create clinical encounter")) {
-    return "Seu perfil nao possui permissao para iniciar atendimento clinico.";
+    return "Seu perfil não possui permissão para iniciar atendimento clínico.";
   }
   if (message.includes("Professional scope denied")) {
-    return "Seu perfil so pode iniciar atendimentos do proprio profissional.";
+    return "Seu perfil só pode iniciar atendimentos do próprio profissional.";
   }
   if (message.includes("Appointment cannot start a clinical encounter")) {
     return "Este agendamento não pode iniciar um atendimento clínico no status atual.";
@@ -1480,7 +1480,7 @@ export async function updateAppointmentPaymentMethod(
     })
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
-    return { error: "Selecione uma forma de pagamento valida." };
+    return { error: "Selecione uma forma de pagamento válida." };
   }
 
   const supabase = await createSupabaseServerClient();

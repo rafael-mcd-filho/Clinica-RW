@@ -396,7 +396,7 @@ export default async function EmpresaDetailsPage({
                   <p className="text-xs text-muted-foreground">
                     {audit.actor_user_id
                       ? (actorNames.get(audit.actor_user_id) ??
-                        "Usuario da plataforma")
+                        "Usuário da plataforma")
                       : "Sistema"}
                   </p>
                 </div>

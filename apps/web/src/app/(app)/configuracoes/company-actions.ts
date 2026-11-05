@@ -835,7 +835,7 @@ async function saveProfessionalRegistration({
   if ((input.grant_system_access || linkChanged) && !canManageUsers) {
     return {
       error:
-        "Você pode alterar o cadastro profissional, mas precisa da permissão config.usuarios para modificar o acesso ao sistema.",
+        "Você pode alterar o cadastro profissional, mas mudar o acesso ao sistema exige a permissão de gerenciar usuários.",
     };
   }
 
