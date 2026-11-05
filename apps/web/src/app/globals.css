@@ -37,16 +37,21 @@
   --accent: #eef1f6;
   --accent-foreground: #101828;
 
-  --success: #41d771;
-  --success-muted: color-mix(in srgb, var(--success) 16%, white);
-  --success-foreground: color-mix(in srgb, var(--success) 65%, black);
-  --warning: #fbc163;
-  --warning-muted: color-mix(in srgb, var(--warning) 20%, white);
-  --warning-foreground: color-mix(in srgb, var(--warning) 55%, black);
-  --destructive: #f75959;
+  /* Alertas (Raio-X V4). A base serve para ícone, borda e botão: o vermelho
+     com texto branco passa de 4,5:1 (WCAG AA) e funciona como texto de erro
+     sobre o branco. O -foreground é o texto sobre o fundo claro (-muted),
+     sempre acima de 4,5:1. Vermelho só para risco real: erro, alergia,
+     falta, ação destrutiva. */
+  --success: #079455;
+  --success-muted: color-mix(in srgb, var(--success) 14%, white);
+  --success-foreground: #067647;
+  --warning: #f79009;
+  --warning-muted: color-mix(in srgb, var(--warning) 18%, white);
+  --warning-foreground: #b54708;
+  --destructive: #d92d20;
   --destructive-hover: color-mix(in srgb, var(--destructive) 85%, black);
-  --destructive-muted: color-mix(in srgb, var(--destructive) 14%, white);
-  --destructive-foreground: color-mix(in srgb, var(--destructive) 60%, black);
+  --destructive-muted: color-mix(in srgb, var(--destructive) 10%, white);
+  --destructive-foreground: #b42318;
 
   /* Superfície rebaixada para áreas de menor ênfase. */
   --surface-sunken: color-mix(

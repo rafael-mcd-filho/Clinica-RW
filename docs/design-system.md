@@ -95,9 +95,13 @@ Valores numéricos alinhados (dinheiro, contagens, horários em tabela): adicion
   dentro de `globals.css`. Não criar derivado estático de primary em lugar nenhum.
 - Cor saturada só comunica **ação ou estado** (CTA, seleção, status). Nunca decorativa,
   nunca gradiente decorativo.
-- Semânticas: `success` (`#41D771`), `warning` (`#FBC163`), `destructive` (`#F75959`) —
-  cada uma com par `*-muted` (fundo) e `*-foreground` (texto sobre o muted, contraste AA),
-  ambos **derivados via `color-mix()`** a partir da cor base (mesmo mecanismo do primary).
+- Semânticas: `success` (`#079455`), `warning` (`#F79009`), `destructive` (`#D92D20`).
+  A base é para ícone, borda e botão (branco sobre `destructive` passa de 4,5:1, e
+  `text-destructive` sobre branco também). Cada uma tem `*-muted` (fundo, derivado via
+  `color-mix()`) e `*-foreground` fixo para texto sobre o muted — `#067647`, `#B54708`,
+  `#B42318`, todos acima de 4,5:1 (WCAG AA). Texto em `text-success` ou `text-warning`
+  puros não passa: use o `-foreground`. Vermelho só para risco real (erro, alergia,
+  falta, ação destrutiva); estado vazio é neutro.
 - Neutros seguem a escala fria: canvas `#F4F6FA` (cards brancos criam o plano),
   texto padrão `#101828`, texto secundário `#667085` (AA sobre branco), muted
   `#EEF1F6`, borda `#E4E9F0`, borda forte `#CBD5E4`.
