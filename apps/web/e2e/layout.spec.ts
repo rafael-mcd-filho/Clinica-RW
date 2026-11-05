@@ -72,11 +72,23 @@ for (const viewport of viewports) {
         const response = await page.goto(url, { waitUntil: "load" });
         expect(response?.status() ?? 0).toBeLessThan(400);
         await page.waitForTimeout(500);
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
+        // Algumas rotas redirecionam depois de carregar (ex.: /relatorios):
+        // mede de novo quando a navegação troca a página no meio.
+        let overflow = 0;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            await page.waitForLoadState("load");
+            overflow = await page.evaluate(
+              () =>
+                document.documentElement.scrollWidth -
+                document.documentElement.clientWidth,
+            );
+            break;
+          } catch (error) {
+            if (attempt === 2) throw error;
+            await page.waitForTimeout(500);
+          }
+        }
         expect(overflow, "a página rola na horizontal").toBeLessThanOrEqual(1);
         expect(errors, "erros de JavaScript na página").toEqual([]);
       });
