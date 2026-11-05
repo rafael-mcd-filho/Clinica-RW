@@ -10,8 +10,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "format:check": "prettier --check .",
-    "db:generate": "drizzle-kit generate",
-    "db:studio": "drizzle-kit studio",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -35,7 +33,6 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.3.0",
     "date-fns-tz": "^3.2.0",
-    "drizzle-orm": "^0.45.2",
     "next": "16.4.3",
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
@@ -48,8 +45,7 @@
     "recharts": "^3.9.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
-    "zod": "^4.6.7",
-    "zustand": "^5.0.14"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
@@ -59,7 +55,6 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.7",
-    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
     "prettier": "^3.8.3",
