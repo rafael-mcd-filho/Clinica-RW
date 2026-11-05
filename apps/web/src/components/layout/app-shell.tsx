@@ -102,29 +102,6 @@ const iconMap: Record<AppShellIconName, LucideIcon> = {
   "modelos-clinicos": FileText,
 };
 
-const iconToneMap: Record<AppShellIconName, string> = {
-  dashboard: "indigo",
-  atendimento: "teal",
-  agenda: "blue",
-  pacientes: "rose",
-  prontuario: "violet",
-  financeiro: "green",
-  relatorios: "indigo",
-  auditoria: "slate",
-  configuracoes: "slate",
-  empresas: "blue",
-  usuarios: "violet",
-  receber: "green",
-  pagar: "amber",
-  movimentacoes: "blue",
-  repasses: "teal",
-  dre: "indigo",
-  cadastros: "blue",
-  "agendamento-online": "teal",
-  tags: "rose",
-  "modelos-clinicos": "violet",
-};
-
 type AppShellProps = {
   navItems: AppShellNavItem[];
   brandName: string;
@@ -599,7 +576,7 @@ function SidebarLink({
     return (
       <div
         className="sidebar-nav-item grid gap-0.5"
-        data-nav-tone={iconToneMap[item.icon]}
+        data-active={routeInGroup ? "true" : undefined}
       >
         <button
           type="button"
@@ -662,7 +639,6 @@ function SidebarLink({
                     aria-current={childIsActive ? "page" : undefined}
                     tabIndex={expanded ? undefined : -1}
                     onClick={onNavigate}
-                    data-nav-tone={iconToneMap[child.icon]}
                     className={cn(
                       "sidebar-nav-item relative flex min-h-9 items-center gap-2 rounded-md px-2 py-1.5 text-body-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
                       childIsActive
@@ -704,7 +680,6 @@ function SidebarLink({
       prefetch={true}
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
-      data-nav-tone={iconToneMap[item.icon]}
       className={cn(
         "sidebar-nav-item relative flex min-h-10 items-center gap-2.5 rounded-md px-2 py-1.5 text-body-sm font-medium transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)]",
         active

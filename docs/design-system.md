@@ -106,7 +106,8 @@ Valores numéricos alinhados (dinheiro, contagens, horários em tabela): adicion
   texto padrão `#101828`, texto secundário `#667085` (AA sobre branco), muted
   `#EEF1F6`, borda `#E4E9F0`, borda forte `#CBD5E4`.
 - Sidebar: fundo claro e itens ativos derivados do `primary`. Os ícones de
-  navegação usam a paleta `--nav-*` em `globals.css` para identificar as áreas.
+  navegação são cinza (`muted-foreground`) e só o item ativo ganha a cor
+  `primary`: cor no menu competia com as cores de status (Raio-X V3).
 - Bordas: `border` (padrão) e `border-strong` (hover/ênfase). Nunca hex direto.
 - Não existe "secundária" saturada (verde ou outra) como cor de marca neste produto —
   `--secondary`/`--secondary-foreground` são neutros (texto/botão de baixa ênfase), não

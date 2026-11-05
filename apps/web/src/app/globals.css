@@ -95,50 +95,27 @@
   --sidebar-hover-bg: #f4f6f8;
   --sidebar-active-bg: color-mix(in srgb, var(--primary) 4%, #e8edf2);
   --sidebar-active-foreground: #101828;
-
-  /* Cores de identificação das áreas da navegação. */
-  --nav-blue: #2563a6;
-  --nav-indigo: #4f46a5;
-  --nav-teal: #0f766e;
-  --nav-green: #15803d;
-  --nav-amber: #a16207;
-  --nav-rose: #be185d;
-  --nav-violet: #7c3aed;
-  --nav-slate: #475569;
 }
 
-.sidebar-nav-item[data-nav-tone="blue"] {
-  --nav-icon-color: var(--nav-blue);
-}
-.sidebar-nav-item[data-nav-tone="indigo"] {
-  --nav-icon-color: var(--nav-indigo);
-}
-.sidebar-nav-item[data-nav-tone="teal"] {
-  --nav-icon-color: var(--nav-teal);
-}
-.sidebar-nav-item[data-nav-tone="green"] {
-  --nav-icon-color: var(--nav-green);
-}
-.sidebar-nav-item[data-nav-tone="amber"] {
-  --nav-icon-color: var(--nav-amber);
-}
-.sidebar-nav-item[data-nav-tone="rose"] {
-  --nav-icon-color: var(--nav-rose);
-}
-.sidebar-nav-item[data-nav-tone="violet"] {
-  --nav-icon-color: var(--nav-violet);
-}
-.sidebar-nav-item[data-nav-tone="slate"] {
-  --nav-icon-color: var(--nav-slate);
-}
-
+/* Raio-X V3: ícones do menu em cinza e cor só no item ativo. Oito tons de
+   área competiam com as cores de status da agenda e do financeiro; a cor
+   fica para o que é informação. */
 .sidebar-nav-icon {
-  color: var(--nav-icon-color);
-  background: color-mix(in srgb, var(--nav-icon-color) 10%, white);
+  color: var(--muted-foreground);
 }
 
 .sidebar-nav-child-icon {
-  color: var(--nav-icon-color);
+  color: var(--muted-foreground);
+}
+
+.sidebar-nav-item[aria-current="page"] .sidebar-nav-icon,
+.sidebar-nav-item[data-active="true"] .sidebar-nav-icon {
+  color: var(--primary);
+  background: var(--primary-muted);
+}
+
+.sidebar-nav-item[aria-current="page"] .sidebar-nav-child-icon {
+  color: var(--primary);
 }
 
 /* Animações nomeadas — sempre com duração/ease dos tokens de motion. Ficam
