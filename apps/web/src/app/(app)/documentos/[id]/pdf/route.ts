@@ -59,7 +59,15 @@ export async function GET(
       );
     consent = result.data;
   }
-  const rendered = await renderClinicalDocumentPdf(supabase, document, consent);
+  const rendered = await renderClinicalDocumentPdf(
+    supabase,
+    document,
+    consent,
+    {
+      verificationBaseUrl:
+        process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin,
+    },
+  );
   if (!rendered) notFound();
   const pdfBytes = rendered.bytes;
   const filename = rendered.filename;

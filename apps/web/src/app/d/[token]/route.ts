@@ -43,7 +43,10 @@ export async function GET(
     return notAvailable();
   }
 
-  const rendered = await renderClinicalDocumentPdf(admin, document);
+  const rendered = await renderClinicalDocumentPdf(admin, document, undefined, {
+    verificationBaseUrl:
+      process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin,
+  });
   if (!rendered) return notAvailable();
 
   await admin.from("audit_logs").insert({

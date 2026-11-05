@@ -123,6 +123,8 @@ type DocumentRenderInput = {
   context: RenderContext;
   layout: DocumentTemplateLayout;
   consent?: ConsentDetails;
+  /** QR Code de verificação (Raio-X E5): endereço e imagem PNG. */
+  verification?: { url: string; qrPng: Uint8Array };
 };
 
 async function buildDocumentPdf(input: DocumentRenderInput) {
@@ -134,6 +136,7 @@ export async function renderClinicalDocument({
   context,
   layout,
   consent,
+  verification,
 }: DocumentRenderInput) {
   const pdfDoc = await PDFDocument.create();
   const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -377,6 +380,51 @@ export async function renderClinicalDocument({
     }
   }
 
+  // Bloco de verificação depois da assinatura: QR Code e o endereço para
+  // conferir a emissão (Raio-X E5).
+  const verificationImage = verification
+    ? await pdfDoc.embedPng(verification.qrPng)
+    : null;
+  function drawVerification() {
+    if (!verification || !verificationImage) return;
+    const qrSize = 58;
+    const textSize = 7.5;
+    ensureSpace(qrSize + 22);
+    y -= 18;
+    const top = y;
+    page.drawImage(verificationImage, {
+      x: margin,
+      y: top - qrSize,
+      width: qrSize,
+      height: qrSize,
+    });
+    const textX = margin + qrSize + 10;
+    const textWidth = pageSize[0] - margin - textX;
+    const lines = [
+      ...wrapText(
+        safeText(
+          "Confira a autenticidade deste documento: aponte a câmera do celular para o QR Code ou acesse o endereço abaixo.",
+        ),
+        regular,
+        textSize,
+        textWidth,
+      ),
+      ...wrapText(safeText(verification.url), regular, textSize, textWidth),
+    ];
+    let lineY = top - textSize - 4;
+    for (const [index, line] of lines.entries()) {
+      page.drawText(line, {
+        x: textX,
+        y: lineY,
+        size: textSize,
+        font: index === lines.length - 1 ? bold : regular,
+        color: rgb(0.33, 0.38, 0.45),
+      });
+      lineY -= textSize + 3;
+    }
+    y = top - qrSize;
+  }
+
   function drawCenteredLine(
     value: string,
     font: PDFFont,
@@ -435,6 +483,7 @@ export async function renderClinicalDocument({
   drawBody(document.body.trim(), true);
   const pagesBeforeSignature = pdfDoc.getPageCount();
   drawSignature();
+  drawVerification();
   const documentPages = pdfDoc.getPageCount();
   const signatureOnSeparatePage = documentPages > pagesBeforeSignature;
 

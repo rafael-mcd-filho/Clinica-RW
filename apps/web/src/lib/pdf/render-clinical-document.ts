@@ -1,5 +1,7 @@
 import "server-only";
+import QRCode from "qrcode";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { documentVerificationUrl } from "@/lib/clinical/document-verification";
 import type { ConsentDetails } from "@/lib/clinical/consent";
 import { normalizeDocumentTemplateLayout } from "@/lib/clinical/document-templates";
 import {
@@ -23,6 +25,10 @@ export async function renderClinicalDocumentPdf(
   supabase: SupabaseClient,
   document: DocumentRow,
   consent?: ConsentDetails,
+  options: {
+    /** Endereço do app: com ele o PDF sai com o QR de verificação (E5). */
+    verificationBaseUrl?: string | null;
+  } = {},
 ) {
   const [patientResult, professionalResult, clinicResult, organizationResult] =
     await Promise.all([
@@ -67,7 +73,33 @@ export async function renderClinicalDocumentPdf(
   });
   if (!context.patient.displayName || !context.professional.name) return null;
 
-  const bytes = await buildDocumentPdf({ document, context, layout, consent });
+  // Termo de consentimento tem registro próprio; receita, atestado,
+  // pedido e declaração saem com o QR para quem recebe o papel conferir.
+  let verification: { url: string; qrPng: Uint8Array } | undefined;
+  if (options.verificationBaseUrl && !consent) {
+    try {
+      const url = documentVerificationUrl(
+        options.verificationBaseUrl,
+        document.id,
+      );
+      const qrPng = await QRCode.toBuffer(url, {
+        errorCorrectionLevel: "M",
+        margin: 0,
+        width: 240,
+      });
+      verification = { url, qrPng: new Uint8Array(qrPng) };
+    } catch {
+      verification = undefined;
+    }
+  }
+
+  const bytes = await buildDocumentPdf({
+    document,
+    context,
+    layout,
+    consent,
+    verification,
+  });
   return {
     bytes,
     filename: `${slug(document.title)}-${document.id.slice(0, 8)}.pdf`,
