@@ -569,11 +569,16 @@ export function PatientsTable({
           <option value="oldest">Mais antigos</option>
         </Select>
         {canCreate ? (
-          <Button asChild className="h-10 shrink-0">
-            <Link href="/pacientes/novo">
-              <Plus className="size-4" aria-hidden="true" /> Novo paciente
-            </Link>
-          </Button>
+          <>
+            <Button asChild variant="secondary" className="h-10 shrink-0">
+              <Link href="/pacientes/importar">Importar</Link>
+            </Button>
+            <Button asChild className="h-10 shrink-0">
+              <Link href="/pacientes/novo">
+                <Plus className="size-4" aria-hidden="true" /> Novo paciente
+              </Link>
+            </Button>
+          </>
         ) : null}
       </section>
 
