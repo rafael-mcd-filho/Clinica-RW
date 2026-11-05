@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { logger } from "@/lib/observability/logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { turnstileEnabled, verifyTurnstile } from "@/lib/security/turnstile";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   formatPhoneBR,
@@ -99,6 +100,9 @@ export async function startContactVerification(
 
   if (!parsed.success || !isValidPhoneBR(parsed.data.destination)) {
     return { error: "Informe um telefone com DDD para receber o código." };
+  }
+  if (!(await verifyTurnstile(formData))) {
+    return { error: "Confirme que você não é um robô e tente de novo." };
   }
 
   const admin = createSupabaseAdminClient();
@@ -208,12 +212,17 @@ export async function verifyContactCode(
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("verify_online_booking_contact", {
+  const { data, error } = await supabase.rpc("verify_online_booking_contact", {
     p_verification_id: parsed.data.verification_id,
     p_code: parsed.data.code,
   });
 
   if (error) return { error: friendlyError(error.message, error.code) };
+  // Depois da migração 20261105140000 o código errado volta como 'invalid'
+  // (e a tentativa fica contada), em vez de erro.
+  if (data === "invalid") {
+    return { error: "Código incorreto. Confira a mensagem e tente de novo." };
+  }
 
   return {
     success: "Contato verificado.",
@@ -263,6 +272,21 @@ export async function submitOnlineBookingRequest(
 
   if (!parsed.data.patient_email && !parsed.data.patient_phone) {
     return { error: "Informe e-mail ou telefone para contato." };
+  }
+  // Com verificação de contato o captcha já foi resolvido ao pedir o código
+  // (e o código chegou pelo WhatsApp); sem ela, o captcha vale no envio.
+  if (turnstileEnabled()) {
+    const { data: bookingSettings } = await createSupabaseAdminClient()
+      .from("online_booking_settings")
+      .select("require_contact_verification")
+      .eq("public_slug", parsed.data.slug.toLowerCase())
+      .maybeSingle<{ require_contact_verification: boolean }>();
+    if (
+      !bookingSettings?.require_contact_verification &&
+      !(await verifyTurnstile(formData))
+    ) {
+      return { error: "Confirme que você não é um robô e tente de novo." };
+    }
   }
   if (parsed.data.patient_phone && !isValidPhoneBR(parsed.data.patient_phone)) {
     return { error: "Informe um telefone com DDD válido." };

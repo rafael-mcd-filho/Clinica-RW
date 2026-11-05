@@ -35,6 +35,7 @@ import { MaskedInput } from "@/components/ui/masked-input";
 import { isValidCPF, isValidPhoneBR } from "@/lib/validation/br";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
+import { TurnstileWidget } from "./turnstile-widget";
 
 export type PublicSchedule = {
   id: string;
@@ -1087,6 +1088,9 @@ export function BookingForm({
 
                 <form action={action} className="grid min-w-0 gap-3">
                   <input type="hidden" name="slug" value={slug} />
+                  {/* Com verificação de contato o captcha já foi feito ao
+                      pedir o código; sem ela, ele fica no envio. */}
+                  {requireContactVerification ? null : <TurnstileWidget />}
                   <input type="hidden" name="schedule_id" value={scheduleId} />
                   <input
                     type="hidden"
@@ -1342,6 +1346,7 @@ function ContactVerification({
         >
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="destination" value={destination} />
+          <TurnstileWidget />
           {startState.deliveryDebugCode ? (
             <p className="text-sm font-medium text-primary">
               Código de teste: {startState.deliveryDebugCode}
