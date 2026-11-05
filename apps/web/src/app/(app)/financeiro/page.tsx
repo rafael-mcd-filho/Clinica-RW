@@ -24,6 +24,7 @@ import {
   defaultDashboardTimeZone,
   isValidTimeZone,
 } from "@/lib/dashboard/periods";
+import { financeComparisonPeriod } from "@/lib/finance/comparison";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatInTimeZone } from "date-fns-tz";
 import { redirect } from "next/navigation";
@@ -120,7 +121,13 @@ export async function renderFinanceiroPage(
   };
 
   const isOverview = section === "visao-geral";
-  const previousPeriod = previousFinancePeriod(period);
+  // Com quem o período se compara (Raio-X V16): o mês em andamento contra o
+  // mesmo trecho do mês anterior. O "hoje" aqui usa o fuso padrão só para
+  // recortar a comparação; o da clínica chega na mesma leva de consultas.
+  const comparison = financeComparisonPeriod(
+    period,
+    formatInTimeZone(new Date(), defaultDashboardTimeZone, "yyyy-MM-dd"),
+  );
 
   const [
     financeSummary,
@@ -254,12 +261,12 @@ export async function renderFinanceiroPage(
       .select("timezone")
       .eq("organization_id", organizationId)
       .maybeSingle<{ timezone: string | null }>(),
-    isOverview && (canViewCash || canViewPayables)
+    isOverview && comparison && (canViewCash || canViewPayables)
       ? supabase
           .rpc("get_finance_cash_metrics", {
             p_organization_id: organizationId,
-            p_from: previousPeriod.from,
-            p_to: previousPeriod.to,
+            p_from: comparison.from,
+            p_to: comparison.to,
           })
           .returns<FinancePeriodMetricsRow[]>()
       : Promise.resolve({ data: [] as FinancePeriodMetricsRow[] }),
@@ -312,6 +319,7 @@ export async function renderFinanceiroPage(
     averageCollectionDays: Number(periodRows[0]?.average_collection_days ?? 0),
     previousCashIn: Number(previousRows[0]?.cash_in ?? 0),
     previousCashOut: Number(previousRows[0]?.cash_out ?? 0),
+    comparisonLabel: comparison?.label ?? null,
   };
   const pagination = {
     receivables: financePagination(
@@ -387,23 +395,6 @@ function financePeriod(params: Record<string, string | string[] | undefined>) {
 
 function firstSearchParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-// Período imediatamente anterior, do mesmo tamanho, para a variação dos cards.
-function previousFinancePeriod(period: { from: string; to: string }) {
-  const from = new Date(`${period.from}T12:00:00Z`);
-  const to = new Date(`${period.to}T12:00:00Z`);
-  const days = Math.max(
-    1,
-    Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1,
-  );
-  const previousTo = new Date(from.getTime() - 86_400_000);
-  const previousFrom = new Date(previousTo.getTime() - (days - 1) * 86_400_000);
-
-  return {
-    from: previousFrom.toISOString().slice(0, 10),
-    to: previousTo.toISOString().slice(0, 10),
-  };
 }
 
 function parseFinanceOverview(value: unknown): FinanceOverview | null {

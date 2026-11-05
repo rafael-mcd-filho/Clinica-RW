@@ -52,7 +52,7 @@ export function GlobalHeader({
 }) {
   const appointmentsLabel =
     todayAppointmentCount && todayAppointmentCount > 0
-      ? `Abrir atendimentos do dia: ${todayAppointmentCount} agendamentos`
+      ? `Abrir atendimentos do dia: ${todayAppointmentCount} ${todayAppointmentCount === 1 ? "agendamento" : "agendamentos"}`
       : "Abrir atendimentos do dia";
 
   return (

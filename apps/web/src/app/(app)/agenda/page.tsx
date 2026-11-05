@@ -275,22 +275,27 @@ export default async function AgendaPage({
   };
 
   return (
-    <AgendaBoard
-      data={data}
-      initialDate={selection.date}
-      initialView={selection.view}
-      canCreate={context.permissionCodes.has("agenda.criar_agendamento")}
-      canBlock={context.permissionCodes.has("agenda.bloquear_horario")}
-      canCreatePatient={context.permissionCodes.has("paciente.criar")}
-      canEdit={context.permissionCodes.has("agenda.editar_agendamento")}
-      canExtra={context.permissionCodes.has("agenda.encaixar")}
-      canViewPatient={context.permissionCodes.has("paciente.ver")}
-      canViewClinical={canSeeClinicalRecords}
-      canStartEncounter={
-        canSeeClinicalRecords &&
-        context.permissionCodes.has("clinico.preencher_prontuario")
-      }
-    />
+    <>
+      {/* A barra da agenda mostra a data como contexto visível; o título da
+          página fica para leitor de tela. */}
+      <h1 className="sr-only">Agenda</h1>
+      <AgendaBoard
+        data={data}
+        initialDate={selection.date}
+        initialView={selection.view}
+        canCreate={context.permissionCodes.has("agenda.criar_agendamento")}
+        canBlock={context.permissionCodes.has("agenda.bloquear_horario")}
+        canCreatePatient={context.permissionCodes.has("paciente.criar")}
+        canEdit={context.permissionCodes.has("agenda.editar_agendamento")}
+        canExtra={context.permissionCodes.has("agenda.encaixar")}
+        canViewPatient={context.permissionCodes.has("paciente.ver")}
+        canViewClinical={canSeeClinicalRecords}
+        canStartEncounter={
+          canSeeClinicalRecords &&
+          context.permissionCodes.has("clinico.preencher_prontuario")
+        }
+      />
+    </>
   );
 }
 

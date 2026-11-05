@@ -43,6 +43,7 @@ import {
   PayPayoutDialog,
 } from "@/components/finance/settlement-dialogs";
 import { FinancialRecordTrigger } from "@/components/finance/financial-record-details";
+import { formatCurrency, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type PaymentMethodRow = {
@@ -105,6 +106,8 @@ export type FinanceSummary = {
   averageCollectionDays: number;
   previousCashIn: number;
   previousCashOut: number;
+  /** Ex.: "vs. outubro até o dia 5"; null sem comparação. */
+  comparisonLabel: string | null;
 };
 
 export type { FinanceOverview } from "./finance-overview";
@@ -215,6 +218,7 @@ export function FinancePanel({
           periodExpense={periodExpense}
           previousRevenue={summary.previousCashIn}
           previousExpense={summary.previousCashOut}
+          comparisonLabel={summary.comparisonLabel}
           openReceivable={summary.openReceivable}
           openPayable={summary.openPayable}
           revenueLabel="Entradas"
@@ -269,7 +273,7 @@ export function FinancePanel({
               <MetricCard
                 icon={Banknote}
                 label="Prazo médio para receber"
-                value={`${summary.averageCollectionDays.toFixed(1)} dias`}
+                value={`${formatNumber(summary.averageCollectionDays, 1)} dias`}
                 tone="success"
               />
             ) : null}
@@ -1337,13 +1341,6 @@ function StatusBadge({
         ? "warning"
         : "neutral";
   return <Badge variant={variant}>{label[status] ?? status}</Badge>;
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(Number(value) || 0);
 }
 
 function formatDate(value: string) {

@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import { logger } from "@/lib/observability/logger";
+import { formatPercent } from "@/lib/format";
 import {
   buildPhase13ReportData,
   resolveReportFilters,
@@ -165,7 +166,7 @@ export default async function CommissionReportPage({
               value={currency(totals.due)}
               hint={
                 totals.revenue > 0
-                  ? `${((totals.due / totals.revenue) * 100).toFixed(1)}% da receita`
+                  ? `${formatPercent((totals.due / totals.revenue) * 100)} da receita`
                   : undefined
               }
             />
@@ -253,7 +254,7 @@ export default async function CommissionReportPage({
                           {currency(row.commission_due)}
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                          {Number(row.commission_percent).toFixed(1)}%
+                          {formatPercent(row.commission_percent)}
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums">
                           {currency(row.payout_paid)}

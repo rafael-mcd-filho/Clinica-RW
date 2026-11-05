@@ -120,15 +120,6 @@ export function RecordsList({
         },
       },
       {
-        accessorFn: (row) => row.id.slice(0, 8),
-        header: "Código",
-        cell: ({ row }) => (
-          <span className="font-mono text-caption uppercase">
-            {row.original.id.slice(0, 8)}
-          </span>
-        ),
-      },
-      {
         accessorFn: (row) => row.lastEncounterAt ?? "",
         header: "Último atendimento",
         cell: ({ row }) => {

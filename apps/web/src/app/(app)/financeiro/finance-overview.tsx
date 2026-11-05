@@ -27,6 +27,7 @@ import {
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { chartSeries } from "@/lib/colors";
+import { formatCurrency, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type FinanceOverviewBuckets = {
@@ -97,6 +98,7 @@ export function FinanceOverviewPanel({
   periodExpense,
   previousRevenue,
   previousExpense,
+  comparisonLabel,
   openReceivable,
   openPayable,
   revenueLabel,
@@ -109,6 +111,7 @@ export function FinanceOverviewPanel({
   periodExpense: number;
   previousRevenue: number;
   previousExpense: number;
+  comparisonLabel: string | null;
   openReceivable: number;
   openPayable: number;
   revenueLabel: string;
@@ -129,7 +132,12 @@ export function FinanceOverviewPanel({
             icon={CurrencyCircleDollar}
             label={revenueLabel}
             value={periodRevenue}
-            delta={percentChange(periodRevenue, previousRevenue)}
+            delta={
+              comparisonLabel
+                ? percentChange(periodRevenue, previousRevenue)
+                : null
+            }
+            comparisonLabel={comparisonLabel}
             tone="success"
           />
         ) : null}
@@ -137,8 +145,13 @@ export function FinanceOverviewPanel({
           <KpiCard
             icon={ReceiptText}
             label={expenseLabel}
-            value={-periodExpense}
-            delta={percentChange(periodExpense, previousExpense)}
+            value={periodExpense}
+            delta={
+              comparisonLabel
+                ? percentChange(periodExpense, previousExpense)
+                : null
+            }
+            comparisonLabel={comparisonLabel}
             deltaInverted
             tone="destructive"
           />
@@ -155,7 +168,7 @@ export function FinanceOverviewPanel({
           <KpiCard
             icon={Wallet}
             label="A pagar"
-            value={-openPayable}
+            value={openPayable}
             tone="neutral"
           />
         ) : null}
@@ -203,6 +216,7 @@ function KpiCard({
   value,
   delta,
   deltaInverted = false,
+  comparisonLabel,
   tone,
 }: {
   icon: PhosphorIcon;
@@ -210,6 +224,7 @@ function KpiCard({
   value: number;
   delta?: number | null;
   deltaInverted?: boolean;
+  comparisonLabel?: string | null;
   tone: "success" | "destructive" | "neutral";
 }) {
   const positiveDelta = delta !== null && delta !== undefined && delta >= 0;
@@ -248,13 +263,18 @@ function KpiCard({
               ) : (
                 <TrendDown className="size-3" aria-hidden="true" />
               )}
-              {formatPercent(delta)}
+              {formatDelta(delta)}
             </span>
           ) : null}
         </div>
         <p className="mt-3 text-display font-semibold tabular-nums">
           {formatCurrency(value)}
         </p>
+        {delta !== null && delta !== undefined && comparisonLabel ? (
+          <p className="mt-1 text-caption text-muted-foreground">
+            {formatPercent(delta, { signed: true })} {comparisonLabel}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -727,7 +747,7 @@ function CategoryTooltip({
       <p className="text-sm font-semibold">{slice.name}</p>
       <p className="mt-1 text-caption tabular-nums text-secondary-foreground">
         {formatCurrency(amount)}
-        {total > 0 ? ` · ${((amount / total) * 100).toFixed(1)}%` : ""}
+        {total > 0 ? ` · ${formatPercent((amount / total) * 100)}` : ""}
       </p>
     </div>
   );
@@ -816,9 +836,8 @@ function percentChange(current: number, previous: number) {
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
-function formatPercent(value: number) {
-  const capped = Math.max(-999, Math.min(999, value));
-  return `${capped > 0 ? "+" : ""}${capped.toFixed(1)}%`;
+function formatDelta(value: number) {
+  return formatPercent(Math.max(-999, Math.min(999, value)), { signed: true });
 }
 
 function methodTypeLabel(value: string) {
@@ -833,15 +852,6 @@ function methodTypeLabel(value: string) {
     other: "Outros",
   };
   return labels[value] ?? value;
-}
-
-// `|| 0` troca o -0 por 0: as saídas entram negativas (-periodExpense), e
-// sem movimento o card mostrava "-R$ 0,00".
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(value || 0);
 }
 
 function formatCompactCurrency(value: number) {

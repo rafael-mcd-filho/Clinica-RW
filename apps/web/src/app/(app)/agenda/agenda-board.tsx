@@ -28,7 +28,6 @@ import {
   Clock as Clock3,
   FileText,
   Buildings,
-  Copy,
   CreditCard,
   Eye,
   EyeSlash,
@@ -1788,7 +1787,7 @@ function WeekAgenda({
                     {formatDayMonth(dayKey)}
                   </p>
                   <span
-                    title={`${count} agendamentos · ${densityLegend.find((item) => item.level === densityLevel)?.label ?? "Sem agendamentos"}`}
+                    title={`${count} ${count === 1 ? "agendamento" : "agendamentos"} · ${densityLegend.find((item) => item.level === densityLevel)?.label ?? "Sem agendamentos"}`}
                     className={cn(
                       "mx-auto mt-1.5 block size-2 rounded-full",
                       densityLevel
@@ -2636,35 +2635,6 @@ function AppointmentDetailsModal({
                       Nome civil: {patient.full_name}
                     </p>
                   ) : null}
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-body-sm text-muted-foreground">
-                    <span>Prontuário</span>
-                    <span className="font-mono font-semibold uppercase text-primary">
-                      #{patient?.id.slice(0, 8).toUpperCase() ?? "---"}
-                    </span>
-                    {patient ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Copiar número do prontuário"
-                        className="size-6 text-primary"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(
-                              patient.id.slice(0, 8).toUpperCase(),
-                            );
-                            toast.success("Número do prontuário copiado.");
-                          } catch {
-                            toast.error(
-                              "Não foi possível copiar o número do prontuário.",
-                            );
-                          }
-                        }}
-                      >
-                        <Copy className="size-3.5" aria-hidden="true" />
-                      </Button>
-                    ) : null}
-                  </div>
                 </div>
               </div>
               <Badge

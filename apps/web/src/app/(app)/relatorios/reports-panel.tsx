@@ -39,11 +39,16 @@ import type {
   ReportPoint,
 } from "@/lib/reports/phase13";
 import { cn } from "@/lib/utils";
+import { formatPercent } from "@/lib/format";
 
 type MetricTone = "primary" | "success" | "warning" | "destructive" | "neutral";
 
 export type ReportsPanelView =
-  "overview" | "operational" | "financial" | "clinical" | "professionals";
+  | "overview"
+  | "operational"
+  | "financial"
+  | "clinical"
+  | "professionals";
 
 // Tons -foreground nos ícones, como no painel: o verde e o vermelho base
 // ficavam claros demais sobre o fundo suave.
@@ -82,7 +87,7 @@ function OverviewSection({ data }: { data: ReportData }) {
             ["Agendamentos", String(data.operational.totalAppointments)],
             ["Atendidos", String(data.operational.attended)],
             // Mesmo termo do painel ("Taxa de faltas"), no lugar de "No-show".
-            ["Taxa de faltas", `${data.operational.noShowRate}%`],
+            ["Taxa de faltas", formatPercent(data.operational.noShowRate)],
           ] as Array<[string, string]>,
           title: "Atendimentos",
         }
@@ -232,7 +237,7 @@ function OperationalSection({ data }: { data: ReportData }) {
         <MetricCard
           icon={UserX}
           label="Taxa de faltas"
-          value={`${report.noShowRate}%`}
+          value={formatPercent(report.noShowRate)}
           tone={report.noShowRate > 10 ? "warning" : "neutral"}
         />
         <MetricCard
@@ -241,7 +246,7 @@ function OperationalSection({ data }: { data: ReportData }) {
           value={
             report.occupancyRate == null
               ? "Sem escala"
-              : `${report.occupancyRate}%`
+              : formatPercent(report.occupancyRate)
           }
           tone="primary"
         />
@@ -438,7 +443,7 @@ function ProfessionalsSection({ data }: { data: ReportData }) {
         {
           accessorKey: "noShowRate",
           header: "Taxa de faltas",
-          cell: ({ row }) => `${row.original.noShowRate}%`,
+          cell: ({ row }) => formatPercent(row.original.noShowRate),
         },
       );
     }
@@ -536,7 +541,7 @@ function OperationalProfessionalsTable({
         cell: ({ row }) =>
           row.original.occupancyRate == null
             ? "Sem escala"
-            : `${row.original.occupancyRate}%`,
+            : formatPercent(row.original.occupancyRate),
       },
     ],
     [],

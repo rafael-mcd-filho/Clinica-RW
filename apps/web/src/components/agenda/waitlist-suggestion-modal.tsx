@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
+import { formatPhoneBR } from "@/lib/validation/br";
 
 const initialState: AgendaActionState = {};
 const periodLabel: Record<string, string> = {
@@ -122,7 +123,7 @@ function CandidateRow({
           {candidate.patient_phone ? (
             <span className="inline-flex items-center gap-1 tabular-nums">
               <PhoneCall className="size-3.5" aria-hidden="true" />
-              {candidate.patient_phone}
+              {formatPhoneBR(candidate.patient_phone)}
             </span>
           ) : null}
         </p>

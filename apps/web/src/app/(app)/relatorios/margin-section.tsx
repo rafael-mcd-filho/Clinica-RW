@@ -5,6 +5,7 @@ import {
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { logger } from "@/lib/observability/logger";
+import { formatPercent } from "@/lib/format";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type MarginRow = {
@@ -180,7 +181,7 @@ export async function MarginSection({
                               : "text-success-foreground"
                         }`}
                       >
-                        {percent.toFixed(1)}%
+                        {formatPercent(percent)}
                       </td>
                     </tr>
                   );

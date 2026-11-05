@@ -48,6 +48,9 @@ export default async function AtendimentoPage({
 
   return (
     <div className="h-full min-h-0">
+      {/* Caixa de entrada ocupa a tela toda: o título fica para leitor de
+          tela e o menu lateral indica onde a pessoa está. */}
+      <h1 className="sr-only">Conversas</h1>
       <AttendanceInbox
         key={requestedConversationId ?? "attendance-inbox"}
         organizationId={organizationId}
