@@ -28,6 +28,7 @@ import {
 } from "./actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AddToCalendar } from "@/components/online-booking/add-to-calendar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input, Select, Textarea } from "@/components/ui/field";
@@ -1579,6 +1580,7 @@ function BookingSuccess({
           "Acompanhar solicitação"
         )}
       </Button>
+      <AddToCalendar token={accessToken} />
     </div>
   );
 }

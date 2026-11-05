@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/field";
+import { AddToCalendar } from "@/components/online-booking/add-to-calendar";
 import type { OnlineBookingSlot } from "@/lib/online-booking/slots";
 
 type BookingStatus = "requested" | "confirmed" | "rejected" | "cancelled";
@@ -78,6 +79,14 @@ export function ManageBookingPanel({ booking }: { booking: BookingDetails }) {
           label="Cancelamento online"
           value={`${booking.cancellationNoticeHours}h de antecedência`}
         />
+        {booking.status === "requested" || booking.status === "confirmed" ? (
+          <div className="grid gap-2 md:col-span-2">
+            <p className="text-xs text-muted-foreground">
+              Salve no seu calendário para não esquecer:
+            </p>
+            <AddToCalendar token={booking.token} />
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
