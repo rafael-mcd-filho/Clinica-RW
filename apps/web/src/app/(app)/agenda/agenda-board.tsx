@@ -2757,6 +2757,24 @@ function AppointmentDetailsModal({
                 <CalendarClock className="size-4" aria-hidden="true" />
                 {appointmentStatus}
               </Badge>
+              {/* Raio-X V9: falar com o paciente sem descer até os contatos. */}
+              {patient?.whatsapp || patient?.phone ? (
+                <Button asChild variant="secondary" size="sm">
+                  <a
+                    href={appointmentWhatsappHref(
+                      patient.whatsapp || patient.phone || "",
+                      patientName,
+                      appointment.start_at,
+                      timeZone,
+                    )}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <WhatsappLogo className="size-4" aria-hidden="true" />
+                    WhatsApp
+                  </a>
+                </Button>
+              ) : null}
             </div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {/* Sem a permissão o CPF nem chega ao navegador; com ela,
@@ -3269,17 +3287,17 @@ function PaymentMethodForm({
 }) {
   const boundAction = updateAppointmentPaymentMethod.bind(null, appointmentId);
   const [state, action, pending] = useActionState(boundAction, initialState);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (state.success) toast.success(state.success);
     if (state.error) toast.error(state.error);
   }, [state]);
 
+  // Raio-X V9: a forma de pagamento salva ao escolher, sem um segundo
+  // botão "Salvar" no mesmo painel do valor.
   return (
-    <form
-      action={action}
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2"
-    >
+    <form ref={formRef} action={action} className="grid gap-2">
       <label className="grid gap-2 text-sm font-medium">
         <span className="flex items-center gap-2">
           <CreditCard className="size-4 text-primary" aria-hidden="true" />
@@ -3291,6 +3309,10 @@ function PaymentMethodForm({
           disabled={pending}
           aria-label="Forma de pagamento do agendamento"
           allowEmptyOption
+          onValueChange={() => {
+            // Depois do render, para o campo oculto já ter o valor novo.
+            requestAnimationFrame(() => formRef.current?.requestSubmit());
+          }}
         >
           <option value="">Não selecionada</option>
           {paymentMethods.map((method) => (
@@ -3300,9 +3322,11 @@ function PaymentMethodForm({
           ))}
         </Select>
       </label>
-      <Button type="submit" variant="secondary" size="lg" disabled={pending}>
-        {pending ? "Salvando..." : "Salvar"}
-      </Button>
+      {pending ? (
+        <p role="status" className="text-caption text-muted-foreground">
+          Salvando...
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -4543,6 +4567,26 @@ function formatFullDay(value: string) {
     month: "long",
     timeZone: "UTC",
   }).format(localDateFromKey(value));
+}
+
+/** Conversa no WhatsApp já citando a consulta (dia e hora). */
+function appointmentWhatsappHref(
+  phone: string,
+  patientName: string,
+  startAt: string,
+  timeZone: string,
+) {
+  const digits = phone.replace(/\D/g, "");
+  const international =
+    digits.length === 10 || digits.length === 11 ? `55${digits}` : digits;
+  const day = new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+  }).format(new Date(startAt));
+  const firstName = patientName.split(" ")[0];
+  const text = `Olá, ${firstName}! Sobre a sua consulta de ${day} às ${formatTime(startAt, timeZone)}: `;
+  return `https://wa.me/${international}?text=${encodeURIComponent(text)}`;
 }
 
 function formatTime(value: string, timeZone: string) {
