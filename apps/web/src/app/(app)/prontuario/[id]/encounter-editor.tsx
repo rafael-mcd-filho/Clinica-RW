@@ -18,7 +18,11 @@ import {
   type ClinicalActionState,
 } from "../actions";
 import { CidCombobox } from "@/components/clinical/cid-combobox";
-import { ClinicalFormRenderer } from "@/components/clinical/clinical-form-renderer";
+import {
+  ClinicalFormRenderer,
+  clinicalSectionAnchor,
+} from "@/components/clinical/clinical-form-renderer";
+import { normalizeClinicalTemplateSchema } from "@/lib/clinical/template-schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
@@ -127,6 +131,13 @@ export function EncounterEditor({
   );
   const finalized = status === "finalized";
   const finalizationPending = finalizing || finalizingOnly;
+  const sectionLinks = [
+    ...normalizeClinicalTemplateSchema(schema).sections.map((section) => ({
+      id: clinicalSectionAnchor(section.id),
+      label: section.title,
+    })),
+    { id: "secao-diagnosticos", label: "Diagnósticos e notas" },
+  ];
   const editingLocked = finalizationPending;
   const readOnly = finalized || !canEdit;
 
@@ -220,6 +231,38 @@ export function EncounterEditor({
 
   return (
     <div className="grid gap-5">
+      {sectionLinks.length > 2 ? (
+        <nav
+          aria-label="Seções da ficha"
+          className="-mb-1 flex items-center gap-1 overflow-x-auto pb-1"
+        >
+          <span className="shrink-0 pr-1 text-caption font-medium text-muted-foreground">
+            Ir para
+          </span>
+          {sectionLinks.map((link) => (
+            <Button
+              key={link.id}
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              onClick={() => {
+                const target = document.getElementById(link.id);
+                target?.scrollIntoView({
+                  block: "start",
+                  behavior: window.matchMedia(
+                    "(prefers-reduced-motion: reduce)",
+                  ).matches
+                    ? "auto"
+                    : "smooth",
+                });
+              }}
+            >
+              {link.label}
+            </Button>
+          ))}
+        </nav>
+      ) : null}
       <form
         ref={formRef}
         id={formId}
@@ -252,7 +295,10 @@ export function EncounterEditor({
           onValueChange={markDirty}
         />
 
-        <Card>
+        <Card
+          id="secao-diagnosticos"
+          className="scroll-mt-[calc(var(--app-sticky-offset,0rem)+1rem)]"
+        >
           <CardHeader>
             <h2 className="font-semibold">Diagnósticos e notas livres</h2>
           </CardHeader>
@@ -287,39 +333,41 @@ export function EncounterEditor({
         </Card>
 
         {!finalized && (canEdit || canFinalize) ? (
-          <div className="sticky bottom-3 z-20 flex flex-col gap-3 rounded-lg border border-border-strong bg-card/95 p-3 shadow-[var(--shadow-lg)] backdrop-blur md:flex-row md:items-center md:justify-between">
-            <div aria-live="polite">
+          <div className="sticky bottom-3 z-20 flex items-center gap-3 rounded-lg border border-border-strong bg-card/95 p-2.5 shadow-[var(--shadow-lg)] backdrop-blur md:p-3">
+            <div aria-live="polite" className="min-w-0 flex-1">
               <p
                 className={
                   dirty
-                    ? "inline-flex items-center gap-2 text-sm font-medium text-warning-foreground"
-                    : "inline-flex items-center gap-2 text-sm font-medium text-success-foreground"
+                    ? "flex min-w-0 items-center gap-2 text-sm font-medium text-warning-foreground"
+                    : "flex min-w-0 items-center gap-2 text-sm font-medium text-success-foreground"
                 }
               >
                 <span
                   className={
                     dirty
-                      ? "size-2 rounded-full bg-warning"
-                      : "size-2 rounded-full bg-success"
+                      ? "size-2 shrink-0 rounded-full bg-warning"
+                      : "size-2 shrink-0 rounded-full bg-success"
                   }
                 />
-                {draftState.error
-                  ? "Erro ao salvar"
-                  : saving
-                    ? "Salvando..."
-                    : finalizationPending
-                      ? "Salvando e finalizando..."
-                      : dirty
-                        ? "Pendente — alterações não salvas"
-                        : `Salvo às ${formatSavedTime(lastSavedAt, timeZone)}`}
+                <span className="truncate">
+                  {draftState.error
+                    ? "Erro ao salvar"
+                    : saving
+                      ? "Salvando..."
+                      : finalizationPending
+                        ? "Salvando e finalizando..."
+                        : dirty
+                          ? "Alterações não salvas"
+                          : `Salvo às ${formatSavedTime(lastSavedAt, timeZone)}`}
+                </span>
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="hidden text-xs text-muted-foreground md:block">
                 {canEdit
-                  ? "Finalizar salva o conteúdo atual em uma única operação segura."
+                  ? "Salva sozinho enquanto você escreve. Finalizar salva e trava a ficha."
                   : "Revise o conteúdo salvo antes de finalizar."}
               </p>
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex shrink-0 gap-2">
               {canEdit ? (
                 <Button
                   type="submit"
@@ -327,8 +375,11 @@ export function EncounterEditor({
                   formNoValidate
                   disabled={saving || finalizationPending}
                 >
-                  <Save className="size-4" />
-                  {saving ? "Salvando..." : "Salvar rascunho"}
+                  <Save className="size-4" aria-hidden="true" />
+                  <span className="sm:hidden">Salvar</span>
+                  <span className="hidden sm:inline">
+                    {saving ? "Salvando..." : "Salvar rascunho"}
+                  </span>
                 </Button>
               ) : null}
               {canFinalize ? (
@@ -337,8 +388,11 @@ export function EncounterEditor({
                   disabled={saving || finalizationPending}
                   onClick={() => setConfirmingFinalize(true)}
                 >
-                  <FileCheck className="size-4" />
-                  {canEdit ? "Salvar e finalizar" : "Finalizar prontuário"}
+                  <FileCheck className="size-4" aria-hidden="true" />
+                  <span className="sm:hidden">Finalizar</span>
+                  <span className="hidden sm:inline">
+                    {canEdit ? "Salvar e finalizar" : "Finalizar prontuário"}
+                  </span>
                 </Button>
               ) : null}
             </div>

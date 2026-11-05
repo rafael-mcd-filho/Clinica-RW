@@ -79,7 +79,7 @@ export function RichTextEditor({
         // não aparecia. Os estilos ficam aqui, explícitos.
         class: cn(
           minHeightClassName,
-          "max-w-none rounded-b-md border-x border-b border-border bg-card px-3 py-2 text-reading font-normal outline-none focus:ring-2 focus:ring-primary/15",
+          "max-w-none rounded-b-md bg-card px-3 py-2 text-reading font-normal outline-none",
           richTextContentClassName,
         ),
         "aria-placeholder": placeholder ?? "",
@@ -128,13 +128,22 @@ export function RichTextEditor({
     editor.view.dom.setAttribute("aria-invalid", String(invalid));
   }, [editor, invalid]);
 
+  // Uma caixa só (barra + texto), com o foco no contorno inteiro. A barra
+  // fica discreta até o campo receber foco: numa ficha com vários campos de
+  // texto, eram vários blocos de botões competindo com o que foi escrito.
   return (
-    <div>
+    <div
+      className={cn(
+        "group/editor rounded-md border bg-card transition-[border-color,box-shadow] duration-[var(--motion-fast)] ease-[var(--ease-out)] focus-within:border-primary focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--ring)_15%,transparent)]",
+        invalid ? "border-destructive" : "border-border",
+        disabled && "bg-muted",
+      )}
+    >
       <input name={name} required={required} type="hidden" value={serialized} />
       <div
         role="toolbar"
         aria-label="Formatação do texto"
-        className="flex flex-wrap gap-1 rounded-t-md border border-border bg-muted/35 p-1"
+        className="flex flex-wrap gap-0.5 border-b border-border/70 px-1 py-0.5 opacity-60 transition-opacity duration-[var(--motion-fast)] group-focus-within/editor:opacity-100 group-hover/editor:opacity-100"
       >
         <ToolbarButton
           active={active?.bold}
@@ -204,7 +213,7 @@ function ToolbarButton({
       title={label}
       className={active ? "bg-primary-muted text-primary" : undefined}
       disabled={disabled}
-      size="icon"
+      size="icon-sm"
       variant="ghost"
       // Sem isso o clique tira o foco do texto antes do comando rodar.
       onMouseDown={(event) => event.preventDefault()}

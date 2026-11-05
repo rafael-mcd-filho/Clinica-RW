@@ -42,7 +42,7 @@ const rows: Array<{
     field: "comorbidities",
     label: "Comorbidades",
     icon: Heart,
-    iconTone: "bg-destructive-muted text-destructive",
+    iconTone: "bg-warning-muted text-warning-foreground",
     chipTone: "warning",
   },
   {
@@ -133,14 +133,21 @@ export function PatientClinicalList({
                 }. ${canEdit ? "Editar" : "Ver detalhes"}`}
                 className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-[var(--motion-fast)] ease-[var(--ease-out)] hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
               >
+                {/* Cor só quando há registro: alergia "não informada" em
+                    vermelho era alarme falso. */}
                 <span
                   className={cn(
                     "flex size-10 shrink-0 items-center justify-center rounded-full",
-                    row.iconTone,
+                    items.length
+                      ? row.iconTone
+                      : "bg-muted text-muted-foreground",
                   )}
                   aria-hidden="true"
                 >
-                  <Icon className="size-5" weight="fill" />
+                  <Icon
+                    className="size-5"
+                    weight={items.length ? "fill" : "regular"}
+                  />
                 </span>
                 <span className="grid min-w-0 flex-1 gap-1">
                   <span className="text-sm font-semibold text-foreground">

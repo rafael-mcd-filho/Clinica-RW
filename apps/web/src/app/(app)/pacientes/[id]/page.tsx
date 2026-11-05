@@ -33,7 +33,6 @@ import {
   Prescription,
   ShieldWarning as ShieldAlert,
   Target,
-  UserFocus,
   Wallet,
   WarningCircle,
 } from "@phosphor-icons/react/dist/ssr";
@@ -57,6 +56,7 @@ import { OverviewCard, ViewAllTab } from "./patient-overview-card";
 import { PatientPhotoForm } from "./patient-photo-form";
 import { PatientScheduleButton } from "./patient-schedule-button";
 import { PatientSidebarDetails } from "./patient-sidebar-details";
+import { MaskedCpf } from "./masked-cpf";
 import type {
   EncounterAppointmentOption,
   EncounterProfessionalOption,
@@ -730,6 +730,12 @@ export default async function PatientDetailsPage({
   const allergyItems = canSeeSensitive
     ? splitSummary(clinicalResult.data?.allergies)
     : [];
+  const comorbidityItems = canSeeSensitive
+    ? splitSummary(clinicalResult.data?.comorbidities)
+    : [];
+  const medicationItems = canSeeSensitive
+    ? splitSummary(clinicalResult.data?.medications)
+    : [];
 
   // Números da faixa "Visão geral".
   const attendedTotal = canSeeAgenda
@@ -794,6 +800,10 @@ export default async function PatientDetailsPage({
     description: row.description,
     isPrimary: row.is_primary,
   }));
+  const primaryDiagnosis =
+    patientDiagnoses.find((item) => item.isPrimary) ??
+    patientDiagnoses[0] ??
+    null;
   // CIDs lançados nos atendimentos, do mais recente, sem repetir.
   const diagnosisSuggestions: DiagnosisSuggestion[] = [];
   for (const encounter of encounters) {
@@ -993,24 +1003,79 @@ export default async function PatientDetailsPage({
 
   const overviewContent = (
     <div className="grid gap-4">
-      <section className="rounded-lg border border-border bg-card p-2.5 shadow-[var(--shadow-soft)]">
-        <div className="flex flex-col gap-4 rounded-md bg-primary-muted/70 px-4 py-3.5 @3xl:flex-row @3xl:items-center">
-          <div className="flex min-w-0 flex-1 items-center gap-4">
-            <span
-              className="flex size-12 shrink-0 items-center justify-center rounded-full bg-card/80 text-primary"
-              aria-hidden="true"
+      {/* Resumo clínico no topo (alergias em vermelho, o que usa, o que
+          tem): era uma faixa genérica de "visão geral" sem informação. */}
+      <section
+        aria-labelledby="resumo-clinico"
+        className="rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)]"
+      >
+        <div className="flex flex-col gap-4 @3xl:flex-row @3xl:items-center">
+          <div className="grid min-w-0 flex-1 gap-2">
+            <h2
+              id="resumo-clinico"
+              className="text-label font-semibold text-secondary-foreground"
             >
-              <UserFocus className="size-6" weight="duotone" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-heading-sm font-semibold text-primary-hover">
-                Visão geral do paciente
-              </h2>
-              <p className="mt-0.5 text-body-sm text-secondary-foreground">
-                Informações principais, últimos atendimentos e pendências em um
-                só lugar.
+              Resumo clínico
+            </h2>
+            {canSeeSensitive ? (
+              <div className="flex flex-wrap gap-1.5">
+                {allergyItems.length ? (
+                  <Badge
+                    variant="destructive"
+                    className="h-auto min-h-6 max-w-full gap-1.5 py-0.5"
+                  >
+                    <ShieldAlert
+                      className="size-3.5 shrink-0"
+                      weight="fill"
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">
+                      Alergias: {allergyItems.join(", ")}
+                    </span>
+                  </Badge>
+                ) : (
+                  <Badge variant="neutral">Sem alergias registradas</Badge>
+                )}
+                {comorbidityItems.length ? (
+                  <Badge
+                    variant="warning"
+                    className="h-auto min-h-6 max-w-full py-0.5"
+                  >
+                    <span className="truncate">
+                      {comorbidityItems.join(", ")}
+                    </span>
+                  </Badge>
+                ) : null}
+                {medicationItems.length ? (
+                  <Badge
+                    variant="primary"
+                    className="h-auto min-h-6 max-w-full py-0.5"
+                  >
+                    <span className="truncate">
+                      Em uso: {medicationItems.join(", ")}
+                    </span>
+                  </Badge>
+                ) : null}
+                {primaryDiagnosis ? (
+                  <Badge
+                    variant="neutral"
+                    className="h-auto min-h-6 max-w-full py-0.5"
+                    title={primaryDiagnosis.description ?? undefined}
+                  >
+                    <span className="truncate">
+                      {primaryDiagnosis.cidCode}
+                      {primaryDiagnosis.description
+                        ? ` · ${primaryDiagnosis.description}`
+                        : ""}
+                    </span>
+                  </Badge>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-body-sm text-muted-foreground">
+                Dados clínicos permanentes protegidos.
               </p>
-            </div>
+            )}
           </div>
           <dl className="grid grid-cols-3 gap-2 @3xl:w-[22rem] @3xl:shrink-0">
             <OverviewStat
@@ -1527,9 +1592,7 @@ export default async function PatientDetailsPage({
                   .join(" · ") || "Idade e sexo não informados"}
               </p>
               {canSeeSensitive && patient.cpf ? (
-                <p className="text-body-sm tabular-nums text-secondary-foreground">
-                  CPF {formatCPF(patient.cpf)}
-                </p>
+                <MaskedCpf cpf={patient.cpf} />
               ) : null}
               {patient.deceased_at ? (
                 <p className="text-caption font-semibold text-destructive-foreground">
@@ -1683,6 +1746,7 @@ export default async function PatientDetailsPage({
                       icon: <CalendarBlank />,
                       content: (
                         <AppointmentsPanel
+                          now={nowIso}
                           appointments={patientAppointments}
                           canEditAgenda={canEditAgenda}
                           canStartClinicalEncounter={canWriteClinical}
@@ -2147,6 +2211,7 @@ function ModuleHeading({
 
 function AppointmentsPanel({
   action,
+  now,
   appointments,
   canEditAgenda,
   canStartClinicalEncounter,
@@ -2158,6 +2223,8 @@ function AppointmentsPanel({
   timeZone,
   total,
 }: {
+  /** Instante de referência (ISO) para separar próximos de anteriores. */
+  now: string;
   appointments: AppointmentRow[];
   canEditAgenda: boolean;
   canStartClinicalEncounter: boolean;
@@ -2178,6 +2245,30 @@ function AppointmentsPanel({
     ),
   );
 
+  // Próximos em ordem de data (o que vem primeiro no topo) e, abaixo, o
+  // histórico do mais recente para o mais antigo. Antes era uma lista só,
+  // com o próximo retorno perdido no meio dos antigos.
+  const nowTime = new Date(now).getTime();
+  const upcoming = appointments
+    .filter(
+      (appointment) =>
+        new Date(appointment.end_at).getTime() >= nowTime &&
+        appointment.status !== "cancelled",
+    )
+    .sort(
+      (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime(),
+    );
+  const upcomingIds = new Set(upcoming.map((appointment) => appointment.id));
+  const past = appointments
+    .filter((appointment) => !upcomingIds.has(appointment.id))
+    .sort(
+      (a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime(),
+    );
+  const groups = [
+    { id: "upcoming", label: "Próximos", items: upcoming },
+    { id: "past", label: "Anteriores", items: past },
+  ].filter((group) => group.items.length);
+
   return (
     <Card>
       <CardHeader className="flex flex-wrap items-start justify-between gap-3">
@@ -2193,47 +2284,59 @@ function AppointmentsPanel({
         </div>
         {action}
       </CardHeader>
-      <CardContent className="grid gap-2">
-        {appointments.map((appointment) => {
-          const encounter = encounterByAppointmentId.get(appointment.id);
+      <CardContent className="grid gap-4">
+        {groups.map((group) => (
+          <section key={group.id} className="grid gap-2">
+            {groups.length > 1 ? (
+              <h3 className="text-label font-semibold text-secondary-foreground">
+                {group.label}{" "}
+                <span className="font-normal text-muted-foreground">
+                  ({group.items.length})
+                </span>
+              </h3>
+            ) : null}
+            {group.items.map((appointment) => {
+              const encounter = encounterByAppointmentId.get(appointment.id);
 
-          return (
-            <PatientAppointmentActions
-              key={appointment.id}
-              id={appointment.id}
-              procedureName={appointment.procedures?.name ?? "Atendimento"}
-              status={appointment.status}
-              statusLabel={appointmentStatusLabel(appointment.status)}
-              statusVariant={appointmentStatusVariant(appointment.status)}
-              dateTimeLabel={formatDateTimeRange(
-                appointment.start_at,
-                appointment.end_at,
-                timeZone,
-              )}
-              professionalName={
-                professionalName.get(appointment.professional_id) ??
-                "Profissional"
-              }
-              insuranceName={appointment.health_insurances?.name ?? null}
-              agendaHref={`/agenda?date=${localDateKey(
-                appointment.start_at,
-                timeZone,
-              )}`}
-              canEditAgenda={canEditAgenda}
-              canStartEncounter={canStartClinicalEncounter}
-              patientId={patientId}
-              professionalId={appointment.professional_id}
-              professionals={encounterProfessionals}
-              templates={encounterTemplates}
-              encounterStatus={encounter?.status}
-              encounterHref={
-                encounter
-                  ? `/prontuario/${encounter.id}?from=paciente`
-                  : undefined
-              }
-            />
-          );
-        })}
+              return (
+                <PatientAppointmentActions
+                  key={appointment.id}
+                  id={appointment.id}
+                  procedureName={appointment.procedures?.name ?? "Atendimento"}
+                  status={appointment.status}
+                  statusLabel={appointmentStatusLabel(appointment.status)}
+                  statusVariant={appointmentStatusVariant(appointment.status)}
+                  dateTimeLabel={formatDateTimeRange(
+                    appointment.start_at,
+                    appointment.end_at,
+                    timeZone,
+                  )}
+                  professionalName={
+                    professionalName.get(appointment.professional_id) ??
+                    "Profissional"
+                  }
+                  insuranceName={appointment.health_insurances?.name ?? null}
+                  agendaHref={`/agenda?date=${localDateKey(
+                    appointment.start_at,
+                    timeZone,
+                  )}`}
+                  canEditAgenda={canEditAgenda}
+                  canStartEncounter={canStartClinicalEncounter}
+                  patientId={patientId}
+                  professionalId={appointment.professional_id}
+                  professionals={encounterProfessionals}
+                  templates={encounterTemplates}
+                  encounterStatus={encounter?.status}
+                  encounterHref={
+                    encounter
+                      ? `/prontuario/${encounter.id}?from=paciente`
+                      : undefined
+                  }
+                />
+              );
+            })}
+          </section>
+        ))}
         {!appointments.length ? (
           <EmptyState
             icon={CalendarDays}
@@ -2275,8 +2378,20 @@ function EncounterTimeline({
   return (
     <section className="relative grid gap-4">
       <div className="absolute bottom-6 left-4 top-6 hidden w-px bg-border md:block" />
-      {encounters.map((encounter) => {
+      {encounters.map((encounter, index) => {
         const entry = entryByEncounter.get(encounter.id);
+        // Um marco por mês: em históricos longos é o que orienta a leitura.
+        const monthKey = localDateKey(encounter.started_at, timeZone).slice(
+          0,
+          7,
+        );
+        const previousMonthKey =
+          index > 0
+            ? localDateKey(encounters[index - 1].started_at, timeZone).slice(
+                0,
+                7,
+              )
+            : null;
         const diagnosis = diagnosisByEncounter.get(encounter.id);
         const appointment = encounter.appointment_id
           ? appointmentById.get(encounter.appointment_id)
@@ -2292,79 +2407,91 @@ function EncounterTimeline({
           "Sem resumo registrado.";
 
         return (
-          <div
-            key={encounter.id}
-            className="relative grid gap-3 md:grid-cols-[2rem_minmax(0,1fr)]"
-          >
-            <div className="hidden justify-center pt-5 md:flex">
-              <span className="z-10 flex size-8 items-center justify-center rounded-full border border-primary-muted bg-card text-primary">
-                <HeartPulse className="size-4" aria-hidden="true" />
-              </span>
-            </div>
-            <Card>
-              <CardContent className="grid gap-4 p-4">
-                <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="primary">
-                        {entry?.template_snapshot.name ?? "Prontuário"}
-                      </Badge>
-                      <Badge
-                        variant={
-                          encounter.status === "finalized"
-                            ? "success"
-                            : "warning"
-                        }
-                      >
-                        {encounter.status === "finalized"
-                          ? "Finalizado"
-                          : "Rascunho"}
-                      </Badge>
-                    </div>
-                    <h3 className="mt-3 font-semibold">{title}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {subtitle}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-sm text-muted-foreground md:text-right">
-                    <p className="inline-flex items-center gap-1">
-                      <Clock3 className="size-3.5" aria-hidden="true" />
-                      {formatDateTime(encounter.started_at, timeZone)}
-                    </p>
-                    {encounter.finalized_at ? (
-                      <p className="mt-1 text-xs">
-                        Finalizado em{" "}
-                        {formatDateTime(encounter.finalized_at, timeZone)}
+          <div key={encounter.id} className="grid gap-3">
+            {monthKey !== previousMonthKey ? (
+              <h3 className="relative z-10 text-label font-semibold text-secondary-foreground first-letter:uppercase md:pl-11">
+                {formatMonthYear(monthKey)}
+              </h3>
+            ) : null}
+            <div className="relative grid gap-3 md:grid-cols-[2rem_minmax(0,1fr)]">
+              <div className="hidden justify-center pt-5 md:flex">
+                <span className="z-10 flex size-8 items-center justify-center rounded-full border border-primary-muted bg-card text-primary">
+                  <HeartPulse className="size-4" aria-hidden="true" />
+                </span>
+              </div>
+              <Card>
+                <CardContent className="grid gap-4 p-4">
+                  <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="primary">
+                          {entry?.template_snapshot.name ?? "Prontuário"}
+                        </Badge>
+                        <Badge
+                          variant={
+                            encounter.status === "finalized"
+                              ? "success"
+                              : "warning"
+                          }
+                        >
+                          {encounter.status === "finalized"
+                            ? "Finalizado"
+                            : "Rascunho"}
+                        </Badge>
+                      </div>
+                      <h3 className="mt-3 font-semibold">{title}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {subtitle}
                       </p>
-                    ) : null}
+                    </div>
+                    <div className="shrink-0 text-sm text-muted-foreground md:text-right">
+                      <p className="inline-flex items-center gap-1">
+                        <Clock3 className="size-3.5" aria-hidden="true" />
+                        {formatDateTime(encounter.started_at, timeZone)}
+                      </p>
+                      {encounter.finalized_at ? (
+                        <p className="mt-1 text-xs">
+                          Finalizado em{" "}
+                          {formatDateTime(encounter.finalized_at, timeZone)}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex flex-col justify-between gap-3 border-t border-border pt-3 text-xs text-muted-foreground md:flex-row md:items-center">
-                  <p>
-                    {professionalName.get(encounter.professional_id) ??
-                      "Profissional"}{" "}
-                    {diagnosis
-                      ? `· ${diagnosis.cid_code}${
-                          diagnosis.description
-                            ? ` - ${diagnosis.description}`
-                            : ""
-                        }`
-                      : ""}
-                  </p>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={`/prontuario/${encounter.id}?from=paciente`}>
-                      Ver detalhes
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                  <div className="flex flex-col justify-between gap-3 border-t border-border pt-3 text-xs text-muted-foreground md:flex-row md:items-center">
+                    <p>
+                      {professionalName.get(encounter.professional_id) ??
+                        "Profissional"}{" "}
+                      {diagnosis
+                        ? `· ${diagnosis.cid_code}${
+                            diagnosis.description
+                              ? ` - ${diagnosis.description}`
+                              : ""
+                          }`
+                        : ""}
+                    </p>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/prontuario/${encounter.id}?from=paciente`}>
+                        Ver detalhes
+                      </Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         );
       })}
     </section>
   );
+}
+
+function formatMonthYear(monthKey: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${monthKey}-15T12:00:00Z`));
 }
 
 function FinancePanel({

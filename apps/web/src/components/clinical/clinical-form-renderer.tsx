@@ -49,7 +49,11 @@ export function ClinicalFormRenderer({
   return (
     <div className="grid gap-4">
       {schema.sections.map((section, sectionIndex) => (
-        <Card key={`${section.id}:${sectionIndex}`}>
+        <Card
+          key={`${section.id}:${sectionIndex}`}
+          id={clinicalSectionAnchor(section.id)}
+          className="scroll-mt-[calc(var(--app-sticky-offset,0rem)+1rem)]"
+        >
           <CardHeader>
             <h2 className="font-semibold">{section.title}</h2>
             {section.description ? (
@@ -58,18 +62,28 @@ export function ClinicalFormRenderer({
               </p>
             ) : null}
           </CardHeader>
-          <CardContent className="grid gap-4">
-            {section.fields.map((field, fieldIndex) => (
-              <ClinicalFieldControl
-                key={`${section.id}:${field.id}:${fieldIndex}`}
-                field={field}
-                value={values[field.id]}
-                mode={mode}
-                disabled={disabled}
-                error={errors[field.id]}
-                onValueChange={(value) => onValueChange?.(field.id, value)}
-              />
-            ))}
+          {/* Campos curtos (número, data, hora) dividem a linha: sinais
+              vitais cabem lado a lado em vez de uma coluna comprida. A
+              largura vem do contêiner, porque a ficha divide a tela com o
+              painel clínico. */}
+          <CardContent className="@container">
+            <div className="grid gap-4 @md:grid-cols-2 @xl:grid-cols-4">
+              {section.fields.map((field, fieldIndex) => (
+                <div
+                  key={`${section.id}:${field.id}:${fieldIndex}`}
+                  className={cn("min-w-0", fieldSpanClassName(field))}
+                >
+                  <ClinicalFieldControl
+                    field={field}
+                    value={values[field.id]}
+                    mode={mode}
+                    disabled={disabled}
+                    error={errors[field.id]}
+                    onValueChange={(value) => onValueChange?.(field.id, value)}
+                  />
+                </div>
+              ))}
+            </div>
             {!section.fields.length ? (
               <p className="text-sm text-muted-foreground">
                 Esta seção ainda não possui campos.
@@ -80,6 +94,24 @@ export function ClinicalFormRenderer({
       ))}
     </div>
   );
+}
+
+/** Âncora de uma seção da ficha, para a navegação entre seções. */
+export function clinicalSectionAnchor(sectionId: string) {
+  return `secao-${sectionId}`;
+}
+
+function fieldSpanClassName(field: ClinicalField) {
+  switch (field.type) {
+    case "number":
+    case "date":
+    case "time":
+      return "";
+    case "textarea":
+      return "@md:col-span-2 @xl:col-span-4";
+    default:
+      return "@md:col-span-2";
+  }
 }
 
 function ClinicalFieldControl({

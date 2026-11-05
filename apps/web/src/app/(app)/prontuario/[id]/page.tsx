@@ -4,25 +4,18 @@ import {
 } from "@/lib/clinical/document-types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft, WarningCircle } from "@phosphor-icons/react/dist/ssr";
 import {
-  ArrowLeft,
-  CalendarDots as CalendarDays,
-  ClipboardText,
-  FileText,
-  WarningCircle,
-  UserCircle as UserRound,
-} from "@phosphor-icons/react/dist/ssr";
-import {
-  DocumentPanel,
   type ClinicalDocument,
   type ClinicalDocumentTemplate,
 } from "./document-panel";
 import { EncounterEditor } from "./encounter-editor";
+import { EncounterWorkspace } from "./encounter-workspace";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Tabs } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EncounterAttachments } from "@/components/clinical/encounter-attachments";
 import { requireCompanyPermission } from "@/lib/authz/guards";
 import {
@@ -32,7 +25,10 @@ import {
 import { buildClinicalDocumentVariables } from "@/lib/clinical/document-context";
 import { buildRenderContext } from "@/lib/pdf/clinical-document";
 import { listEncounterAttachments } from "@/lib/storage/clinical-attachments";
+import { createPatientPhotoSignedUrl } from "@/lib/storage/patient-photos";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
 
 type EncounterRow = {
   id: string;
@@ -67,10 +63,20 @@ type PatientRow = {
   full_name: string;
   social_name: string | null;
   birth_date: string | null;
+  sex_at_birth: string | null;
   cpf: string | null;
   rg: string | null;
   email: string | null;
   phone: string | null;
+  photo_path: string | null;
+  health_insurance_id: string | null;
+};
+
+type PreviousEncounterRow = {
+  id: string;
+  started_at: string;
+  status: string;
+  professional_id: string;
 };
 
 type ProfessionalRow = {
@@ -171,6 +177,7 @@ export default async function EncounterPage({
     appointmentResult,
     clinicalSummaryResult,
     attachmentsResult,
+    previousEncountersResult,
   ] = await Promise.all([
     supabase
       .from("encounter_entries")
@@ -180,7 +187,9 @@ export default async function EncounterPage({
       .single<EntryRow>(),
     supabase
       .from("patients")
-      .select("id, full_name, social_name, birth_date, cpf, rg, email, phone")
+      .select(
+        "id, full_name, social_name, birth_date, sex_at_birth, cpf, rg, email, phone, photo_path, health_insurance_id",
+      )
       .eq("organization_id", encounter.organization_id)
       .eq("id", encounter.patient_id)
       .single<PatientRow>(),
@@ -264,16 +273,28 @@ export default async function EncounterPage({
           .eq("id", encounter.appointment_id)
           .maybeSingle<AppointmentRow>()
       : Promise.resolve({ data: null as AppointmentRow | null }),
-    context.permissionCodes.has("paciente.ver_dados_sensiveis")
-      ? supabase
-          .from("patient_clinical_summaries")
-          .select("allergies, comorbidities, medications")
-          .eq("organization_id", encounter.organization_id)
-          .eq("patient_id", encounter.patient_id)
-          .maybeSingle<ClinicalSummaryRow>()
-      : Promise.resolve({ data: null as ClinicalSummaryRow | null }),
+    // Alergias, medicações e comorbidades são a segurança do atendimento:
+    // quem abriu este atendimento (a RLS acima já conferiu) precisa vê-las,
+    // mesmo sem a permissão de dados cadastrais sensíveis (CPF e endereço)
+    // que hoje protege a tabela. Leitura só do resumo deste paciente.
+    createSupabaseAdminClient()
+      .from("patient_clinical_summaries")
+      .select("allergies, comorbidities, medications")
+      .eq("organization_id", encounter.organization_id)
+      .eq("patient_id", encounter.patient_id)
+      .maybeSingle<ClinicalSummaryRow>(),
     // O atendimento acima já passou pelas regras de acesso da pessoa.
     listEncounterAttachments(encounter.organization_id, encounter.id),
+    // Histórico para o painel lateral; a RLS já limita ao que a pessoa vê.
+    supabase
+      .from("encounters")
+      .select("id, started_at, status, professional_id")
+      .eq("organization_id", encounter.organization_id)
+      .eq("patient_id", encounter.patient_id)
+      .neq("id", encounter.id)
+      .order("started_at", { ascending: false })
+      .limit(4)
+      .returns<PreviousEncounterRow[]>(),
   ]);
 
   if (!entryResult.data || !patientResult.data || !professionalResult.data) {
@@ -281,7 +302,19 @@ export default async function EncounterPage({
   }
 
   const appointment = appointmentResult.data;
-  const [specialtyResult, unitResult, procedureResult] = await Promise.all([
+  const previousEncounters = previousEncountersResult.data ?? [];
+  const previousProfessionalIds = [
+    ...new Set(previousEncounters.map((item) => item.professional_id)),
+  ];
+  const [
+    specialtyResult,
+    unitResult,
+    procedureResult,
+    insuranceResult,
+    photoUrl,
+    previousProfessionalsResult,
+    previousDiagnosesResult,
+  ] = await Promise.all([
     professionalResult.data.specialty_id
       ? supabase
           .from("specialties")
@@ -308,6 +341,48 @@ export default async function EncounterPage({
           .eq("id", appointment.procedure_id)
           .maybeSingle<{ name: string }>()
       : Promise.resolve({ data: null as { name: string } | null }),
+    patientResult.data.health_insurance_id
+      ? supabase
+          .from("health_insurances")
+          .select("name")
+          .eq("organization_id", encounter.organization_id)
+          .eq("id", patientResult.data.health_insurance_id)
+          .maybeSingle<{ name: string }>()
+      : Promise.resolve({ data: null as { name: string } | null }),
+    createPatientPhotoSignedUrl(patientResult.data.photo_path),
+    previousProfessionalIds.length
+      ? supabase
+          .from("professionals")
+          .select("id, name")
+          .eq("organization_id", encounter.organization_id)
+          .in("id", previousProfessionalIds)
+          .returns<Array<{ id: string; name: string }>>()
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+    previousEncounters.length
+      ? supabase
+          .from("encounter_diagnoses")
+          .select("encounter_id, cid_code, description, is_primary")
+          .eq("organization_id", encounter.organization_id)
+          .in(
+            "encounter_id",
+            previousEncounters.map((item) => item.id),
+          )
+          .returns<
+            Array<{
+              encounter_id: string;
+              cid_code: string;
+              description: string | null;
+              is_primary: boolean;
+            }>
+          >()
+      : Promise.resolve({
+          data: [] as Array<{
+            encounter_id: string;
+            cid_code: string;
+            description: string | null;
+            is_primary: boolean;
+          }>,
+        }),
   ]);
 
   const latestDocumentVersion = new Map<string, DocumentTemplateVersionRow>();
@@ -426,186 +501,262 @@ export default async function EncounterPage({
     returnTo,
   );
 
+  const patientName =
+    patientResult.data.social_name || patientResult.data.full_name;
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone }).format(
+    new Date(),
+  );
+  const age = patientResult.data.birth_date
+    ? ageInYears(patientResult.data.birth_date, todayKey)
+    : null;
+  const canEditSummary = context.permissionCodes.has(
+    "paciente.ver_dados_sensiveis",
+  );
+  const clinicalSummary = clinicalSummaryResult.data;
+  const allergies = clinicalSummary?.allergies?.trim() || null;
+  const previousProfessionalName = new Map(
+    (previousProfessionalsResult.data ?? []).map((item) => [
+      item.id,
+      item.name,
+    ]),
+  );
+  const previousDiagnosis = new Map<
+    string,
+    { cid_code: string; description: string | null }
+  >();
+  for (const diagnosis of previousDiagnosesResult.data ?? []) {
+    const current = previousDiagnosis.get(diagnosis.encounter_id);
+    if (!current || diagnosis.is_primary) {
+      previousDiagnosis.set(diagnosis.encounter_id, diagnosis);
+    }
+  }
+  const patientFacts = [
+    age !== null ? `${age} ${age === 1 ? "ano" : "anos"}` : null,
+    sexLabel(patientResult.data.sex_at_birth),
+    insuranceResult.data?.name ?? "Particular",
+  ].filter(Boolean);
+  const encounterFacts = [
+    professionalResult.data.name,
+    procedureResult.data?.name,
+    `Início ${formatDateTime(encounter.started_at, timeZone)}`,
+    encounter.finalized_at
+      ? `Finalizado ${formatDateTime(encounter.finalized_at, timeZone)}`
+      : encounter.appointment_id
+        ? null
+        : "Atendimento avulso",
+  ].filter(Boolean);
+
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-5">
       <div className="grid min-w-0 gap-2">
-        <h1 className="sr-only">
-          Prontuário de{" "}
-          {patientResult.data.social_name || patientResult.data.full_name}
-        </h1>
+        <h1 className="sr-only">Prontuário de {patientName}</h1>
         <Breadcrumb
           items={[
             { label: "Pacientes", href: "/pacientes" },
             {
-              label:
-                patientResult.data.social_name || patientResult.data.full_name,
+              label: patientName,
               href: `/pacientes/${patientResult.data.id}`,
             },
             { label: "Prontuário" },
           ]}
         />
-        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-          <Button asChild variant="secondary" size="sm">
+        <div>
+          <Button asChild variant="ghost" size="sm" className="-ml-2">
             <Link href={backDestination.href}>
-              <ArrowLeft className="size-4" /> {backDestination.label}
+              <ArrowLeft className="size-4" aria-hidden="true" />{" "}
+              {backDestination.label}
             </Link>
           </Button>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="neutral">
-              {entryResult.data.template_snapshot.name ?? "Template"} v
-              {entryResult.data.template_snapshot.version_number ?? 1}
-            </Badge>
+        </div>
+      </div>
+
+      {/* Quem está sendo atendido, com o alerta de alergia sempre à vista. */}
+      <Card className="overflow-hidden">
+        <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar name={patientName} photoUrl={photoUrl} size="md" />
+            <div className="min-w-0">
+              <p className="truncate text-heading font-semibold">
+                {patientName}
+              </p>
+              <p className="truncate text-body-sm text-muted-foreground">
+                {patientFacts.join(" · ")}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 md:ml-auto md:justify-end">
+            {allergies ? (
+              <Badge
+                variant="destructive"
+                className="h-auto min-h-6 max-w-[22rem] gap-1.5 py-0.5"
+                title={`Alergias: ${allergies}`}
+              >
+                <WarningCircle
+                  className="size-3.5 shrink-0"
+                  weight="fill"
+                  aria-hidden="true"
+                />
+                <span className="truncate">Alergia: {allergies}</span>
+              </Badge>
+            ) : (
+              <Badge variant="neutral">Sem alergias registradas</Badge>
+            )}
             <Badge
               variant={encounter.status === "finalized" ? "success" : "warning"}
             >
               {encounter.status === "finalized" ? "Finalizado" : "Rascunho"}
             </Badge>
+            <Badge variant="neutral">
+              {entryResult.data.template_snapshot.name ?? "Modelo"} v
+              {entryResult.data.template_snapshot.version_number ?? 1}
+            </Badge>
           </div>
-        </div>
-      </div>
-
-      <Card className="overflow-hidden">
-        <CardContent className="grid divide-y divide-border p-0 md:grid-cols-3 md:divide-x md:divide-y-0">
-          <ContextItem
-            icon="patient"
-            label="Paciente"
-            value={
-              patientResult.data.social_name || patientResult.data.full_name
-            }
-            detail={
-              patientResult.data.birth_date
-                ? formatDate(patientResult.data.birth_date)
-                : "Nascimento não informado"
-            }
-          />
-          <ContextItem
-            icon="doctor"
-            label="Profissional"
-            value={professionalResult.data.name}
-            detail={`Iniciado em ${formatDateTime(encounter.started_at, timeZone)}`}
-          />
-          <ContextItem
-            icon="calendar"
-            label="Agenda"
-            value={
-              encounter.appointment_id
-                ? "Agendamento vinculado"
-                : "Atendimento avulso"
-            }
-            detail={
-              encounter.finalized_at
-                ? `Finalizado em ${formatDateTime(encounter.finalized_at, timeZone)}`
-                : "Em atendimento"
-            }
-          />
         </CardContent>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border bg-surface-sunken/60 px-4 py-2 text-caption text-muted-foreground">
+          {encounterFacts.map((fact) => (
+            <span key={fact}>{fact}</span>
+          ))}
+        </div>
       </Card>
 
-      {clinicalSummaryResult.data &&
-      (clinicalSummaryResult.data.allergies ||
-        clinicalSummaryResult.data.comorbidities ||
-        clinicalSummaryResult.data.medications) ? (
-        <Card className="border-warning-muted bg-warning-muted/20">
-          <CardContent className="grid gap-3 p-4 md:grid-cols-3">
-            <div className="flex gap-2 md:col-span-3">
-              <WarningCircle
-                className="mt-0.5 size-4 shrink-0 text-warning-foreground"
-                aria-hidden="true"
-              />
-              <p className="text-sm font-semibold">
-                Contexto clínico permanente
-              </p>
-            </div>
-            <ClinicalContextItem
-              label="Alergias"
-              value={clinicalSummaryResult.data.allergies}
-              alert
+      <EncounterWorkspace
+        encounterId={encounter.id}
+        templates={documentTemplates}
+        documents={documentsResult.data ?? []}
+        variables={documentVariables}
+        renderContext={documentRenderContext}
+        timeZone={timeZone}
+        allowedTypes={clinicalDocumentTypes.filter((type) =>
+          context.permissionCodes.has(documentTypePermissions[type]),
+        )}
+        allergies={allergies}
+        ficha={
+          <div className="grid gap-5">
+            <EncounterEditor
+              encounterId={encounter.id}
+              status={encounter.status}
+              canEdit={context.permissionCodes.has(
+                "clinico.preencher_prontuario",
+              )}
+              canFinalize={context.permissionCodes.has(
+                "clinico.finalizar_prontuario",
+              )}
+              canAddAddendum={context.permissionCodes.has(
+                "clinico.adicionar_adendo",
+              )}
+              entryUpdatedAt={entryResult.data.updated_at}
+              timeZone={timeZone}
+              schema={
+                entryResult.data.template_snapshot.schema ?? {
+                  sections: [],
+                }
+              }
+              structuredData={entryResult.data.structured_data ?? {}}
+              freeNotes={entryResult.data.free_notes}
+              diagnoses={diagnosesResult.data ?? []}
+              addenda={(addendaResult.data ?? []).map((item) => ({
+                id: item.id,
+                content: item.content,
+                created_at: item.created_at,
+                author: authorName.get(item.author_user_id) ?? "Usuário",
+              }))}
             />
-            <ClinicalContextItem
-              label="Medicamentos em uso"
-              value={clinicalSummaryResult.data.medications}
+            <EncounterAttachments
+              encounterId={encounter.id}
+              attachments={attachmentsResult.attachments}
+              available={attachmentsResult.available}
+              canUpload={
+                attachmentsResult.available &&
+                context.permissionCodes.has("clinico.preencher_prontuario")
+              }
+              timeZone={timeZone}
             />
-            <ClinicalContextItem
-              label="Comorbidades"
-              value={clinicalSummaryResult.data.comorbidities}
-            />
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Tabs
-        ariaLabel="Áreas do prontuário"
-        defaultTab="ficha"
-        keepMounted
-        items={[
-          {
-            id: "ficha",
-            label: "Ficha do atendimento",
-            icon: <ClipboardText aria-hidden="true" />,
-            content: (
-              <div className="grid gap-5">
-                <EncounterEditor
-                  encounterId={encounter.id}
-                  status={encounter.status}
-                  canEdit={context.permissionCodes.has(
-                    "clinico.preencher_prontuario",
-                  )}
-                  canFinalize={context.permissionCodes.has(
-                    "clinico.finalizar_prontuario",
-                  )}
-                  canAddAddendum={context.permissionCodes.has(
-                    "clinico.adicionar_adendo",
-                  )}
-                  entryUpdatedAt={entryResult.data.updated_at}
-                  timeZone={timeZone}
-                  schema={
-                    entryResult.data.template_snapshot.schema ?? {
-                      sections: [],
-                    }
-                  }
-                  structuredData={entryResult.data.structured_data ?? {}}
-                  freeNotes={entryResult.data.free_notes}
-                  diagnoses={diagnosesResult.data ?? []}
-                  addenda={(addendaResult.data ?? []).map((item) => ({
-                    id: item.id,
-                    content: item.content,
-                    created_at: item.created_at,
-                    author: authorName.get(item.author_user_id) ?? "Usuário",
-                  }))}
+          </div>
+        }
+        aside={
+          <>
+            <Card>
+              <CardHeader className="flex items-center justify-between gap-2 px-4 py-3">
+                <h2 className="text-label font-semibold">Contexto clínico</h2>
+                {canEditSummary ? (
+                  <Link
+                    href={`/pacientes/${patientResult.data.id}`}
+                    className="text-caption font-medium text-primary hover:underline"
+                  >
+                    Editar
+                  </Link>
+                ) : null}
+              </CardHeader>
+              <CardContent className="grid gap-3 p-4">
+                <ClinicalContextItem label="Alergias" value={allergies} alert />
+                <ClinicalContextItem
+                  label="Medicamentos em uso"
+                  value={clinicalSummary?.medications ?? null}
                 />
-                <EncounterAttachments
-                  encounterId={encounter.id}
-                  attachments={attachmentsResult.attachments}
-                  available={attachmentsResult.available}
-                  canUpload={
-                    attachmentsResult.available &&
-                    context.permissionCodes.has("clinico.preencher_prontuario")
-                  }
-                  timeZone={timeZone}
+                <ClinicalContextItem
+                  label="Comorbidades"
+                  value={clinicalSummary?.comorbidities ?? null}
                 />
-              </div>
-            ),
-          },
-          {
-            id: "documentos",
-            label: `Documentos (${documentsResult.data?.length ?? 0})`,
-            icon: <FileText aria-hidden="true" />,
-            content: (
-              <DocumentPanel
-                encounterId={encounter.id}
-                templates={documentTemplates}
-                documents={documentsResult.data ?? []}
-                variables={documentVariables}
-                renderContext={documentRenderContext}
-                timeZone={timeZone}
-                showHeader={false}
-                allowedTypes={clinicalDocumentTypes.filter((type) =>
-                  context.permissionCodes.has(documentTypePermissions[type]),
-                )}
-              />
-            ),
-          },
-        ]}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex items-center justify-between gap-2 px-4 py-3">
+                <h2 className="text-label font-semibold">
+                  Atendimentos anteriores
+                </h2>
+                <Link
+                  href={`/pacientes/${patientResult.data.id}`}
+                  className="text-caption font-medium text-primary hover:underline"
+                >
+                  Ver histórico
+                </Link>
+              </CardHeader>
+              {previousEncounters.length ? (
+                <ul className="divide-y divide-border">
+                  {previousEncounters.map((item) => {
+                    const diagnosis = previousDiagnosis.get(item.id);
+                    return (
+                      <li key={item.id}>
+                        <Link
+                          href={`/prontuario/${item.id}`}
+                          className="grid gap-0.5 px-4 py-2.5 transition-colors duration-[var(--motion-fast)] hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+                        >
+                          <span className="flex items-center justify-between gap-2 text-body-sm font-medium text-foreground">
+                            {formatDate(
+                              localDateKey(item.started_at, timeZone),
+                            )}
+                            {item.status !== "finalized" ? (
+                              <Badge variant="warning" className="h-5 px-1.5">
+                                Rascunho
+                              </Badge>
+                            ) : null}
+                          </span>
+                          <span className="truncate text-caption text-muted-foreground">
+                            {previousProfessionalName.get(
+                              item.professional_id,
+                            ) ?? "Profissional"}
+                          </span>
+                          {diagnosis ? (
+                            <span className="truncate text-caption text-secondary-foreground">
+                              {diagnosis.cid_code}
+                              {diagnosis.description
+                                ? ` · ${diagnosis.description}`
+                                : ""}
+                            </span>
+                          ) : null}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <CardContent className="p-4 text-body-sm text-muted-foreground">
+                  Primeiro atendimento registrado deste paciente.
+                </CardContent>
+              )}
+            </Card>
+          </>
+        }
       />
     </div>
   );
@@ -645,32 +796,6 @@ function encounterBackDestination(
   return { href: listHref, label: "Voltar para o prontuário" };
 }
 
-function ContextItem({
-  icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: "patient" | "doctor" | "calendar";
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  const Icon = icon === "calendar" ? CalendarDays : UserRound;
-  return (
-    <div className="flex min-w-0 items-center gap-3 px-4 py-3">
-      <div className="rounded-md bg-primary-muted p-2 text-primary">
-        <Icon className="size-4" aria-hidden="true" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-label font-medium text-muted-foreground">{label}</p>
-        <p className="truncate text-body-sm font-semibold">{value}</p>
-        <p className="truncate text-caption text-muted-foreground">{detail}</p>
-      </div>
-    </div>
-  );
-}
-
 function ClinicalContextItem({
   label,
   value,
@@ -681,14 +806,17 @@ function ClinicalContextItem({
   alert?: boolean;
 }) {
   return (
-    <div className="min-w-0 rounded-md border border-border bg-card px-3 py-2">
-      <p className="text-xs font-semibold uppercase text-muted-foreground">
-        {label}
-      </p>
+    <div className="min-w-0">
+      <p className="text-caption font-medium text-muted-foreground">{label}</p>
       <p
-        className={`mt-1 break-words text-sm ${
-          alert && value ? "font-semibold text-destructive-foreground" : ""
-        }`}
+        className={cn(
+          "mt-0.5 whitespace-pre-line break-words text-body-sm",
+          value
+            ? alert
+              ? "font-semibold text-destructive-foreground"
+              : "text-foreground"
+            : "text-muted-foreground",
+        )}
       >
         {value || "Não informado"}
       </p>
@@ -696,10 +824,30 @@ function ClinicalContextItem({
   );
 }
 
+function ageInYears(birthDate: string, todayKey: string) {
+  const [birthYear, birthMonth, birthDay] = birthDate.split("-").map(Number);
+  const [year, month, day] = todayKey.split("-").map(Number);
+  let age = year - birthYear;
+  if (month < birthMonth || (month === birthMonth && day < birthDay)) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+function sexLabel(value: string | null) {
+  if (value === "female") return "Feminino";
+  if (value === "male") return "Masculino";
+  if (value === "intersex") return "Intersexo";
+  return null;
+}
+
+function localDateKey(value: string, timeZone: string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(value));
+}
+
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(
-    new Date(`${value}T00:00:00`),
-  );
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T12:00:00Z`));
 }
 
 function formatDateTime(value: string, timeZone: string) {

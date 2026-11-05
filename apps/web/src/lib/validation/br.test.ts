@@ -27,3 +27,12 @@ describe("CEP helpers", () => {
     expect(isValidCEP("60160-23")).toBe(false);
   });
 });
+
+describe("maskCPF", () => {
+  it("mostra só os dígitos do meio", async () => {
+    const { maskCPF } = await import("./br");
+    expect(maskCPF("573.093.963-91")).toBe("***.093.963-**");
+    expect(maskCPF("57309396391")).toBe("***.093.963-**");
+    expect(maskCPF("123")).toBe("***.***.***-**");
+  });
+});

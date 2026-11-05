@@ -27,7 +27,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/field";
+import { Alert } from "@/components/ui/alert";
 import { FormError } from "@/components/ui/form-error";
+import { findAllergyMentions } from "@/lib/clinical/allergy-check";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import {
   type ClinicalDocumentType,
@@ -67,6 +69,8 @@ export function DocumentPanel({
   renderContext,
   timeZone,
   showHeader = true,
+  initialType,
+  allergies = null,
 }: {
   encounterId: string;
   templates: ClinicalDocumentTemplate[];
@@ -76,9 +80,16 @@ export function DocumentPanel({
   renderContext: RenderContext;
   timeZone: string;
   showHeader?: boolean;
+  /** Tipo que o formulário abre selecionado (atalhos do painel clínico). */
+  initialType?: ClinicalDocumentType;
+  /** Alergias do paciente: o documento avisa quando cita alguma. */
+  allergies?: string | null;
 }) {
   const router = useRouter();
-  const initialDocumentType = allowedTypes[0] ?? "prescription";
+  const initialDocumentType =
+    initialType && allowedTypes.includes(initialType)
+      ? initialType
+      : (allowedTypes[0] ?? "prescription");
   const initialTemplate = templates.find(
     (template) => template.document_type === initialDocumentType,
   );
@@ -100,6 +111,10 @@ export function DocumentPanel({
       ).value,
   );
   const [details, setDetails] = useState<Record<string, string>>({});
+  const allergyMentions = useMemo(
+    () => findAllergyMentions(`${title}\n${body}`, allergies),
+    [allergies, body, title],
+  );
   const [previewIssuedAt] = useState(() => new Date().toISOString());
   const selectedTemplate = templates.find(
     (template) => template.id === templateId,
@@ -387,6 +402,15 @@ export function DocumentPanel({
                 }}
               />
             </label>
+            {allergyMentions.length ? (
+              <Alert
+                variant="destructive"
+                title={`Consta nas alergias do paciente: ${allergyMentions.join(", ")}`}
+              >
+                Confira o documento antes de emitir. O aviso compara palavras e
+                não substitui a avaliação clínica.
+              </Alert>
+            ) : null}
             {hasUnresolvedVariables ? (
               <FormError
                 id="clinical-document-variable-error"

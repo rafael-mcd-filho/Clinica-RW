@@ -23,6 +23,17 @@ export function formatCPF(value: string): string {
   return formatToCPF(onlyDigits(value).slice(0, 11));
 }
 
+/**
+ * CPF mascarado para exibição ("***.093.963-**"), no padrão usado por órgãos
+ * públicos: identifica a pessoa para quem já sabe o número, sem expô-lo
+ * inteiro na tela da recepção.
+ */
+export function maskCPF(value: string): string {
+  const digits = onlyDigits(value).slice(0, 11);
+  if (digits.length !== 11) return "***.***.***-**";
+  return `***.${digits.slice(3, 6)}.${digits.slice(6, 9)}-**`;
+}
+
 /** Validates a CNPJ by length, repeated-digit guard and both check digits. */
 export function isValidCNPJ(value: string): boolean {
   return isCNPJ(value);
