@@ -44,6 +44,7 @@ import {
   type DashboardAggregatePayload,
 } from "@/lib/dashboard/aggregates";
 import {
+  dashboardComparisonLabel,
   buildDashboardPeriodPoints,
   containsInstant,
   dashboardDateField,
@@ -1318,7 +1319,14 @@ async function CompanyDashboard({
                   value={card.value}
                   status={card.status}
                   tone={card.tone}
-                  trend={card.trend}
+                  trend={
+                    card.trend
+                      ? {
+                          ...card.trend,
+                          label: dashboardComparisonLabel(dashboardPeriod),
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </section>

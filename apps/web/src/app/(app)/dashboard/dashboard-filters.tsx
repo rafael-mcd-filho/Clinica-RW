@@ -4,7 +4,8 @@ import {
   ArrowsLeftRight as ArrowLeftRight,
   CalendarDots as CalendarRange,
 } from "@phosphor-icons/react";
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { DateRangePickerInput } from "@/components/ui/date-picker-input";
 import { Select } from "@/components/ui/select";
@@ -13,7 +14,6 @@ import {
   type DashboardFilterSelection,
   type DashboardPeriodPreset,
 } from "@/lib/dashboard/periods";
-import { cn } from "@/lib/utils";
 
 const periodOptions: Array<{
   value: DashboardPeriodPreset;
@@ -40,6 +40,10 @@ export function DashboardFilters({
   today: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
   const [view, setView] = useState(selection.view);
   const [period, setPeriod] = useState(selection.period);
   const [customRange, setCustomRange] = useState({
@@ -58,11 +62,42 @@ export function DashboardFilters({
     Boolean(customRange.from && customRange.to) &&
     customDays == null;
 
+  // Raio-X V7: visão e períodos prontos aplicam na hora, sem "Aplicar". Só o
+  // período personalizado espera a escolha das duas datas.
+  function apply(next: {
+    view: DashboardFilterSelection["view"];
+    period: DashboardPeriodPreset;
+    from?: string;
+    to?: string;
+  }) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("view", next.view);
+    params.set("period", next.period);
+    if (next.period === "custom" && next.from && next.to) {
+      params.set("from", next.from);
+      params.set("to", next.to);
+    } else {
+      params.delete("from");
+      params.delete("to");
+    }
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    });
+  }
+
   return (
-    <section className="overflow-visible rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]">
+    <section
+      aria-busy={pending}
+      className="overflow-visible rounded-lg border border-border bg-card shadow-[var(--shadow-soft)]"
+    >
       <form
         ref={formRef}
         action="/dashboard"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (customIncomplete || customInvalid || customTooLong) return;
+          apply({ view, period, ...customRange });
+        }}
         className="grid items-end gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[minmax(9rem,11rem)_minmax(10rem,13rem)_minmax(14rem,1fr)_auto]"
       >
         <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground">
@@ -71,9 +106,13 @@ export function DashboardFilters({
             name="view"
             value={view}
             className="h-9 bg-background shadow-none"
-            onValueChange={(value) =>
-              setView(value as DashboardFilterSelection["view"])
-            }
+            onValueChange={(value) => {
+              const nextView = value as DashboardFilterSelection["view"];
+              setView(nextView);
+              if (period !== "custom") apply({ view: nextView, period });
+              else if (customRange.from && customRange.to)
+                apply({ view: nextView, period, ...customRange });
+            }}
           >
             <option value="operational">Operacional</option>
             <option value="commercial">Comercial</option>
@@ -86,7 +125,11 @@ export function DashboardFilters({
             name="period"
             value={period}
             className="h-9 bg-background shadow-none"
-            onValueChange={(value) => setPeriod(value as DashboardPeriodPreset)}
+            onValueChange={(value) => {
+              const nextPeriod = value as DashboardPeriodPreset;
+              setPeriod(nextPeriod);
+              if (nextPeriod !== "custom") apply({ view, period: nextPeriod });
+            }}
           >
             {periodOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -116,16 +159,17 @@ export function DashboardFilters({
           </label>
         ) : null}
 
-        <Button
-          type="submit"
-          className={cn(
-            "w-full sm:w-auto sm:justify-self-end lg:col-span-1 lg:col-start-4",
-            period !== "custom" && "sm:col-span-2",
-          )}
-          disabled={customIncomplete || customInvalid || customTooLong}
-        >
-          Aplicar
-        </Button>
+        {period === "custom" ? (
+          <Button
+            type="submit"
+            className="w-full sm:w-auto sm:justify-self-end lg:col-span-1 lg:col-start-4"
+            disabled={
+              pending || customIncomplete || customInvalid || customTooLong
+            }
+          >
+            Aplicar
+          </Button>
+        ) : null}
 
         {customTooLong ? (
           <p
@@ -145,6 +189,11 @@ export function DashboardFilters({
       </form>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+        {pending ? (
+          <span role="status" className="font-medium text-primary">
+            Atualizando...
+          </span>
+        ) : null}
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <CalendarRange className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="inline-flex flex-wrap gap-x-1">

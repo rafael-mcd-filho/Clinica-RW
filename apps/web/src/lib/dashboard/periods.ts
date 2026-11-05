@@ -272,6 +272,43 @@ export function formatDashboardRange(
   return range.isPartial ? `${dates} ${partialLabel}` : dates;
 }
 
+const monthNames = new Intl.DateTimeFormat("pt-BR", {
+  month: "long",
+  timeZone: "UTC",
+});
+
+/**
+ * Nome curto da comparação para os cards (Raio-X V7): "vs. ontem",
+ * "vs. outubro"... no lugar do genérico "vs. comparação".
+ */
+export function dashboardComparisonLabel(period: ResolvedDashboardPeriod) {
+  const { comparison, selection } = period;
+  switch (selection.period) {
+    case "today":
+      return "vs. ontem no mesmo horário";
+    case "yesterday":
+      return "vs. anteontem";
+    case "current_week":
+      return "vs. semana passada";
+    case "previous_week":
+      return "vs. a semana antes dela";
+    case "current_month":
+    case "previous_month": {
+      const [year, month] = comparison.localFrom.split("-").map(Number);
+      const name = monthNames.format(new Date(Date.UTC(year, month - 1, 15)));
+      return comparison.isPartial || selection.period === "current_month"
+        ? `vs. ${name}, mesmo período`
+        : `vs. ${name}`;
+    }
+    default: {
+      const short = (value: string) => formatDateKey(value).slice(0, 5);
+      return comparison.localFrom === comparison.localTo
+        ? `vs. ${short(comparison.localFrom)}`
+        : `vs. ${short(comparison.localFrom)} a ${short(comparison.localTo)}`;
+    }
+  }
+}
+
 export function isValidTimeZone(value: string | null | undefined) {
   if (!value) return false;
   try {
