@@ -7,19 +7,9 @@ import {
 } from "@/lib/audit/clinical-access";
 import { loadConsentDetails } from "../../consent-actions";
 import type { ConsentDetails } from "@/lib/clinical/consent";
-import { normalizeDocumentTemplateLayout } from "@/lib/clinical/document-templates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import {
-  buildDocumentPdf,
-  buildRenderContext,
-  slug,
-  asRecord,
-  type DocumentRow,
-  type PatientRow,
-  type ProfessionalRow,
-  type ClinicRow,
-  type OrganizationRow,
-} from "@/lib/pdf/clinical-document";
+import type { DocumentRow } from "@/lib/pdf/clinical-document";
+import { renderClinicalDocumentPdf } from "@/lib/pdf/render-clinical-document";
 export const runtime = "nodejs";
 
 export async function GET(
@@ -59,50 +49,6 @@ export async function GET(
     );
   }
 
-  const [patientResult, professionalResult, clinicResult, organizationResult] =
-    await Promise.all([
-      supabase
-        .from("patients")
-        .select("full_name, social_name, cpf, rg, birth_date")
-        .eq("organization_id", document.organization_id)
-        .eq("id", document.patient_id)
-        .maybeSingle<PatientRow>(),
-      supabase
-        .from("professionals")
-        .select("name, council_type, council_number, council_state")
-        .eq("organization_id", document.organization_id)
-        .eq("id", document.professional_id)
-        .maybeSingle<ProfessionalRow>(),
-      supabase
-        .from("clinics")
-        .select(
-          "trade_name, legal_name, document, phone, email, address_line, address_number, address_complement, district, city, state",
-        )
-        .eq("organization_id", document.organization_id)
-        .maybeSingle<ClinicRow>(),
-      supabase
-        .from("organizations")
-        .select("name, logo_url")
-        .eq("id", document.organization_id)
-        .maybeSingle<OrganizationRow>(),
-    ]);
-
-  const metadata = asRecord(document.metadata);
-  const templateSnapshot = asRecord(metadata.template);
-  const renderSnapshot = asRecord(metadata.render);
-  const layout = normalizeDocumentTemplateLayout(
-    templateSnapshot.layout_schema ?? templateSnapshot.layoutSchema,
-  );
-  const context = buildRenderContext({
-    renderSnapshot,
-    patient: patientResult.data,
-    professional: professionalResult.data,
-    clinic: clinicResult.data,
-    organization: organizationResult.data,
-  });
-
-  if (!context.patient.displayName || !context.professional.name) notFound();
-
   let consent: ConsentDetails | undefined;
   if (document.document_type === "informed_consent") {
     const result = await loadConsentDetails(document.id);
@@ -113,13 +59,10 @@ export async function GET(
       );
     consent = result.data;
   }
-  const pdfBytes = await buildDocumentPdf({
-    document,
-    context,
-    layout,
-    consent,
-  });
-  const filename = `${slug(document.title)}-${document.id.slice(0, 8)}.pdf`;
+  const rendered = await renderClinicalDocumentPdf(supabase, document, consent);
+  if (!rendered) notFound();
+  const pdfBytes = rendered.bytes;
+  const filename = rendered.filename;
 
   return new Response(Buffer.from(pdfBytes), {
     headers: {

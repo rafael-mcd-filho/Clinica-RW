@@ -65,6 +65,7 @@ const mfaExemptPrefixes = [
   "/esqueci-senha",
   "/redefinir-senha",
   "/agendar",
+  "/d",
   "/api/whatsapp/webhook",
   "/api/jobs",
   "/api/public-booking",

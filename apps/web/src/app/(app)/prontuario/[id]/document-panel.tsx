@@ -17,12 +17,16 @@ import {
 import { documentPreviewInput } from "@/lib/clinical/document-preview";
 import type { RenderContext } from "@/lib/pdf/clinical-document";
 
-import { FileText, Printer } from "@phosphor-icons/react";
+import { FileText, Printer, WhatsappLogo } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { issueClinicalDocument, type ClinicalActionState } from "../actions";
+import {
+  issueClinicalDocument,
+  sendClinicalDocumentToPatient,
+  type ClinicalActionState,
+} from "../actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -504,14 +508,17 @@ export function DocumentPanel({
                     <ConsentDetailsButton documentId={document.id} />
                   </div>
                 ) : (
-                  <Button asChild variant="secondary" size="sm">
-                    <Link
-                      href={`/documentos/${document.id}/pdf`}
-                      target="_blank"
-                    >
-                      <Printer className="size-4" /> Abrir PDF
-                    </Link>
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SendToPatientButton documentId={document.id} />
+                    <Button asChild variant="secondary" size="sm">
+                      <Link
+                        href={`/documentos/${document.id}/pdf`}
+                        target="_blank"
+                      >
+                        <Printer className="size-4" /> Abrir PDF
+                      </Link>
+                    </Button>
+                  </div>
                 )}
               </div>
             ))}
@@ -576,4 +583,44 @@ function formatDateTime(value: string, timeZone: string) {
     timeStyle: "short",
     timeZone,
   }).format(new Date(value));
+}
+
+/** Envia o PDF ao paciente pelo WhatsApp, com link que expira em 7 dias. */
+function SendToPatientButton({ documentId }: { documentId: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string>();
+  return (
+    <>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        onClick={() => setConfirming(true)}
+      >
+        <WhatsappLogo className="size-4" aria-hidden="true" />
+        Enviar ao paciente
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => {
+          setConfirming(false);
+          setError(undefined);
+        }}
+        title="Enviar pelo WhatsApp?"
+        description="O paciente recebe um link para abrir o PDF. O link vale por 7 dias e cada abertura fica registrada."
+        confirmLabel="Enviar"
+        pendingLabel="Enviando..."
+        error={error}
+        onConfirm={async () => {
+          const result = await sendClinicalDocumentToPatient(documentId);
+          if (result.error) {
+            setError(result.error);
+            return false;
+          }
+          toast.success(result.success ?? "Documento enviado.");
+          return true;
+        }}
+      />
+    </>
+  );
 }

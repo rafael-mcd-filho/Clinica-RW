@@ -16,6 +16,9 @@ import {
   parseClinicalStructuredData,
 } from "@/lib/clinical/structured-data";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createDocumentShareToken } from "@/lib/clinical/document-share";
+import { getOrganizationEvolutionConfig } from "@/lib/whatsapp/credentials";
+import { sendTextMessage } from "@/lib/whatsapp/evolution-client";
 
 export type ClinicalActionState = {
   error?: string;
@@ -379,4 +382,98 @@ export async function issueClinicalDocument(
         ? "Termo preparado. Abra o termo para coletar a assinatura."
         : "Documento emitido.",
   };
+}
+
+/**
+ * Envia ao paciente, pelo WhatsApp da clínica, um link que expira para o PDF
+ * do documento (Raio-X E7). Exige WhatsApp/celular cadastrado e autorização
+ * de contato por WhatsApp; fica registrado na auditoria.
+ */
+export async function sendClinicalDocumentToPatient(
+  documentId: string,
+): Promise<ClinicalActionState> {
+  const context = await getRequestContext();
+  if (!context.organization) return { error: "Acesso negado." };
+  if (!z.string().uuid().safeParse(documentId).success) {
+    return { error: "Documento inválido." };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data: document } = await supabase
+    .from("clinical_documents")
+    .select("id, organization_id, patient_id, document_type, title")
+    .eq("organization_id", context.organization.id)
+    .eq("id", documentId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      patient_id: string;
+      document_type: string;
+      title: string;
+    }>();
+  if (!document) return { error: "Documento não encontrado." };
+  if (document.document_type === "informed_consent") {
+    return { error: "Termos de consentimento não são enviados por link." };
+  }
+  const permission = isClinicalDocumentType(document.document_type)
+    ? documentTypePermissions[document.document_type]
+    : null;
+  if (!permission || !context.permissionCodes.has(permission)) {
+    return { error: "Seu perfil não pode enviar este documento." };
+  }
+
+  const { data: patient } = await supabase
+    .from("patients")
+    .select("full_name, social_name, phone, whatsapp, allow_whatsapp")
+    .eq("organization_id", document.organization_id)
+    .eq("id", document.patient_id)
+    .maybeSingle<{
+      full_name: string;
+      social_name: string | null;
+      phone: string | null;
+      whatsapp: string | null;
+      allow_whatsapp: boolean;
+    }>();
+  const phone = patient?.whatsapp || patient?.phone;
+  if (!patient || !phone) {
+    return { error: "O paciente não tem WhatsApp ou celular cadastrado." };
+  }
+  if (!patient.allow_whatsapp) {
+    return {
+      error:
+        "O paciente não autorizou contato por WhatsApp. Atualize o consentimento na ficha antes de enviar.",
+    };
+  }
+  const config = await getOrganizationEvolutionConfig(document.organization_id);
+  if (!config) {
+    return { error: "O WhatsApp da clínica não está conectado." };
+  }
+
+  const { token } = createDocumentShareToken(
+    document.id,
+    document.organization_id,
+  );
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
+  const firstName = (patient.social_name || patient.full_name).split(" ")[0];
+  try {
+    await sendTextMessage(
+      phone,
+      `Olá, ${firstName}! Segue o seu documento (${document.title}): ${appUrl}/d/${token}\n\nO link vale por 7 dias.`,
+      config,
+    );
+  } catch {
+    return { error: "Não foi possível enviar pelo WhatsApp agora." };
+  }
+
+  await supabase.from("audit_logs").insert({
+    organization_id: document.organization_id,
+    actor_user_id: context.actor?.id ?? null,
+    action: "clinical_document.sent_whatsapp",
+    resource_type: "clinical_document",
+    resource_id: document.id,
+    metadata: {
+      patient_id: document.patient_id,
+      effective_user_id: context.effectiveUser?.id ?? null,
+    },
+  });
+  return { success: "Documento enviado ao paciente pelo WhatsApp." };
 }
