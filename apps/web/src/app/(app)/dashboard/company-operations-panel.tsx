@@ -216,7 +216,10 @@ function WaitlistCard({
   const filtering = Boolean(query || professionalFilter || procedureFilter);
 
   return (
-    <Card>
+    <Card
+      id="fila-de-espera"
+      className="scroll-mt-[calc(var(--app-sticky-offset,0rem)+1rem)]"
+    >
       <CardHeader className="px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -656,7 +659,10 @@ function OnlineRequestsCard({
     requests.find((request) => request.id === selectedId) ?? null;
 
   return (
-    <Card>
+    <Card
+      id="solicitacoes-online"
+      className="scroll-mt-[calc(var(--app-sticky-offset,0rem)+1rem)]"
+    >
       <CardHeader className="px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">

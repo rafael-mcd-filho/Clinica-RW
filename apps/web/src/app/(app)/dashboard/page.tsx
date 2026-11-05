@@ -17,6 +17,7 @@ import type { Icon as LucideIcon } from "@phosphor-icons/react";
 import { formatInTimeZone } from "date-fns-tz";
 import Link from "next/link";
 import { DashboardFilters } from "./dashboard-filters";
+import { TodayPanel } from "./today-panel";
 import {
   CompanyOperationsPanel,
   type DashboardOnlineRequest,
@@ -257,6 +258,12 @@ export default async function DashboardPage({
     return (
       <CompanyDashboard
         organization={context.organization}
+        userId={context.effectiveUser?.id ?? null}
+        userName={context.effectiveUser?.name ?? null}
+        canSeeClinical={
+          context.permissionCodes.has("clinico.ver_prontuario") ||
+          context.permissionCodes.has("clinico.ver_prontuario_proprios")
+        }
         canViewPatients={context.permissionCodes.has("paciente.ver")}
         canViewAgenda={context.permissionCodes.has("agenda.ver")}
         canManageOnlineRequests={
@@ -918,6 +925,9 @@ function emptyDashboardRows<T>(): DashboardRowsResult<T> {
 
 async function CompanyDashboard({
   organization,
+  userId,
+  userName,
+  canSeeClinical,
   canViewPatients,
   canViewAgenda,
   canManageOnlineRequests,
@@ -929,6 +939,9 @@ async function CompanyDashboard({
   now,
 }: {
   organization: { id: string; name: string } | null;
+  userId: string | null;
+  userName: string | null;
+  canSeeClinical: boolean;
   canViewPatients: boolean;
   canViewAgenda: boolean;
   canManageOnlineRequests: boolean;
@@ -1091,6 +1104,14 @@ async function CompanyDashboard({
         timeZone,
         now,
       });
+  // O último dia do período, quando é hoje, ainda está em andamento.
+  const todayLabel = formatInTimeZone(now, timeZone, "dd/MM");
+  if (
+    dashboardPeriod.current.localTo ===
+    formatInTimeZone(now, timeZone, "yyyy-MM-dd")
+  ) {
+    dashboardCharts.partialLabel = todayLabel;
+  }
   const currentStats = dashboardAggregate
     ? appointmentStatsFromAggregate(dashboardAggregate.current_stats)
     : buildAppointmentStats(currentAppointments);
@@ -1239,12 +1260,35 @@ async function CompanyDashboard({
   const viewLabel =
     selection.view === "commercial" ? "comercial" : "operacional";
 
+  const hour = Number(formatInTimeZone(now, timeZone, "H"));
+  const greeting =
+    hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  const firstName = userName?.trim().split(/\s+/)[0];
+
   return (
     <div className="grid gap-4">
       <PageHeader
         title="Painel"
-        description={`Visão ${viewLabel} de ${organization?.name ?? "sua empresa"}.`}
+        description={`${greeting}${firstName ? `, ${firstName}` : ""}. ${organization?.name ?? ""}`.trim()}
       />
+
+      {organization && canViewAgenda ? (
+        <TodayPanel
+          organizationId={organization.id}
+          userId={userId}
+          timeZone={timeZone}
+          now={now}
+          canSeeClinical={canSeeClinical}
+          canManageQueue={canManageWaitlist || canManageOnlineRequests}
+        />
+      ) : null}
+
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-heading font-semibold">Indicadores</h2>
+        <p className="text-body-sm text-muted-foreground">
+          Visão {viewLabel} do período escolhido.
+        </p>
+      </div>
 
       <DashboardFilters
         key={`${selection.view}:${selection.period}:${selection.from ?? ""}:${selection.to ?? ""}`}

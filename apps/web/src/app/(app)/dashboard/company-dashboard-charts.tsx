@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   Cell,
   Pie,
@@ -84,6 +84,8 @@ export type CompanyDashboardChartsData = {
     cancellationRate: number | null;
   };
   periodAttendances: DashboardPoint[];
+  /** Rótulo do dia em andamento (hoje), desenhado como parcial. */
+  partialLabel?: string | null;
   ageDistribution: DashboardPoint[];
   birthdays: BirthdayPatient[];
   commercialSummary: {
@@ -125,13 +127,17 @@ export function CompanyDashboardCharts({
     <div className="grid gap-4">
       <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(17rem,0.34fr)]">
         <div className="min-w-0">
-          <AreaLineCard
+          {/* Barras por dia: a curva suavizada ligava os dias e sugeria
+              tendências (e quedas) que não existiam; o dia de hoje aparece
+              mais claro porque ainda não acabou. */}
+          <DailyBarsCard
             title={
               isCommercial
-                ? "Atividade de agendamentos gerados"
-                : "Atividade de agendamentos"
+                ? "Agendamentos gerados por dia"
+                : "Agendamentos por dia"
             }
             data={data.periodAttendances}
+            partialLabel={data.partialLabel ?? null}
             seriesLabel="Agendamentos"
             heightClassName="h-72 lg:h-80"
             emptyIcon={CalendarDays}
@@ -185,13 +191,7 @@ export function CompanyDashboardCharts({
         </div>
         <div className="min-w-0">
           {data.patientDataAvailable ? (
-            <CompactAreaLineCard
-              title="Distribuição etária"
-              data={data.ageDistribution}
-              seriesLabel="Pacientes"
-              formatTooltipLabel={(age) => `${age} anos`}
-              emptyIcon={UsersRound}
-            />
+            <AgeBandsCard data={data.ageDistribution} />
           ) : (
             <UnavailableDataCard title="Distribuição etária" compact />
           )}
@@ -565,33 +565,42 @@ function CommercialSummaryCard({
   );
 }
 
-function AreaLineCard({
+function DailyBarsCard({
   title,
   data,
+  partialLabel,
   seriesLabel,
   heightClassName,
   emptyIcon,
 }: {
   title: string;
   data: DashboardPoint[];
-  /** Nome da série no tooltip; sem ele o Recharts mostra a chave "value". */
+  partialLabel: string | null;
   seriesLabel: string;
   heightClassName: string;
   emptyIcon?: LucideIcon;
 }) {
-  const gradientId = `chart-${title
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .toLowerCase()}`;
   const hasData = data.some((item) => item.value > 0);
-  const summary = pointChartSummary(title, data);
+  const summary = `${pointChartSummary(title, data)}${
+    partialLabel ? ` O dia ${partialLabel} ainda está em andamento.` : ""
+  }`;
 
   return (
     <Card className="flex h-full min-w-0 flex-col">
-      <CardHeader className="flex items-center gap-2 px-4 py-3">
-        <TrendingUp className="size-4 text-primary" aria-hidden="true" />
-        <h2 className="font-semibold text-foreground">{title}</h2>
+      <CardHeader className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="size-4 text-primary" aria-hidden="true" />
+          <h2 className="font-semibold text-foreground">{title}</h2>
+        </div>
+        {partialLabel && hasData ? (
+          <span className="flex items-center gap-1.5 text-caption text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className="size-2.5 rounded-sm bg-primary/35"
+            />
+            Hoje (parcial)
+          </span>
+        ) : null}
       </CardHeader>
       <CardContent className="flex-1 p-4">
         <p className="sr-only">{summary}</p>
@@ -602,25 +611,11 @@ function AreaLineCard({
         >
           {hasData ? (
             <ResponsiveContainer height="100%" width="100%">
-              <AreaChart
+              <BarChart
                 accessibilityLayer
                 data={data}
                 margin={{ bottom: 4, left: -8, right: 8, top: 8 }}
               >
-                <defs>
-                  <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-                    <stop
-                      offset="5%"
-                      stopColor="var(--primary)"
-                      stopOpacity={0.22}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--primary)"
-                      stopOpacity={0.02}
-                    />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid
                   stroke="var(--border)"
                   strokeDasharray="3 4"
@@ -629,7 +624,7 @@ function AreaLineCard({
                 <XAxis
                   axisLine={false}
                   dataKey="label"
-                  minTickGap={18}
+                  minTickGap={12}
                   tick={{
                     fill: "var(--muted-foreground)",
                     fontSize: "var(--text-caption)",
@@ -650,27 +645,29 @@ function AreaLineCard({
                 />
                 <Tooltip
                   contentStyle={chartTooltipStyle}
-                  cursor={{ stroke: "var(--border-strong)" }}
+                  cursor={{ fill: "var(--muted)" }}
                   labelStyle={{ color: "var(--foreground)", fontWeight: 600 }}
                   itemStyle={{ color: "var(--primary)" }}
+                  labelFormatter={(label) =>
+                    label === partialLabel ? `${label} (parcial)` : label
+                  }
                 />
-                <Area
+                <Bar
                   dataKey="value"
                   name={seriesLabel}
-                  activeDot={{
-                    fill: "var(--card)",
-                    r: 4,
-                    stroke: "var(--primary)",
-                    strokeWidth: 2,
-                  }}
-                  dot={false}
-                  fill={`url(#${gradientId})`}
                   isAnimationActive={false}
-                  stroke="var(--primary)"
-                  strokeWidth={2.25}
-                  type="monotone"
-                />
-              </AreaChart>
+                  maxBarSize={36}
+                  radius={[4, 4, 0, 0]}
+                >
+                  {data.map((item) => (
+                    <Cell
+                      key={item.label}
+                      fill="var(--primary)"
+                      fillOpacity={item.label === partialLabel ? 0.35 : 1}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           ) : (
             <EmptyChart label="Sem dados para o período." icon={emptyIcon} />
@@ -681,123 +678,48 @@ function AreaLineCard({
   );
 }
 
-function CompactAreaLineCard({
-  title,
-  data,
-  seriesLabel,
-  formatTooltipLabel,
-  emptyIcon,
-}: {
-  title: string;
-  data: DashboardPoint[];
-  seriesLabel: string;
-  formatTooltipLabel?: (label: string) => string;
-  emptyIcon?: LucideIcon;
-}) {
-  const gradientId = `chart-${title
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .toLowerCase()}-compact`;
-  const hasData = data.some((item) => item.value > 0);
+const ageBands: Array<{ label: string; from: number; to: number }> = [
+  { label: "0 a 11 anos", from: 0, to: 11 },
+  { label: "12 a 17 anos", from: 12, to: 17 },
+  { label: "18 a 29 anos", from: 18, to: 29 },
+  { label: "30 a 44 anos", from: 30, to: 44 },
+  { label: "45 a 59 anos", from: 45, to: 59 },
+  { label: "60 anos ou mais", from: 60, to: 200 },
+];
+
+/** Faixas etárias em barras: a curva por idade exata (0, 1, 2… 90) virava
+    serrilhado sem leitura. */
+function AgeBandsCard({ data }: { data: DashboardPoint[] }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
-  const summary = pointChartSummary(title, data);
+  const bands = ageBands.map((band) => ({
+    label: band.label,
+    count: data
+      .filter((item) => {
+        const age = Number(item.label);
+        return Number.isFinite(age) && age >= band.from && age <= band.to;
+      })
+      .reduce((sum, item) => sum + item.value, 0),
+  }));
 
   return (
     <Card className="flex h-full min-w-0 flex-col">
-      <CardHeader className="flex items-center justify-between gap-3 px-4 py-3">
-        <h2 className="font-semibold text-foreground">{title}</h2>
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {pluralize(total, "paciente", "pacientes")}
-        </span>
+      <CardHeader className="flex items-center gap-2 px-4 py-3">
+        <UsersRound className="size-4 text-primary" aria-hidden="true" />
+        <h2 className="font-semibold text-foreground">Faixa etária</h2>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col p-4">
-        <p className="sr-only">{summary}</p>
-        <div
-          className="h-40 min-w-0"
-          role={hasData ? "img" : undefined}
-          aria-label={hasData ? summary : undefined}
-        >
-          {hasData ? (
-            <ResponsiveContainer height="100%" width="100%">
-              <AreaChart
-                accessibilityLayer
-                data={data}
-                margin={{ bottom: 2, left: -18, right: 4, top: 6 }}
-              >
-                <defs>
-                  <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-                    <stop
-                      offset="5%"
-                      stopColor={categoricalColors.teal}
-                      stopOpacity={0.24}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor={categoricalColors.teal}
-                      stopOpacity={0.02}
-                    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  stroke="var(--border)"
-                  strokeDasharray="3 4"
-                  vertical={false}
-                />
-                <XAxis
-                  axisLine={false}
-                  dataKey="label"
-                  minTickGap={16}
-                  tick={{
-                    fill: "var(--muted-foreground)",
-                    fontSize: "var(--text-caption)",
-                  }}
-                  tickLine={false}
-                  tickMargin={8}
-                />
-                <YAxis
-                  allowDecimals={false}
-                  axisLine={false}
-                  tick={{
-                    fill: "var(--muted-foreground)",
-                    fontSize: "var(--text-caption)",
-                  }}
-                  tickLine={false}
-                  width={30}
-                />
-                <Tooltip
-                  contentStyle={chartTooltipStyle}
-                  cursor={{ stroke: "var(--border-strong)" }}
-                  labelFormatter={
-                    formatTooltipLabel
-                      ? (label) => formatTooltipLabel(String(label))
-                      : undefined
-                  }
-                  labelStyle={{ color: "var(--foreground)", fontWeight: 600 }}
-                  itemStyle={{ color: categoricalColors.teal }}
-                />
-                <Area
-                  dataKey="value"
-                  name={seriesLabel}
-                  activeDot={{
-                    fill: "var(--card)",
-                    r: 3,
-                    stroke: categoricalColors.teal,
-                    strokeWidth: 2,
-                  }}
-                  dot={false}
-                  fill={`url(#${gradientId})`}
-                  isAnimationActive={false}
-                  stroke={categoricalColors.teal}
-                  strokeWidth={2}
-                  type="monotone"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyChart label="Sem dados para o período." icon={emptyIcon} />
-          )}
-        </div>
+      <CardContent className="grid flex-1 content-center p-4">
+        {total > 0 ? (
+          <MetricBars
+            ariaLabel="Pacientes por faixa etária"
+            items={bands.map((band) => ({
+              label: `${band.label} · ${band.count}`,
+              value: percent(band.count, total),
+              color: "var(--primary)",
+            }))}
+          />
+        ) : (
+          <EmptyChart label="Sem dados para o período." icon={UsersRound} />
+        )}
       </CardContent>
     </Card>
   );

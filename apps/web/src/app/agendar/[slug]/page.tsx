@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Stethoscope,
   Star,
+  StarHalf,
   UserCircle as UserRound,
 } from "@phosphor-icons/react/dist/ssr";
 import {
@@ -72,6 +73,7 @@ type ScheduleRow = {
   unit_id: string;
   professionals: {
     name: string;
+    specialty_id: string | null;
     council_type: string | null;
     council_number: string | null;
     council_state: string | null;
@@ -175,6 +177,7 @@ export default async function OnlineBookingPage({
     insurances,
     paymentMethods,
     reviews,
+    specialties,
   ] = await Promise.all([
     supabase
       .from("organizations")
@@ -191,7 +194,7 @@ export default async function OnlineBookingPage({
     supabase
       .from("schedules")
       .select(
-        "id, name, professional_id, unit_id, professionals(name, council_type, council_number, council_state), units(name)",
+        "id, name, professional_id, unit_id, professionals(name, specialty_id, council_type, council_number, council_state), units(name)",
       )
       .eq("organization_id", organizationId)
       .eq("active", true)
@@ -241,7 +244,15 @@ export default async function OnlineBookingPage({
       .order("review_date", { ascending: false })
       .limit(12)
       .returns<ReviewRow[]>(),
+    supabase
+      .from("specialties")
+      .select("id, name")
+      .eq("organization_id", organizationId)
+      .returns<Array<{ id: string; name: string }>>(),
   ]);
+  const specialtyName = new Map(
+    (specialties.data ?? []).map((item) => [item.id, item.name]),
+  );
 
   if (
     schedules.error ||
@@ -282,6 +293,22 @@ export default async function OnlineBookingPage({
         name: schedule.name,
         professionalId: schedule.professional_id,
         professionalName: schedule.professionals?.name ?? "Profissional",
+        professionalDetail:
+          [
+            schedule.professionals?.specialty_id
+              ? specialtyName.get(schedule.professionals.specialty_id)
+              : null,
+            schedule.professionals?.council_type &&
+            schedule.professionals.council_number
+              ? `${schedule.professionals.council_type} ${schedule.professionals.council_number}${
+                  schedule.professionals.council_state
+                    ? `/${schedule.professionals.council_state}`
+                    : ""
+                }`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || null,
         unitName: schedule.units?.name ?? "Unidade",
         procedureIds: procedureIdsBySchedule.get(schedule.id) ?? [],
         minNoticeHours: scheduleSettings.min_notice_hours,
@@ -729,7 +756,7 @@ function ExperienceCard({ settings }: { settings: SettingsRow }) {
           items={settings.treated_conditions}
         />
         <IconList
-          title="Pacientes que trato"
+          title="Pacientes atendidos"
           icon={UserRound}
           items={settings.patient_groups}
         />
@@ -1055,17 +1082,35 @@ function IconList({
   );
 }
 
+// Os ícones Phosphor preenchem pelo `weight`, não pela classe: com
+// `fill-current` as estrelas saíam vazias mesmo com nota 5.
 function RatingStars({ rating }: { rating: number }) {
-  const rounded = Math.round(rating);
+  const halves = Math.round(Math.min(5, Math.max(0, rating)) * 2);
   return (
-    <span className="inline-flex items-center gap-0.5 text-primary">
-      {Array.from({ length: 5 }).map((_, index) => (
-        <Star
-          key={index}
-          className={index < rounded ? "size-4 fill-current" : "size-4"}
-          aria-hidden="true"
-        />
-      ))}
+    <span
+      role="img"
+      aria-label={`Nota ${(halves / 2).toLocaleString("pt-BR")} de 5`}
+      className="inline-flex items-center gap-0.5 text-warning"
+    >
+      {Array.from({ length: 5 }).map((_, index) => {
+        const filled = halves >= (index + 1) * 2;
+        const half = !filled && halves === index * 2 + 1;
+        return half ? (
+          <StarHalf
+            key={index}
+            weight="fill"
+            className="size-4"
+            aria-hidden="true"
+          />
+        ) : (
+          <Star
+            key={index}
+            weight={filled ? "fill" : "regular"}
+            className={filled ? "size-4" : "size-4 text-border-strong"}
+            aria-hidden="true"
+          />
+        );
+      })}
     </span>
   );
 }

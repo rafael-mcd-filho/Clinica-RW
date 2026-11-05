@@ -17,7 +17,6 @@ import {
   Key as KeyRound,
   CircleNotch as LoaderCircle,
   ShieldCheck,
-  UserCircle as UserRound,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import {
@@ -35,12 +34,15 @@ import { Input, Select, Textarea } from "@/components/ui/field";
 import { MaskedInput } from "@/components/ui/masked-input";
 import { isValidCPF, isValidPhoneBR } from "@/lib/validation/br";
 import { cn } from "@/lib/utils";
+import { Avatar } from "@/components/ui/avatar";
 
 export type PublicSchedule = {
   id: string;
   name: string;
   professionalId: string;
   professionalName: string;
+  /** Especialidade e conselho ("Cardiologia · CRM 12345/SP"). */
+  professionalDetail?: string | null;
   unitName: string;
   procedureIds: string[];
   minNoticeHours: number;
@@ -160,7 +162,12 @@ export function BookingForm({
   const professionals = useMemo(() => {
     const grouped = new Map<
       string,
-      { id: string; name: string; schedules: PublicSchedule[] }
+      {
+        id: string;
+        name: string;
+        detail: string | null;
+        schedules: PublicSchedule[];
+      }
     >();
 
     for (const schedule of schedules) {
@@ -171,6 +178,7 @@ export function BookingForm({
         grouped.set(schedule.professionalId, {
           id: schedule.professionalId,
           name: schedule.professionalName,
+          detail: schedule.professionalDetail ?? null,
           schedules: [schedule],
         });
       }
@@ -518,10 +526,12 @@ export function BookingForm({
                 {professionals.length ? (
                   // Cartões em vez de lista suspensa: o paciente vê todos os
                   // nomes de uma vez e toca no que quer.
+                  // Rolagem interna só no desktop: no celular uma lista
+                  // dentro da página que também rola prendia o dedo.
                   <div
                     role="radiogroup"
                     aria-labelledby="step-1-title"
-                    className="grid max-h-[26rem] min-w-0 gap-1.5 overflow-y-auto"
+                    className="grid min-w-0 gap-1.5 sm:max-h-[26rem] sm:overflow-y-auto"
                   >
                     {orderedProfessionals.map((professional) => {
                       const selected = professional.id === professionalId;
@@ -546,13 +556,22 @@ export function BookingForm({
                               : "border-border bg-card hover:border-primary/50",
                           )}
                         >
-                          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-muted text-primary">
-                            <UserRound className="size-5" aria-hidden="true" />
-                          </span>
+                          <Avatar
+                            name={professional.name.replace(
+                              /^dr(a)?\.?\s+/i,
+                              "",
+                            )}
+                            size="md"
+                          />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-semibold">
                               {professional.name}
                             </span>
+                            {professional.detail ? (
+                              <span className="block truncate text-xs text-secondary-foreground">
+                                {professional.detail}
+                              </span>
+                            ) : null}
                             <span className="block truncate text-xs text-muted-foreground">
                               {offersPreferred
                                 ? [
@@ -587,11 +606,13 @@ export function BookingForm({
                   </p>
                 )}
 
+                {/* No celular o botão acompanha a rolagem: com a lista de
+                    profissionais ele ficava fora da tela. */}
                 <Button
                   type="button"
                   disabled={!professionalId}
                   onClick={() => goToStep(2)}
-                  className="w-full"
+                  className="w-full max-sm:sticky max-sm:bottom-3 max-sm:z-10 max-sm:h-11 max-sm:shadow-[var(--shadow-lg)]"
                 >
                   Continuar
                   <ChevronRight className="size-4" aria-hidden="true" />
