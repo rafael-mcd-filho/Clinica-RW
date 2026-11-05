@@ -288,7 +288,7 @@ export async function TodayPanel({
   return (
     <section
       aria-labelledby="painel-hoje"
-      className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start"
+      className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start"
     >
       <Card className="min-w-0">
         <CardHeader className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">

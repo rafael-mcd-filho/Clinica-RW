@@ -124,7 +124,7 @@ export function CompanyDashboardCharts({
   ];
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 grid-cols-1 gap-4">
       <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(17rem,0.34fr)]">
         <div className="min-w-0">
           {/* Barras por dia: a curva suavizada ligava os dias e sugeria

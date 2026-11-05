@@ -1699,18 +1699,22 @@ function groupTimelineByDay(
   events: AttendanceTimelineEvent[],
 ): TimelineDayGroup[] {
   const items: TimelineItem[] = [
-    ...messages.map((message): TimelineItem => ({
-      kind: "message",
-      id: message.id,
-      occurredAt: message.createdAt,
-      message,
-    })),
-    ...events.map((event): TimelineItem => ({
-      kind: "attendance-event",
-      id: event.id,
-      occurredAt: event.occurredAt,
-      event,
-    })),
+    ...messages.map(
+      (message): TimelineItem => ({
+        kind: "message",
+        id: message.id,
+        occurredAt: message.createdAt,
+        message,
+      }),
+    ),
+    ...events.map(
+      (event): TimelineItem => ({
+        kind: "attendance-event",
+        id: event.id,
+        occurredAt: event.occurredAt,
+        event,
+      }),
+    ),
   ].sort(
     (first, second) =>
       new Date(first.occurredAt).getTime() -

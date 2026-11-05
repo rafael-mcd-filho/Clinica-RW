@@ -46,7 +46,7 @@ export default async function AppointmentSummaryPage({
   const canExport = context.permissionCodes.has("relatorio.exportar");
 
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
       <PageHeader
         icon={CalendarDays}
         breadcrumbs={[
@@ -80,7 +80,7 @@ export default async function AppointmentSummaryPage({
               menos a barra lateral), empurravam a página para a direita. Os
               cinco campos dividem a linha a partir de xl; os botões só sobem
               para ela em 2xl. */}
-          <form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1.4fr)_minmax(12rem,1fr)_repeat(3,minmax(9rem,0.8fr))] 2xl:grid-cols-[minmax(16rem,1.4fr)_minmax(12rem,1fr)_repeat(3,minmax(9rem,0.8fr))_auto]">
+          <form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(14rem,1.4fr)_minmax(11rem,1fr)_repeat(3,minmax(8rem,0.8fr))] 2xl:grid-cols-[minmax(14rem,1.4fr)_minmax(11rem,1fr)_repeat(3,minmax(8rem,0.8fr))_auto]">
             <div className="grid gap-2 text-sm font-medium sm:col-span-2 xl:col-span-1">
               Período
               <DateRangePickerInput

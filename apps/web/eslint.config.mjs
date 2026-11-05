@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Supabase falso dos testes de tela: gerador de dados, não é código do app.
+    "e2e/fixtures/**",
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 

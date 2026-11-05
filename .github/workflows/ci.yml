@@ -26,6 +26,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Format
+        run: npm run format:check
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -34,3 +37,66 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Raio-X EN6: as migrations sobem do zero num Postgres do Supabase e os
+  # testes SQL (pgTAP em supabase/tests) conferem RLS, grants e funções —
+  # inclusive o teste que impede função interna exposta para anon.
+  database:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start database with all migrations
+        run: supabase db start
+
+      - name: Database tests
+        run: supabase test db
+
+  # Raio-X EN6 e B4: telas sem rolagem horizontal em 390, 1280 e 1440 px e as
+  # jornadas principais, contra o Supabase falso de apps/web/e2e/fixtures.
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: mock-anon
+      SUPABASE_SERVICE_ROLE_KEY: mock-service
+      WHATSAPP_CREDENTIALS_ENCRYPTION_KEY: mock-key
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install browser
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Build with the fake Supabase
+        run: npm run build
+
+      - name: Screens and journeys
+        run: npm --workspace web run test:e2e
+
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

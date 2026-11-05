@@ -13,7 +13,10 @@ import type {
 } from "./finance-panel";
 
 export type FinancialRecordKind =
-  "receivable" | "payment" | "payable" | "payout";
+  | "receivable"
+  | "payment"
+  | "payable"
+  | "payout";
 type FinancialRecord =
   | { kind: "receivable"; row: ReceivableRow }
   | { kind: "payment"; row: PaymentRow }
@@ -39,7 +42,8 @@ export type FinancialDetails = {
   today: string;
 };
 export type FinancialDetailsResult =
-  { data: FinancialDetails; error?: never } | { error: string; data?: never };
+  | { data: FinancialDetails; error?: never }
+  | { error: string; data?: never };
 
 export async function loadFinancialDetails(
   kind: FinancialRecordKind,

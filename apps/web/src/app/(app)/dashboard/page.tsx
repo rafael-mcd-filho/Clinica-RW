@@ -346,7 +346,7 @@ export default async function DashboardPage({
   ];
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
       <PageHeader
         icon={LayoutDashboard}
         title="Painel da plataforma"
@@ -1266,7 +1266,7 @@ async function CompanyDashboard({
   const firstName = userName?.trim().split(/\s+/)[0];
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
       <PageHeader
         title="Painel"
         description={`${greeting}${firstName ? `, ${firstName}` : ""}. ${organization?.name ?? ""}`.trim()}
@@ -1308,8 +1308,8 @@ async function CompanyDashboard({
             description="Os dados não foram substituídos por zeros. Tente atualizar a página em alguns instantes."
           />
         ) : (
-          <div className="grid gap-4 rounded-lg bg-surface-sunken/45 p-3 sm:p-4">
-            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid min-w-0 grid-cols-1 gap-4 rounded-lg bg-surface-sunken/45 p-3 sm:p-4">
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {cards.map((card) => (
                 <DashboardMetricCard
                   key={card.label}

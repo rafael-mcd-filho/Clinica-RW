@@ -111,7 +111,7 @@ export function CompanyOperationsPanel({
   canExtra: boolean;
 }) {
   return (
-    <section className="grid gap-4">
+    <section className="grid min-w-0 grid-cols-1 gap-4">
       <WaitlistCard
         entries={waitlist}
         total={waitlistTotal}
@@ -235,7 +235,7 @@ function WaitlistCard({
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className="grid gap-3 p-4">
+      <CardContent className="grid grid-cols-1 gap-3 p-4">
         {entries.length ? (
           <>
             <SearchField
@@ -427,7 +427,7 @@ function WaitlistEntryModal({
       title={patientName}
       description={`Posição ${position} na fila de espera.`}
     >
-      <div className="grid gap-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4">
         <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
           <DetailItem
             icon={Stethoscope}
@@ -674,7 +674,7 @@ function OnlineRequestsCard({
           <Badge variant={total ? "warning" : "neutral"}>{total}</Badge>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-3 p-4">
+      <CardContent className="grid grid-cols-1 gap-3 p-4">
         {requests.length ? (
           <>
             {stalled ? (
@@ -818,7 +818,7 @@ function OnlineRequestModal({
         renderedAt,
       )}.`}
     >
-      <div className="grid gap-4">
+      <div className="grid min-w-0 grid-cols-1 gap-4">
         {isStalledRequest(request, renderedAt) ? (
           <p className="rounded-md border border-warning-muted bg-warning-muted/40 px-3 py-2 text-body-sm text-warning-foreground">
             Este pedido está sem resposta há mais de 24h e continua segurando o

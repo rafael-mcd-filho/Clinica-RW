@@ -18,7 +18,12 @@ export type MessageType =
   | "note";
 
 export type MessageStatus =
-  "received" | "queued" | "sent" | "delivered" | "read" | "failed";
+  | "received"
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "failed";
 
 export type ConversationTagView = {
   id: string;

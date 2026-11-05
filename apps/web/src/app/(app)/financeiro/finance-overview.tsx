@@ -693,7 +693,9 @@ function CategoriesCard({
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <ul className="grid min-w-0 flex-1 gap-1.5">
+          {/* basis-48: sem espaço ao lado da rosca, a lista desce para a
+              linha de baixo em vez de espremer os valores para fora do card. */}
+          <ul className="grid min-w-0 flex-1 basis-48 grid-cols-[minmax(0,1fr)] gap-1.5">
             {slices.map((slice, index) => (
               <li
                 key={slice.name}
