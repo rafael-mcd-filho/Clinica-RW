@@ -4,6 +4,7 @@ import {
 } from "@/lib/clinical/document-types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import { ArrowLeft, WarningCircle } from "@phosphor-icons/react/dist/ssr";
 import {
   type ClinicalDocument,
@@ -27,8 +28,13 @@ import { buildRenderContext } from "@/lib/pdf/clinical-document";
 import { listEncounterAttachments } from "@/lib/storage/clinical-attachments";
 import { createPatientPhotoSignedUrl } from "@/lib/storage/patient-photos";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import {
+  logClinicalRecordAccess,
+  requestOrigin,
+} from "@/lib/audit/clinical-access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { canAccessClinicalSummary } from "@/lib/authz/permissions";
 
 type EncounterRow = {
   id: string;
@@ -501,6 +507,21 @@ export default async function EncounterPage({
     returnTo,
   );
 
+  // Quem abriu o atendimento fica registrado (Raio-X S6), depois da resposta.
+  const origin = await requestOrigin();
+  after(() =>
+    logClinicalRecordAccess({
+      organizationId: encounter.organization_id,
+      actorUserId: context.actor?.id ?? null,
+      effectiveUserId: context.effectiveUser?.id ?? null,
+      impersonationSessionId: context.impersonation?.id ?? null,
+      patientId: encounter.patient_id,
+      encounterId: encounter.id,
+      view: "encounter",
+      origin,
+    }),
+  );
+
   const patientName =
     patientResult.data.social_name || patientResult.data.full_name;
   const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone }).format(
@@ -509,9 +530,7 @@ export default async function EncounterPage({
   const age = patientResult.data.birth_date
     ? ageInYears(patientResult.data.birth_date, todayKey)
     : null;
-  const canEditSummary = context.permissionCodes.has(
-    "paciente.ver_dados_sensiveis",
-  );
+  const canEditSummary = canAccessClinicalSummary(context.permissionCodes);
   const clinicalSummary = clinicalSummaryResult.data;
   const allergies = clinicalSummary?.allergies?.trim() || null;
   const previousProfessionalName = new Map(

@@ -8,6 +8,7 @@ import {
 import { FinancialRecordTrigger } from "@/components/finance/financial-record-details";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import {
   ArrowRight,
   CalendarBlank,
@@ -27,6 +28,7 @@ import {
   IdentificationCard,
   Lifebuoy,
   MapPin,
+  ClockCounterClockwise,
   PencilSimpleLine,
   Phone,
   Pill,
@@ -77,6 +79,11 @@ import {
 } from "@/lib/storage/clinical-attachments";
 import { createPatientPhotoSignedUrl } from "@/lib/storage/patient-photos";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { canAccessClinicalSummary } from "@/lib/authz/permissions";
+import {
+  logClinicalRecordAccess,
+  requestOrigin,
+} from "@/lib/audit/clinical-access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { cn, initialsFromName } from "@/lib/utils";
 import { formatCPF, formatPhoneBR } from "@/lib/validation/br";
@@ -246,6 +253,8 @@ export default async function PatientDetailsPage({
   const { id } = await params;
   const codes = context.permissionCodes;
   const canSeeSensitive = codes.has("paciente.ver_dados_sensiveis");
+  // Resumo clínico tem permissão própria (Raio-X S8).
+  const canSeeSummary = canAccessClinicalSummary(codes);
   const canSeeClinicalRecords =
     codes.has("clinico.ver_prontuario") ||
     codes.has("clinico.ver_prontuario_proprios");
@@ -325,7 +334,7 @@ export default async function PatientDetailsPage({
             ),
         ).maybeSingle<AddressRow>()
       : Promise.resolve({ data: null }),
-    canSeeSensitive
+    canSeeSummary
       ? byPatient(
           supabase
             .from("patient_clinical_summaries")
@@ -633,6 +642,20 @@ export default async function PatientDetailsPage({
 
   const displayName = patient.social_name || patient.full_name;
   const photoUrl = await createPatientPhotoSignedUrl(patient.photo_path);
+  if (canSeeClinicalRecords || canSeeSummary) {
+    const origin = await requestOrigin();
+    after(() =>
+      logClinicalRecordAccess({
+        organizationId,
+        actorUserId: context.actor?.id ?? null,
+        effectiveUserId: context.effectiveUser?.id ?? null,
+        impersonationSessionId: context.impersonation?.id ?? null,
+        patientId: patient.id,
+        view: "patient_record",
+        origin,
+      }),
+    );
+  }
   const selectedTagIds = new Set(
     (patientTagsResult.data ?? []).map((item) => item.tag_id),
   );
@@ -727,13 +750,13 @@ export default async function PatientDetailsPage({
         sum + Math.max(0, Number(item.amount) - Number(item.paid_amount)),
       0,
     );
-  const allergyItems = canSeeSensitive
+  const allergyItems = canSeeSummary
     ? splitSummary(clinicalResult.data?.allergies)
     : [];
-  const comorbidityItems = canSeeSensitive
+  const comorbidityItems = canSeeSummary
     ? splitSummary(clinicalResult.data?.comorbidities)
     : [];
-  const medicationItems = canSeeSensitive
+  const medicationItems = canSeeSummary
     ? splitSummary(clinicalResult.data?.medications)
     : [];
 
@@ -1017,7 +1040,7 @@ export default async function PatientDetailsPage({
             >
               Resumo clínico
             </h2>
-            {canSeeSensitive ? (
+            {canSeeSummary ? (
               <div className="flex flex-wrap gap-1.5">
                 {allergyItems.length ? (
                   <Badge
@@ -1645,7 +1668,7 @@ export default async function PatientDetailsPage({
             }
           >
             <div className="border-t border-border">
-              {canSeeSensitive ? (
+              {canSeeSummary ? (
                 <PatientClinicalList
                   patientId={patient.id}
                   summary={clinicalResult.data}
@@ -1681,6 +1704,17 @@ export default async function PatientDetailsPage({
               })}
             </dl>
           </PatientSidebarDetails>
+          {codes.has("config.geral") || codes.has("config.usuarios") ? (
+            <div className="border-t border-border px-4 py-3">
+              <Link
+                href={`/auditoria?paciente=${patient.id}`}
+                className="inline-flex items-center gap-1.5 text-label font-medium text-primary hover:underline"
+              >
+                <ClockCounterClockwise className="size-4" aria-hidden="true" />
+                Quem acessou esta ficha
+              </Link>
+            </div>
+          ) : null}
         </aside>
 
         <main id="conteudo-paciente" className="min-w-0">

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
 import { getRequestContext } from "@/lib/auth/context";
+import { canAccessClinicalSummary } from "@/lib/authz/permissions";
 import {
   deletePatientPhoto,
   uploadPatientPhoto,
@@ -361,9 +362,10 @@ export async function updateClinicalSummary(
   _previousState: PatientActionState,
   formData: FormData,
 ): Promise<PatientActionState> {
-  const context = await requirePatientContext("paciente.ver_dados_sensiveis");
+  const context = await getRequestContext();
   if (
-    !context?.organization ||
+    !context.organization ||
+    !canAccessClinicalSummary(context.permissionCodes) ||
     !z.string().uuid().safeParse(patientId).success ||
     !context.permissionCodes.has("paciente.editar")
   ) {

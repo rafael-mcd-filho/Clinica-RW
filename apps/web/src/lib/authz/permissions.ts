@@ -29,3 +29,17 @@ export function hasPermission(
     permissionCode,
   );
 }
+
+/**
+ * Resumo clínico permanente (alergias, medicações, comorbidades).
+ *
+ * Tem permissão própria (`clinico.ver_resumo_clinico`, migração
+ * 20261105130000). Até a migração ser aplicada vale a permissão antiga de
+ * dados sensíveis; quem decide o que de fato aparece é a RLS do banco.
+ */
+export function canAccessClinicalSummary(codes: ReadonlySet<string>) {
+  return (
+    codes.has("clinico.ver_resumo_clinico") ||
+    codes.has("paciente.ver_dados_sensiveis")
+  );
+}

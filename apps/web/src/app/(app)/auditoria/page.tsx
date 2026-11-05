@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { redirect } from "next/navigation";
 import {
   AuditLogTable,
@@ -41,6 +42,13 @@ type OrganizationRow = {
 
 const pageSize = 25;
 
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function uuidOrEmpty(value: string | undefined) {
+  return value && uuidPattern.test(value) ? value : "";
+}
+
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -64,9 +72,15 @@ function buildHref(params: {
   dateTo: string;
   hideImpersonation: boolean;
   page: number;
+  actor?: string;
+  patient?: string;
+  action?: string;
 }) {
   const search = new URLSearchParams();
   if (params.organizationId) search.set("empresa", params.organizationId);
+  if (params.actor) search.set("usuario", params.actor);
+  if (params.patient) search.set("paciente", params.patient);
+  if (params.action) search.set("acao", params.action);
   if (params.dateFrom) search.set("de", params.dateFrom);
   if (params.dateTo) search.set("ate", params.dateTo);
   if (params.hideImpersonation) search.set("ocultar_impersonacao", "1");
@@ -77,12 +91,24 @@ function buildHref(params: {
 
 export default async function AuditoriaPage({ searchParams }: PageProps) {
   const context = await getRequestContext();
-  if (!context.isSuperAdmin) {
+  // Super admin vê a plataforma toda; o admin da clínica (empresa ou
+  // acessos), só a própria clínica — a RLS de audit_logs já garante isso.
+  const isClinicAdmin =
+    !context.isSuperAdmin &&
+    Boolean(context.organization) &&
+    (context.permissionCodes.has("config.geral") ||
+      context.permissionCodes.has("config.usuarios"));
+  if (!context.isSuperAdmin && !isClinicAdmin) {
     redirect("/dashboard");
   }
 
   const params = (await searchParams) ?? {};
-  const organizationId = firstParam(params.empresa) ?? "";
+  const organizationId = isClinicAdmin
+    ? (context.organization?.id ?? "")
+    : (firstParam(params.empresa) ?? "");
+  const actorFilter = uuidOrEmpty(firstParam(params.usuario));
+  const patientFilter = uuidOrEmpty(firstParam(params.paciente));
+  const actionFilter = (firstParam(params.acao) ?? "").trim().slice(0, 80);
   const dateFrom = normalizeDate(firstParam(params.de));
   const dateTo = normalizeDate(firstParam(params.ate));
   const hideImpersonation = firstParam(params.ocultar_impersonacao) === "1";
@@ -93,17 +119,20 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
   const to = from + pageSize - 1;
 
   const supabase = await createSupabaseServerClient();
-  const { data: allOrganizations } = await supabase
-    .from("organizations")
-    .select("id, name")
-    .order("name")
-    .returns<OrganizationRow[]>();
+  const { data: allOrganizations } = isClinicAdmin
+    ? { data: [] as OrganizationRow[] }
+    : await supabase
+        .from("organizations")
+        .select("id, name")
+        .order("name")
+        .returns<OrganizationRow[]>();
 
-  const validOrganization =
-    organizationId &&
-    (allOrganizations ?? []).some(
-      (organization) => organization.id === organizationId,
-    )
+  const validOrganization = isClinicAdmin
+    ? organizationId
+    : organizationId &&
+        (allOrganizations ?? []).some(
+          (organization) => organization.id === organizationId,
+        )
       ? organizationId
       : "";
 
@@ -128,6 +157,18 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
   if (hideImpersonation) {
     query = query.not("action", "like", "impersonation.%");
   }
+  if (actorFilter) {
+    query = query.eq("actor_user_id", actorFilter);
+  }
+  if (patientFilter) {
+    // Tudo do paciente: alterações no cadastro e leituras do prontuário.
+    query = query.or(
+      `resource_id.eq.${patientFilter},metadata->>patient_id.eq.${patientFilter}`,
+    );
+  }
+  if (actionFilter) {
+    query = query.like("action", `${actionFilter}%`);
+  }
 
   const { data: auditRows, error, count } = await query.returns<AuditRow[]>();
   const total = count ?? 0;
@@ -135,10 +176,13 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
   if (total > 0 && currentPage > totalPages) {
     redirect(
       buildHref({
-        organizationId: validOrganization,
+        organizationId: isClinicAdmin ? "" : validOrganization,
         dateFrom,
         dateTo,
         hideImpersonation,
+        actor: actorFilter,
+        patient: patientFilter,
+        action: actionFilter,
         page: totalPages,
       }),
     );
@@ -179,6 +223,29 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
   const actorNames = new Map(
     (actors ?? []).map((actor) => [actor.id, actor.name]),
   );
+  const [{ data: organizationUsers }, { data: filteredPatient }] =
+    await Promise.all([
+      isClinicAdmin && context.organization
+        ? supabase
+            .from("app_users")
+            .select("id, name")
+            .eq("organization_id", context.organization.id)
+            .order("name")
+            .returns<ActorRow[]>()
+        : Promise.resolve({ data: [] as ActorRow[] }),
+      patientFilter
+        ? supabase
+            .from("patients")
+            .select("full_name, social_name")
+            .eq("id", patientFilter)
+            .maybeSingle<{ full_name: string; social_name: string | null }>()
+        : Promise.resolve({
+            data: null as {
+              full_name: string;
+              social_name: string | null;
+            } | null,
+          }),
+    ]);
   const organizationNames = new Map(
     (pageOrganizations ?? []).map((organization) => [
       organization.id,
@@ -205,48 +272,94 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
 
   const rangeStart = total === 0 ? 0 : from + 1;
   const rangeEnd = Math.min(from + rows.length, total);
-  const previousHref = buildHref({
-    organizationId: validOrganization,
+  const filterParams = {
+    organizationId: isClinicAdmin ? "" : validOrganization,
     dateFrom,
     dateTo,
     hideImpersonation,
+    actor: actorFilter,
+    patient: patientFilter,
+    action: actionFilter,
+  };
+  const previousHref = buildHref({
+    ...filterParams,
     page: Math.max(1, safePage - 1),
   });
-  const nextHref = buildHref({
-    organizationId: validOrganization,
-    dateFrom,
-    dateTo,
-    hideImpersonation,
-    page: safePage + 1,
-  });
+  const nextHref = buildHref({ ...filterParams, page: safePage + 1 });
 
   return (
     <div className="grid gap-6">
       <PageHeader
         icon={History}
         title="Auditoria"
-        description="Ações sensíveis registradas para rastreabilidade."
+        description={
+          isClinicAdmin
+            ? "Quem alterou e quem abriu o quê na clínica."
+            : "Ações sensíveis registradas para rastreabilidade."
+        }
       />
 
       <form
         action="/auditoria"
-        className="grid gap-3 rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)] md:grid-cols-[1fr_18rem_auto_auto] md:items-end"
+        className={cn(
+          "grid gap-3 rounded-lg border border-border bg-card p-4 shadow-[var(--shadow-soft)] md:items-end",
+          isClinicAdmin
+            ? "md:grid-cols-[1fr_1fr_18rem_auto_auto]"
+            : "md:grid-cols-[1fr_18rem_auto_auto]",
+        )}
       >
-        <label className="grid gap-2 text-sm font-medium">
-          Empresa
-          <Select
-            name="empresa"
-            defaultValue={validOrganization}
-            allowEmptyOption
-          >
-            <option value="">Todas as empresas</option>
-            {(allOrganizations ?? []).map((organization) => (
-              <option key={organization.id} value={organization.id}>
-                {organization.name}
-              </option>
-            ))}
-          </Select>
-        </label>
+        {patientFilter ? (
+          <input type="hidden" name="paciente" value={patientFilter} />
+        ) : null}
+        {isClinicAdmin ? (
+          <>
+            <label className="grid gap-2 text-sm font-medium">
+              Usuário
+              <Select
+                name="usuario"
+                defaultValue={actorFilter}
+                allowEmptyOption
+              >
+                <option value="">Todos os usuários</option>
+                {(organizationUsers ?? []).map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Tipo de evento
+              <Select name="acao" defaultValue={actionFilter} allowEmptyOption>
+                <option value="">Todos</option>
+                <option value="clinical_record.viewed">
+                  Acessos ao prontuário
+                </option>
+                <option value="patient">Pacientes</option>
+                <option value="appointments">Agenda</option>
+                <option value="encounter">Atendimentos e anexos</option>
+                <option value="clinical_documents">Documentos clínicos</option>
+                <option value="impersonation">Suporte da plataforma</option>
+              </Select>
+            </label>
+          </>
+        ) : (
+          <label className="grid gap-2 text-sm font-medium">
+            Empresa
+            <Select
+              name="empresa"
+              defaultValue={validOrganization}
+              allowEmptyOption
+            >
+              <option value="">Todas as empresas</option>
+              {(allOrganizations ?? []).map((organization) => (
+                <option key={organization.id} value={organization.id}>
+                  {organization.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+        )}
 
         <label className="grid gap-2 text-sm font-medium">
           Período
@@ -265,6 +378,23 @@ export default async function AuditoriaPage({ searchParams }: PageProps) {
           <Link href="/auditoria">Limpar</Link>
         </Button>
 
+        {patientFilter ? (
+          <p className="text-body-sm text-secondary-foreground md:col-span-full">
+            Mostrando o histórico de{" "}
+            <span className="font-semibold">
+              {filteredPatient?.social_name ||
+                filteredPatient?.full_name ||
+                "um paciente"}
+            </span>
+            : alterações no cadastro e acessos ao prontuário.{" "}
+            <Link
+              href={buildHref({ ...filterParams, patient: "", page: 1 })}
+              className="font-medium text-primary hover:underline"
+            >
+              Ver todos
+            </Link>
+          </p>
+        ) : null}
         <div className="md:col-span-full">
           <Checkbox
             name="ocultar_impersonacao"

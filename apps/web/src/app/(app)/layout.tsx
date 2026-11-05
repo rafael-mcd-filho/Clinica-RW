@@ -354,6 +354,16 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
     });
   }
 
+  // A clínica responde pelos dados: quem gerencia a empresa ou os acessos vê
+  // quem alterou e quem abriu o quê (Raio-X U1).
+  if (canManageCompany || canManageUsers) {
+    configurationChildren.push({
+      href: "/auditoria",
+      label: "Auditoria",
+      icon: "auditoria",
+    });
+  }
+
   if (configurationChildren.length > 0) {
     navItems.push({
       href: "/configuracoes",

@@ -64,6 +64,7 @@ const actionLabel: Record<string, string> = {
   "patient_diagnoses.removed": "Diagnóstico removido da ficha",
   "patient_diagnoses.primary_changed": "Diagnóstico principal alterado",
   "encounter_attachments.uploaded": "Arquivo anexado",
+  "clinical_record.viewed": "Prontuário aberto",
   "encounter_attachments.removed": "Arquivo removido da ficha",
   "patient_tags.delete": "Tag removida do paciente",
   "appointments.status_changed": "Status do agendamento alterado",

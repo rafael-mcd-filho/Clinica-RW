@@ -24,3 +24,16 @@ describe("permissions", () => {
     expect(permissions.has("agenda.ver")).toBe(false);
   });
 });
+
+describe("canAccessClinicalSummary", () => {
+  it("aceita a permissão nova ou a antiga de dados sensíveis", async () => {
+    const { canAccessClinicalSummary } = await import("./permissions");
+    expect(
+      canAccessClinicalSummary(new Set(["clinico.ver_resumo_clinico"])),
+    ).toBe(true);
+    expect(
+      canAccessClinicalSummary(new Set(["paciente.ver_dados_sensiveis"])),
+    ).toBe(true);
+    expect(canAccessClinicalSummary(new Set(["agenda.ver"]))).toBe(false);
+  });
+});

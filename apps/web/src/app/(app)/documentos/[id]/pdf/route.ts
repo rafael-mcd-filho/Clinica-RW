@@ -1,4 +1,10 @@
 import { notFound } from "next/navigation";
+import { after } from "next/server";
+import { getRequestContext } from "@/lib/auth/context";
+import {
+  logClinicalRecordAccess,
+  requestOrigin,
+} from "@/lib/audit/clinical-access";
 import { loadConsentDetails } from "../../consent-actions";
 import type { ConsentDetails } from "@/lib/clinical/consent";
 import { normalizeDocumentTemplateLayout } from "@/lib/clinical/document-templates";
@@ -31,6 +37,27 @@ export async function GET(
     .maybeSingle<DocumentRow>();
 
   if (!document) notFound();
+
+  // Gerar ou abrir o PDF também é leitura de prontuário (Raio-X S6).
+  const [requestContext, origin] = await Promise.all([
+    getRequestContext(),
+    requestOrigin(),
+  ]);
+  if (requestContext.organization || requestContext.isSuperAdmin) {
+    after(() =>
+      logClinicalRecordAccess({
+        organizationId: document.organization_id,
+        actorUserId: requestContext.actor?.id ?? null,
+        effectiveUserId: requestContext.effectiveUser?.id ?? null,
+        impersonationSessionId: requestContext.impersonation?.id ?? null,
+        patientId: document.patient_id,
+        encounterId: document.encounter_id,
+        documentId: document.id,
+        view: "document_pdf",
+        origin,
+      }),
+    );
+  }
 
   const [patientResult, professionalResult, clinicResult, organizationResult] =
     await Promise.all([
