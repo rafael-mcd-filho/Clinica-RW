@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PixKeyType } from "@/lib/finance/pix";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type OrganizationSettingsRow = {
@@ -98,6 +100,9 @@ export type PaymentMethodRow = BaseRow & {
     | "debit_card"
     | "bank_transfer"
     | "other";
+  /** Chave Pix (Raio-X FI4). Ausente enquanto a migração não for aplicada. */
+  pix_key?: string | null;
+  pix_key_type?: PixKeyType | null;
 };
 
 export type PaymentMethodFeeRow = {
@@ -154,6 +159,8 @@ export type CompanySettingsData = {
   procedures: ProcedureRow[];
   procedureCosts: ProcedureCostRow[];
   paymentMethods: PaymentMethodRow[];
+  /** O banco já tem as colunas da chave Pix (migração 20261105180000). */
+  paymentMethodsPixSupported: boolean;
   paymentMethodFees: PaymentMethodFeeRow[];
   healthInsurances: HealthInsuranceRow[];
   priceTables: PriceTableRow[];
@@ -161,6 +168,45 @@ export type CompanySettingsData = {
   businessHours: BusinessHourRow[];
   users: AppUserOption[];
 };
+
+/** Erro de coluna inexistente (migração ainda não aplicada). */
+export function isMissingColumnError(
+  error: { code?: string; message?: string } | null | undefined,
+  column: string,
+) {
+  if (!error) return false;
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    Boolean(error.message?.includes(column))
+  );
+}
+
+/**
+ * Formas de pagamento com a chave Pix quando o banco já tem as colunas; sem
+ * elas, a lista vem como antes e a tela avisa que falta a migração.
+ */
+export async function loadPaymentMethodsWithPix(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const withPix = await supabase
+    .from("payment_methods")
+    .select("id, name, method_type, active, pix_key, pix_key_type")
+    .eq("organization_id", organizationId)
+    .order("name")
+    .returns<PaymentMethodRow[]>();
+  if (!isMissingColumnError(withPix.error, "pix_key")) {
+    return { ...withPix, pixSupported: !withPix.error };
+  }
+  const legacy = await supabase
+    .from("payment_methods")
+    .select("id, name, method_type, active")
+    .eq("organization_id", organizationId)
+    .order("name")
+    .returns<PaymentMethodRow[]>();
+  return { ...legacy, pixSupported: false };
+}
 
 export async function getCompanySettingsData(
   organization: CompanySettingsData["organization"],
@@ -248,12 +294,7 @@ export async function getCompanySettingsData(
       .eq("organization_id", organizationId)
       .order("created_at")
       .returns<ProcedureCostRow[]>(),
-    supabase
-      .from("payment_methods")
-      .select("id, name, method_type, active")
-      .eq("organization_id", organizationId)
-      .order("name")
-      .returns<PaymentMethodRow[]>(),
+    loadPaymentMethodsWithPix(supabase, organizationId),
     supabase
       .from("payment_method_fees")
       .select("id, payment_method_id, name, calculation_type, value, active")
@@ -332,6 +373,7 @@ export async function getCompanySettingsData(
     procedures: proceduresResult.data ?? [],
     procedureCosts: procedureCostsResult.data ?? [],
     paymentMethods: paymentMethodsResult.data ?? [],
+    paymentMethodsPixSupported: paymentMethodsResult.pixSupported,
     paymentMethodFees: paymentMethodFeesResult.data ?? [],
     healthInsurances: healthInsurancesResult.data ?? [],
     priceTables: priceTablesResult.data ?? [],

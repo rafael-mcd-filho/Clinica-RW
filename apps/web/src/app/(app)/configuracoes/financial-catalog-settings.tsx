@@ -45,6 +45,7 @@ import type {
   ProcedureCostRow,
   ProcedureRow,
 } from "@/lib/clinic/base-registrations";
+import { maskPixKey, pixKeyTypeLabels } from "@/lib/finance/pix";
 
 const initialState: CatalogActionState = {};
 
@@ -413,9 +414,12 @@ function ProcedureCostForm({
 export function PaymentMethodsSettings({
   methods,
   fees,
+  pixSupported = false,
 }: {
   methods: PaymentMethodRow[];
   fees: PaymentMethodFeeRow[];
+  /** O banco já tem a chave Pix (migração 20261105180000). */
+  pixSupported?: boolean;
 }) {
   const [editingMethod, setEditingMethod] = useState<PaymentMethodRow | null>(
     null,
@@ -487,6 +491,7 @@ export function PaymentMethodsSettings({
             <PaymentMethodForm
               key={editingMethod?.id ?? "new"}
               editing={editingMethod}
+              pixSupported={pixSupported}
               onClose={() => {
                 setShowMethodForm(false);
                 setEditingMethod(null);
@@ -537,6 +542,11 @@ export function PaymentMethodsSettings({
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {paymentMethodTypeLabel(method.method_type)}
+                      {method.method_type === "pix" &&
+                      method.pix_key &&
+                      method.pix_key_type
+                        ? ` · chave ${pixKeyTypeLabels[method.pix_key_type]} ${maskPixKey(method.pix_key, method.pix_key_type)}`
+                        : null}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
@@ -628,14 +638,19 @@ export function PaymentMethodsSettings({
 
 function PaymentMethodForm({
   editing,
+  pixSupported,
   onClose,
 }: {
   editing: PaymentMethodRow | null;
+  pixSupported: boolean;
   onClose: () => void;
 }) {
   const [state, action, pending] = useActionState(
     savePaymentMethod.bind(null, editing?.id ?? null),
     initialState,
+  );
+  const [methodType, setMethodType] = useState<PaymentMethodRow["method_type"]>(
+    editing?.method_type ?? "pix",
   );
 
   useEffect(() => {
@@ -660,7 +675,10 @@ function PaymentMethodForm({
         <Select
           name="method_type"
           required
-          defaultValue={editing?.method_type ?? "pix"}
+          value={methodType}
+          onValueChange={(value) =>
+            setMethodType(value as PaymentMethodRow["method_type"])
+          }
         >
           <option value="cash">Dinheiro</option>
           <option value="pix">Pix</option>
@@ -670,6 +688,45 @@ function PaymentMethodForm({
           <option value="other">Outro</option>
         </Select>
       </CatalogField>
+      {/* Raio-X FI4: com a chave, o financeiro gera o Pix copia e cola. */}
+      {methodType === "pix" && pixSupported ? (
+        <>
+          <input type="hidden" name="pix_supported" value="1" />
+          <CatalogField label="Chave Pix">
+            <Input
+              name="pix_key"
+              maxLength={77}
+              autoComplete="off"
+              placeholder="CNPJ, e-mail, celular ou chave aleatória"
+              defaultValue={editing?.pix_key ?? ""}
+            />
+          </CatalogField>
+          <CatalogField label="Tipo da chave">
+            <Select
+              name="pix_key_type"
+              defaultValue={editing?.pix_key_type ?? ""}
+            >
+              <option value="">Identificar pelo formato</option>
+              {Object.entries(pixKeyTypeLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </CatalogField>
+          <p className="text-caption text-muted-foreground sm:col-span-2">
+            Com a chave, cada conta a receber ganha o Pix copia e cola e o QR
+            Code com o valor certo. O dinheiro cai direto na conta da chave; a
+            baixa continua sendo registrada aqui.
+          </p>
+        </>
+      ) : null}
+      {methodType === "pix" && !pixSupported ? (
+        <p className="text-caption text-muted-foreground sm:col-span-2">
+          Para cadastrar a chave Pix e gerar o Pix copia e cola nas contas,
+          falta aplicar a migração 20261105180000 no banco.
+        </p>
+      ) : null}
       <FormError message={state.error} className="md:col-span-2" />
       <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
         <Button type="button" size="sm" variant="ghost" onClick={onClose}>

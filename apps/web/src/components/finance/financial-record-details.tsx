@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowSquareOut, CaretRight } from "@phosphor-icons/react";
+import { ArrowSquareOut, CaretRight, QrCode } from "@phosphor-icons/react";
 import {
   loadFinancialDetails,
   type FinancialDetails,
@@ -23,6 +23,7 @@ import {
   updateOpenAccountReceivable,
 } from "@/app/(app)/financeiro/actions";
 import { EditReceivableDialog, ReasonDialog } from "./correction-dialogs";
+import { PixChargeDialog } from "./pix-charge-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -136,6 +137,7 @@ function FinancialRecordDetails({
     router.refresh();
   }, [router]);
   const closeSettlement = useCallback(() => setSettling(false), []);
+  const [chargingPix, setChargingPix] = useState(false);
   const [correction, setCorrection] = useState<
     | null
     | {
@@ -226,6 +228,15 @@ function FinancialRecordDetails({
                 onClick={() => setCorrection({ type: "reopen-payable" })}
               >
                 Estornar pagamento
+              </Button>
+            ) : null}
+            {details?.record.kind === "receivable" &&
+            row &&
+            ["open", "partial"].includes(row.status ?? "") &&
+            Number(row.amount ?? 0) > Number(row.paid_amount ?? 0) ? (
+              <Button variant="secondary" onClick={() => setChargingPix(true)}>
+                <QrCode className="size-4" aria-hidden="true" />
+                Cobrar por Pix
               </Button>
             ) : null}
             {canSettle ? (
@@ -330,6 +341,12 @@ function FinancialRecordDetails({
             setCorrection(null);
             reload();
           }}
+        />
+      ) : null}
+      {chargingPix && details?.record.kind === "receivable" ? (
+        <PixChargeDialog
+          receivableId={details.record.row.id}
+          onClose={() => setChargingPix(false)}
         />
       ) : null}
       {settling && details?.canSettle ? (

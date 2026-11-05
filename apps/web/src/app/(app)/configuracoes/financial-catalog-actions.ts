@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getRequestContext } from "@/lib/auth/context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { normalizePixKey, type PixKeyType } from "@/lib/finance/pix";
+
+const pixKeyTypes = ["cpf", "cnpj", "email", "phone", "random"] as const;
 
 export type CatalogActionState = {
   error?: string;
@@ -212,9 +215,40 @@ export async function savePaymentMethod(
     };
   }
 
+  // Chave Pix (Raio-X FI4): só vai no payload quando o banco tem as colunas
+  // (o formulário manda pix_supported) e some se o tipo deixar de ser Pix.
+  let pixFields: {
+    pix_key: string | null;
+    pix_key_type: PixKeyType | null;
+  } | null = null;
+  if (
+    formData.get("pix_supported") === "1" ||
+    parsed.data.method_type !== "pix"
+  ) {
+    const rawKey = String(formData.get("pix_key") ?? "").trim();
+    const rawType = String(formData.get("pix_key_type") ?? "");
+    const requestedType = (pixKeyTypes as readonly string[]).includes(rawType)
+      ? (rawType as PixKeyType)
+      : null;
+    if (parsed.data.method_type === "pix" && rawKey) {
+      const normalized = normalizePixKey(rawKey, requestedType);
+      if (!normalized) {
+        return {
+          error: requestedType
+            ? "A chave Pix não confere com o tipo escolhido."
+            : "Chave Pix inválida. Use CPF, CNPJ, e-mail, celular com DDD ou a chave aleatória.",
+        };
+      }
+      pixFields = { pix_key: normalized.key, pix_key_type: normalized.type };
+    } else if (formData.get("pix_supported") === "1") {
+      pixFields = { pix_key: null, pix_key_type: null };
+    }
+  }
+
   const supabase = await createSupabaseServerClient();
   const payload = {
     ...parsed.data,
+    ...(pixFields ?? {}),
     organization_id: context.organization.id,
   };
   const query = recordId

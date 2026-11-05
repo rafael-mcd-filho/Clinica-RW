@@ -472,6 +472,7 @@ export function CompanySettings({
                 <PaymentMethodsSettings
                   methods={data.paymentMethods}
                   fees={data.paymentMethodFees}
+                  pixSupported={data.paymentMethodsPixSupported}
                 />
                 <ProcedureCostsSection
                   procedures={data.procedures}
