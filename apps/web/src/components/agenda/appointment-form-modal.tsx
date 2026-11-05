@@ -75,6 +75,7 @@ export function AppointmentFormModal({
   const [scheduleId, setScheduleId] = useState(defaultScheduleId);
   const [procedureId, setProcedureId] = useState(defaultProcedureId);
   const [healthInsuranceId, setHealthInsuranceId] = useState("");
+  const [repeat, setRepeat] = useState("none");
 
   const submitAppointment = useCallback(
     async (previousState: AgendaActionState, formData: FormData) => {
@@ -227,6 +228,39 @@ export function AppointmentFormModal({
           Observações
           <Textarea name="notes" maxLength={1000} />
         </label>
+        {/* Sessões em série (psicologia, fisioterapia, nutrição): a mesma
+            hora toda semana ou a cada duas, sem marcar uma a uma. */}
+        {waitlistEntryId ? null : (
+          <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
+            <label className="grid gap-2 text-body-sm font-medium">
+              Repetir
+              <Select
+                name="repeat"
+                value={repeat}
+                onValueChange={setRepeat}
+                aria-label="Repetir agendamento"
+              >
+                <option value="none">Não repetir</option>
+                <option value="weekly">Toda semana</option>
+                <option value="biweekly">A cada duas semanas</option>
+              </Select>
+            </label>
+            {repeat !== "none" ? (
+              <label className="grid gap-2 text-body-sm font-medium">
+                Total de sessões (com esta)
+                <Input
+                  name="repeat_count"
+                  type="number"
+                  inputMode="numeric"
+                  min={2}
+                  max={24}
+                  defaultValue={4}
+                  required
+                />
+              </label>
+            ) : null}
+          </div>
+        )}
         {canExtra ? (
           <div className="md:col-span-2 grid gap-1">
             <Checkbox

@@ -1285,8 +1285,14 @@ export async function createAppointment(
       price: z.number().min(0).max(9_999_999).nullable(),
       list_price: z.number().min(0).max(9_999_999).nullable(),
       price_note: z.string().trim().max(200).optional(),
+      repeat: z.enum(["none", "weekly", "biweekly"]),
+      repeat_count: z.number().int().min(2).max(24).nullable(),
     })
     .safeParse({
+      repeat: formData.get("repeat") ?? "none",
+      repeat_count: formData.get("repeat_count")
+        ? Number(formData.get("repeat_count"))
+        : null,
       patient_id: formData.get("patient_id"),
       schedule_id: formData.get("schedule_id"),
       procedure_id: formData.get("procedure_id"),
@@ -1340,11 +1346,8 @@ export async function createAppointment(
         "Este horário não existe no fuso da empresa. Escolha outro horário.",
     };
   }
-  const endAt = new Date(
-    startAt.getTime() + procedure.duration_minutes * 60_000,
-  );
-  const { error } = await supabase.from("appointments").insert({
-    organization_id: context.organization.id,
+  const appointmentRow = (start: Date) => ({
+    organization_id: context.organization!.id,
     patient_id: parsed.data.patient_id,
     professional_id: schedule.professional_id,
     unit_id: schedule.unit_id,
@@ -1353,8 +1356,10 @@ export async function createAppointment(
     room_id: parsed.data.room_id || null,
     health_insurance_id: parsed.data.health_insurance_id || null,
     payment_method_id: parsed.data.payment_method_id || null,
-    start_at: startAt.toISOString(),
-    end_at: endAt.toISOString(),
+    start_at: start.toISOString(),
+    end_at: new Date(
+      start.getTime() + procedure.duration_minutes * 60_000,
+    ).toISOString(),
     notes: parsed.data.notes || null,
     is_extra: parsed.data.is_extra,
     // Valor em branco deixa o gatilho resolver pelo preço de tabela; valor
@@ -1365,7 +1370,40 @@ export async function createAppointment(
     price_note: parsed.data.price_note || null,
     created_by_user_id: context.effectiveUser?.id ?? null,
   });
+  const { error } = await supabase
+    .from("appointments")
+    .insert(appointmentRow(startAt));
   if (error) return { error: friendlyError(error.message, error.code) };
+
+  // Série de sessões (Raio-X A6): cada data é criada à parte, para um
+  // horário ocupado não derrubar as outras; as que não couberem são listadas.
+  const repeatCount =
+    parsed.data.repeat === "none" ? 1 : (parsed.data.repeat_count ?? 1);
+  const created: string[] = [];
+  const skipped: string[] = [];
+  if (repeatCount > 1) {
+    const [localDate, localTime] = parsed.data.start_at.split("T");
+    const stepDays = parsed.data.repeat === "weekly" ? 7 : 14;
+    for (let index = 1; index < repeatCount; index += 1) {
+      const date = new Date(`${localDate}T12:00:00Z`);
+      date.setUTCDate(date.getUTCDate() + index * stepDays);
+      const dateKey = date.toISOString().slice(0, 10);
+      const occurrence = parseAgendaLocalDateTime(
+        `${dateKey}T${localTime}`,
+        timeZone,
+      );
+      const label = `${dateKey.slice(8, 10)}/${dateKey.slice(5, 7)}`;
+      if (!occurrence) {
+        skipped.push(label);
+        continue;
+      }
+      const { error: occurrenceError } = await supabase
+        .from("appointments")
+        .insert(appointmentRow(occurrence));
+      if (occurrenceError) skipped.push(label);
+      else created.push(label);
+    }
+  }
 
   // Veio da fila de espera: a vaga saiu, então a entrada se fecha aqui mesmo.
   // Uma falha nesse fechamento não desfaz o agendamento — só deixa o paciente
@@ -1381,6 +1419,14 @@ export async function createAppointment(
   revalidatePath("/agenda");
   revalidatePath("/dashboard");
   revalidatePath("/relatorios/agendamentos");
+  if (repeatCount > 1) {
+    const total = created.length + 1;
+    return {
+      success: skipped.length
+        ? `${total} sessões agendadas. Não couberam (horário ocupado ou bloqueado): ${skipped.join(", ")}.`
+        : `${total} sessões agendadas.`,
+    };
+  }
   return { success: "Agendamento criado." };
 }
 
