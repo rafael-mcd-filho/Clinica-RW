@@ -36,7 +36,30 @@ export async function signInWithPassword(
   });
 
   if (error) {
-    return { error: "Credenciais inválidas ou usuário sem acesso." };
+    // Raio-X PF2: bloqueio por excesso de tentativas com mensagem clara, em
+    // vez do mesmo "credenciais inválidas" que fazia a pessoa insistir.
+    if (
+      error.status === 429 ||
+      error.code === "over_request_rate_limit" ||
+      error.code === "too_many_requests"
+    ) {
+      return {
+        error:
+          'Muitas tentativas seguidas. Por segurança, o acesso foi pausado por alguns minutos. Aguarde e tente de novo, ou use "Esqueci minha senha".',
+      };
+    }
+    if (error.code === "user_banned") {
+      return {
+        error:
+          "Este acesso está bloqueado. Fale com o administrador da clínica.",
+      };
+    }
+    if (error.code === "email_not_confirmed") {
+      return {
+        error: "Confirme seu e-mail pelo link que enviamos antes de entrar.",
+      };
+    }
+    return { error: "E-mail ou senha incorretos." };
   }
 
   // Quem ativou a verificação em duas etapas confirma o código do aplicativo

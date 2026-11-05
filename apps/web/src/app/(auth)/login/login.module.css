@@ -216,9 +216,39 @@
   outline-offset: 3px;
 }
 
+/* Raio-X PF2: "Lembrar meu e-mail" ao lado de "Esqueci minha senha". */
+.optionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-top: 15px;
+}
+
+.remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: var(--secondary-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.remember input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.optionsRow .forgotLink {
+  align-self: center;
+}
+
 .forgotLink {
   align-self: flex-end;
-  margin-top: 15px;
   color: rgb(25 88 184);
   font-size: 13px;
   font-weight: 500;
@@ -488,8 +518,11 @@
     height: 52px;
   }
 
-  .forgotLink {
+  .optionsRow {
     margin-top: 10px;
+  }
+
+  .forgotLink {
     font-size: 14px;
   }
 
