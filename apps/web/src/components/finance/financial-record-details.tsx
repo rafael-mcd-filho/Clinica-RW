@@ -15,6 +15,14 @@ import {
   PayPayoutDialog,
 } from "./settlement-dialogs";
 import { Modal } from "@/components/ui/modal";
+import {
+  cancelAccountPayable,
+  cancelAccountReceivable,
+  reopenAccountPayable,
+  reverseReceivablePayment,
+  updateOpenAccountReceivable,
+} from "@/app/(app)/financeiro/actions";
+import { EditReceivableDialog, ReasonDialog } from "./correction-dialogs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -128,7 +136,28 @@ function FinancialRecordDetails({
     router.refresh();
   }, [router]);
   const closeSettlement = useCallback(() => setSettling(false), []);
+  const [correction, setCorrection] = useState<
+    | null
+    | {
+        type:
+          | "cancel-receivable"
+          | "edit-receivable"
+          | "cancel-payable"
+          | "reopen-payable";
+      }
+    | { type: "reverse-payment"; paymentId: string }
+  >(null);
   const details = result?.data;
+  const row = details?.record.row as
+    | {
+        id: string;
+        status?: string;
+        description?: string;
+        amount?: number | string;
+        due_date?: string;
+        paid_amount?: number | string;
+      }
+    | undefined;
   const canSettle =
     details?.canSettle &&
     (kind === "payout" || details.paymentMethods.length > 0);
@@ -148,6 +177,56 @@ function FinancialRecordDetails({
             </Button>
             {details?.record.kind === "payment" ? (
               <ReceiptLink id={details.record.row.id} />
+            ) : null}
+            {/* Correções (Raio-X FI1): estorno, cancelamento e edição. */}
+            {details?.record.kind === "payment" ? (
+              <Button
+                variant="destructive-ghost"
+                onClick={() =>
+                  setCorrection({
+                    type: "reverse-payment",
+                    paymentId: details.record.row.id,
+                  })
+                }
+              >
+                Estornar recebimento
+              </Button>
+            ) : null}
+            {details?.record.kind === "receivable" &&
+            row &&
+            ["open", "partial"].includes(row.status ?? "") ? (
+              <>
+                {Number(row.paid_amount ?? 0) === 0 ? (
+                  <Button
+                    variant="destructive-ghost"
+                    onClick={() => setCorrection({ type: "cancel-receivable" })}
+                  >
+                    Cancelar conta
+                  </Button>
+                ) : null}
+                <Button
+                  variant="secondary"
+                  onClick={() => setCorrection({ type: "edit-receivable" })}
+                >
+                  Editar
+                </Button>
+              </>
+            ) : null}
+            {details?.record.kind === "payable" && row?.status === "open" ? (
+              <Button
+                variant="destructive-ghost"
+                onClick={() => setCorrection({ type: "cancel-payable" })}
+              >
+                Cancelar conta
+              </Button>
+            ) : null}
+            {details?.record.kind === "payable" && row?.status === "paid" ? (
+              <Button
+                variant="destructive-ghost"
+                onClick={() => setCorrection({ type: "reopen-payable" })}
+              >
+                Estornar pagamento
+              </Button>
             ) : null}
             {canSettle ? (
               <Button onClick={() => setSettling(true)}>
@@ -179,6 +258,80 @@ function FinancialRecordDetails({
           <DetailsContent details={details} />
         ) : null}
       </Modal>
+      {correction?.type === "reverse-payment" ? (
+        <ReasonDialog
+          open
+          title="Estornar este recebimento?"
+          description="O valor sai do caixa e volta a ficar em aberto na conta. O repasse pendente gerado por ele também é desfeito."
+          confirmLabel="Estornar"
+          onClose={() => setCorrection(null)}
+          onSubmit={(reason) =>
+            reverseReceivablePayment(correction.paymentId, reason)
+          }
+          onDone={() => {
+            setCorrection(null);
+            reload();
+          }}
+        />
+      ) : null}
+      {correction?.type === "cancel-receivable" && row ? (
+        <ReasonDialog
+          open
+          title="Cancelar esta conta a receber?"
+          description="A conta sai dos valores em aberto. O motivo fica registrado."
+          confirmLabel="Cancelar conta"
+          onClose={() => setCorrection(null)}
+          onSubmit={(reason) => cancelAccountReceivable(row.id, reason)}
+          onDone={() => {
+            setCorrection(null);
+            reload();
+          }}
+        />
+      ) : null}
+      {correction?.type === "edit-receivable" && row ? (
+        <EditReceivableDialog
+          open
+          initial={{
+            description: row.description ?? "",
+            amount: Number(row.amount ?? 0),
+            due_date: row.due_date ?? details?.today ?? "",
+          }}
+          onClose={() => setCorrection(null)}
+          onSubmit={(input) => updateOpenAccountReceivable(row.id, input)}
+          onDone={() => {
+            setCorrection(null);
+            reload();
+          }}
+        />
+      ) : null}
+      {correction?.type === "cancel-payable" && row ? (
+        <ReasonDialog
+          open
+          title="Cancelar esta conta a pagar?"
+          description="A conta sai dos compromissos em aberto. O motivo fica registrado."
+          confirmLabel="Cancelar conta"
+          onClose={() => setCorrection(null)}
+          onSubmit={(reason) => cancelAccountPayable(row.id, reason)}
+          onDone={() => {
+            setCorrection(null);
+            reload();
+          }}
+        />
+      ) : null}
+      {correction?.type === "reopen-payable" && row ? (
+        <ReasonDialog
+          open
+          title="Estornar o pagamento desta conta?"
+          description="A conta volta a ficar em aberto e sai das saídas do caixa."
+          confirmLabel="Estornar pagamento"
+          onClose={() => setCorrection(null)}
+          onSubmit={(reason) => reopenAccountPayable(row.id, reason)}
+          onDone={() => {
+            setCorrection(null);
+            reload();
+          }}
+        />
+      ) : null}
       {settling && details?.canSettle ? (
         <>
           {details.record.kind === "receivable" ? (

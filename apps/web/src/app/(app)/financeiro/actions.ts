@@ -260,3 +260,290 @@ export async function updateFinancialCategoryDreGroup(
   revalidateFinance();
   return { success: "Classificação do resultado atualizada." };
 }
+
+// ─── Correções (Raio-X FI1) ────────────────────────────────────────────────
+// Lançou errado tinha que ser corrigido direto no banco. Cancelar e editar
+// contas em aberto usam as políticas de RLS que já existem; o estorno de um
+// recebimento usa a função reverse_receivable_payment (migração
+// 20261105160000). Tudo fica na auditoria.
+
+const reasonSchema = z
+  .string()
+  .trim()
+  .min(3, "Informe o motivo.")
+  .max(300, "Use no máximo 300 caracteres.");
+
+async function auditFinance(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  context: NonNullable<Awaited<ReturnType<typeof requireFinancePermission>>>,
+  action: string,
+  resourceType: string,
+  resourceId: string,
+  metadata: Record<string, unknown>,
+) {
+  await supabase.from("audit_logs").insert({
+    organization_id: context.organization!.id,
+    actor_user_id: context.actor?.id ?? null,
+    action,
+    resource_type: resourceType,
+    resource_id: resourceId,
+    metadata: {
+      ...metadata,
+      effective_user_id: context.effectiveUser?.id ?? null,
+    },
+  });
+}
+
+export async function cancelAccountReceivable(
+  id: string,
+  reason: string,
+): Promise<FinanceActionState> {
+  const context = await requireFinancePermission("financeiro.ver_geral");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const parsedReason = reasonSchema.safeParse(reason);
+  if (!parsedReason.success || !z.string().uuid().safeParse(id).success) {
+    return {
+      error: parsedReason.error?.issues[0]?.message ?? "Dados inválidos.",
+    };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data: receivable } = await supabase
+    .from("accounts_receivable")
+    .select("id, status, paid_amount, notes")
+    .eq("organization_id", context.organization.id)
+    .eq("id", id)
+    .maybeSingle<{
+      id: string;
+      status: string;
+      paid_amount: number;
+      notes: string | null;
+    }>();
+  if (!receivable) return { error: "Conta não encontrada." };
+  if (!["open", "partial"].includes(receivable.status)) {
+    return { error: "Só contas em aberto podem ser canceladas." };
+  }
+  if (Number(receivable.paid_amount) > 0) {
+    return {
+      error: "Há recebimentos nesta conta. Estorne-os antes de cancelar.",
+    };
+  }
+  const { error } = await supabase
+    .from("accounts_receivable")
+    .update({
+      status: "cancelled",
+      notes: [receivable.notes, `Cancelada: ${parsedReason.data}`]
+        .filter(Boolean)
+        .join("\n"),
+    })
+    .eq("organization_id", context.organization.id)
+    .eq("id", id);
+  if (error) return { error: friendlyError(error.message) };
+  await auditFinance(
+    supabase,
+    context,
+    "account_receivable.cancelled",
+    "account_receivable",
+    id,
+    {
+      reason: parsedReason.data,
+    },
+  );
+  revalidateFinance();
+  return { success: "Conta cancelada." };
+}
+
+const editSchema = z.object({
+  description: z.string().trim().min(3).max(200),
+  amount: z.number().positive().max(9_999_999),
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+export async function updateOpenAccountReceivable(
+  id: string,
+  input: { description: string; amount: number; due_date: string },
+): Promise<FinanceActionState> {
+  const context = await requireFinancePermission("financeiro.ver_geral");
+  if (!context?.organization) return { error: "Acesso negado." };
+  const parsed = editSchema.safeParse(input);
+  if (!parsed.success || !z.string().uuid().safeParse(id).success) {
+    return { error: "Revise descrição, valor e vencimento." };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data: receivable } = await supabase
+    .from("accounts_receivable")
+    .select("id, status, paid_amount, amount, description, due_date")
+    .eq("organization_id", context.organization.id)
+    .eq("id", id)
+    .maybeSingle<{
+      id: string;
+      status: string;
+      paid_amount: number;
+      amount: number;
+      description: string;
+      due_date: string;
+    }>();
+  if (!receivable) return { error: "Conta não encontrada." };
+  if (!["open", "partial"].includes(receivable.status)) {
+    return { error: "Só contas em aberto podem ser editadas." };
+  }
+  if (parsed.data.amount < Number(receivable.paid_amount)) {
+    return { error: "O valor não pode ficar menor que o já recebido." };
+  }
+  const nextStatus =
+    Number(receivable.paid_amount) >= parsed.data.amount
+      ? "paid"
+      : Number(receivable.paid_amount) > 0
+        ? "partial"
+        : "open";
+  const { error } = await supabase
+    .from("accounts_receivable")
+    .update({ ...parsed.data, status: nextStatus })
+    .eq("organization_id", context.organization.id)
+    .eq("id", id);
+  if (error) return { error: friendlyError(error.message) };
+  await auditFinance(
+    supabase,
+    context,
+    "account_receivable.updated",
+    "account_receivable",
+    id,
+    {
+      before: {
+        description: receivable.description,
+        amount: receivable.amount,
+        due_date: receivable.due_date,
+      },
+      after: parsed.data,
+    },
+  );
+  revalidateFinance();
+  return { success: "Conta atualizada." };
+}
+
+export async function reverseReceivablePayment(
+  paymentId: string,
+  reason: string,
+): Promise<FinanceActionState> {
+  const context = await getRequestContext();
+  if (
+    !context.organization ||
+    !(
+      context.permissionCodes.has("financeiro.ver_geral") ||
+      context.permissionCodes.has("financeiro.receber_pagamento")
+    )
+  ) {
+    return { error: "Acesso negado." };
+  }
+  const parsedReason = reasonSchema.safeParse(reason);
+  if (
+    !parsedReason.success ||
+    !z.string().uuid().safeParse(paymentId).success
+  ) {
+    return {
+      error: parsedReason.error?.issues[0]?.message ?? "Dados inválidos.",
+    };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("reverse_receivable_payment", {
+    p_payment_id: paymentId,
+    p_reason: parsedReason.data,
+    p_impersonation_session_id: context.impersonation?.id ?? null,
+  });
+  if (error) {
+    if (error.code === "PGRST202" || error.message.includes("Could not find")) {
+      return {
+        error:
+          "O estorno precisa da atualização do banco (migração 20261105160000).",
+      };
+    }
+    if (error.message.includes("payout already paid")) {
+      return {
+        error:
+          "O repasse deste recebimento já foi pago ao profissional. Ajuste o repasse antes de estornar.",
+      };
+    }
+    return { error: friendlyError(error.message) };
+  }
+  revalidateFinance();
+  return { success: "Recebimento estornado." };
+}
+
+export async function cancelAccountPayable(
+  id: string,
+  reason: string,
+): Promise<FinanceActionState> {
+  const context = await requireFinancePermission(
+    "financeiro.gerenciar_contas_pagar",
+  );
+  if (!context?.organization) return { error: "Acesso negado." };
+  const parsedReason = reasonSchema.safeParse(reason);
+  if (!parsedReason.success || !z.string().uuid().safeParse(id).success) {
+    return {
+      error: parsedReason.error?.issues[0]?.message ?? "Dados inválidos.",
+    };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("accounts_payable")
+    .update({ status: "cancelled" })
+    .eq("organization_id", context.organization.id)
+    .eq("id", id)
+    .eq("status", "open")
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: friendlyError(error.message) };
+  if (!data)
+    return { error: "Só contas a pagar em aberto podem ser canceladas." };
+  await auditFinance(
+    supabase,
+    context,
+    "account_payable.cancelled",
+    "account_payable",
+    id,
+    {
+      reason: parsedReason.data,
+    },
+  );
+  revalidateFinance();
+  return { success: "Conta a pagar cancelada." };
+}
+
+export async function reopenAccountPayable(
+  id: string,
+  reason: string,
+): Promise<FinanceActionState> {
+  const context = await requireFinancePermission(
+    "financeiro.gerenciar_contas_pagar",
+  );
+  if (!context?.organization) return { error: "Acesso negado." };
+  const parsedReason = reasonSchema.safeParse(reason);
+  if (!parsedReason.success || !z.string().uuid().safeParse(id).success) {
+    return {
+      error: parsedReason.error?.issues[0]?.message ?? "Dados inválidos.",
+    };
+  }
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("accounts_payable")
+    .update({ status: "open", paid_at: null, paid_by_user_id: null })
+    .eq("organization_id", context.organization.id)
+    .eq("id", id)
+    .eq("status", "paid")
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: friendlyError(error.message) };
+  if (!data)
+    return { error: "Só pagamentos registrados podem ser estornados." };
+  await auditFinance(
+    supabase,
+    context,
+    "account_payable.payment_reversed",
+    "account_payable",
+    id,
+    {
+      reason: parsedReason.data,
+    },
+  );
+  revalidateFinance();
+  return { success: "Pagamento estornado; a conta voltou a ficar em aberto." };
+}
