@@ -961,6 +961,74 @@ export async function createScheduleBlock(
   return { success: "Horário bloqueado." };
 }
 
+/**
+ * Raio-X A13: bloqueia o dia inteiro em todas as agendas ativas (feriado),
+ * pulando as que já têm bloqueio cobrindo o dia. Agendamentos existentes
+ * continuam lá: a recepção remarca o que precisar.
+ */
+export async function blockDayForAllSchedules(
+  date: string,
+  reason: string,
+): Promise<AgendaActionState & { count?: number }> {
+  const context = await requireAgendaPermission("agenda.bloquear_horario");
+  if (!context?.organization) return { error: "Acesso negado." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Data inválida." };
+  const cleanReason = reason.replace(/\s+/g, " ").trim().slice(0, 300);
+  const supabase = await createSupabaseServerClient();
+  const timeZone = await getAgendaTimeZone(supabase, context.organization.id);
+  const startAt = parseAgendaLocalDateTime(`${date}T00:00`, timeZone);
+  const endAt = parseAgendaLocalDateTime(`${date}T23:59`, timeZone);
+  if (!startAt || !endAt) return { error: "Data inválida." };
+
+  const [{ data: schedules, error: schedulesError }, { data: existing }] =
+    await Promise.all([
+      supabase
+        .from("schedules")
+        .select("id")
+        .eq("organization_id", context.organization.id)
+        .eq("active", true),
+      supabase
+        .from("schedule_blocks")
+        .select("schedule_id")
+        .eq("organization_id", context.organization.id)
+        .lte("start_at", startAt.toISOString())
+        .gte("end_at", endAt.toISOString()),
+    ]);
+  if (schedulesError) {
+    return {
+      error: friendlyError(schedulesError.message, schedulesError.code),
+    };
+  }
+  const blocked = new Set((existing ?? []).map((item) => item.schedule_id));
+  const rows = (schedules ?? [])
+    .filter((schedule) => !blocked.has(schedule.id))
+    .map((schedule) => ({
+      organization_id: context.organization!.id,
+      schedule_id: schedule.id,
+      start_at: startAt.toISOString(),
+      end_at: endAt.toISOString(),
+      reason: cleanReason || "Feriado",
+      created_by_user_id: context.effectiveUser?.id ?? null,
+    }));
+  if (!rows.length) {
+    return {
+      ok: true,
+      count: 0,
+      success: "As agendas já estavam bloqueadas neste dia.",
+    };
+  }
+  const { error } = await supabase.from("schedule_blocks").insert(rows);
+  if (error) return { error: friendlyError(error.message, error.code) };
+  await revalidateOnlineBookingPortal(supabase, context.organization.id);
+  revalidatePath("/agenda");
+  revalidatePath("/configuracoes", "layout");
+  return {
+    ok: true,
+    count: rows.length,
+    success: `${rows.length} ${rows.length === 1 ? "agenda bloqueada" : "agendas bloqueadas"} no dia.`,
+  };
+}
+
 export async function updateScheduleBlock(
   blockId: string,
   _state: AgendaActionState,

@@ -130,6 +130,8 @@ import {
 } from "@/components/agenda/reminder-indicator";
 import { DayRemindersButton } from "./day-reminders-button";
 import { TelehealthButton } from "./telehealth-button";
+import { HolidayBanner } from "./holiday-banner";
+import { holidayOn } from "@/lib/agenda/holidays";
 import { useCoalescedRouterRefresh } from "@/hooks/use-coalesced-router-refresh";
 
 type Option = { id: string; name: string };
@@ -363,6 +365,7 @@ export function AgendaBoard({
           canViewPatient={canViewPatient}
           canViewClinical={canViewClinical}
           canStartEncounter={canStartEncounter}
+          canBlock={canBlock}
         />
 
         {canCreate || canBlock ? (
@@ -500,6 +503,7 @@ function AgendaCalendarView({
   canViewPatient,
   canViewClinical,
   canStartEncounter,
+  canBlock = false,
 }: {
   data: AgendaData;
   date: string;
@@ -511,6 +515,7 @@ function AgendaCalendarView({
   canViewPatient: boolean;
   canViewClinical: boolean;
   canStartEncounter: boolean;
+  canBlock?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -1177,6 +1182,9 @@ function AgendaCalendarView({
         </div>
       </div>
 
+      {view === "day" ? (
+        <HolidayBanner date={date} today={today} canBlock={canBlock} />
+      ) : null}
       {view === "day" && data.rooms.length ? (
         <div
           role="radiogroup"
@@ -1890,6 +1898,14 @@ function WeekAgenda({
                   <p className="mt-0.5 text-sm font-semibold">
                     {formatDayMonth(dayKey)}
                   </p>
+                  {holidayOn(dayKey) ? (
+                    <p
+                      className="mt-0.5 truncate text-caption font-medium text-warning-foreground"
+                      title={holidayOn(dayKey)?.name}
+                    >
+                      {holidayOn(dayKey)?.name}
+                    </p>
+                  ) : null}
                   <span
                     title={`${count} ${count === 1 ? "agendamento" : "agendamentos"} · ${densityLegend.find((item) => item.level === densityLevel)?.label ?? "Sem agendamentos"}`}
                     className={cn(
@@ -2419,6 +2435,11 @@ function MonthAgenda({
                     <p className="font-semibold tabular-nums">
                       {day.getDate()}
                     </p>
+                    {holidayOn(dayKey) ? (
+                      <p className="text-caption font-medium text-warning-foreground">
+                        {holidayOn(dayKey)?.name}
+                      </p>
+                    ) : null}
                   </div>
                   <Badge variant={appointments.length ? "primary" : "neutral"}>
                     {appointments.length}
