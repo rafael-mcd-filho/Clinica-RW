@@ -3,6 +3,8 @@ import {
   dispatchPendingJobs,
   runScheduledMaintenance,
 } from "@/lib/jobs/worker";
+import { reportError } from "@/lib/observability/alerts";
+import { logger } from "@/lib/observability/logger";
 import { secretsMatch } from "@/lib/security/secrets";
 
 /**
@@ -40,8 +42,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const maintenance = await runScheduledMaintenance();
-  const dispatch = await dispatchPendingJobs();
+  let maintenance: Awaited<ReturnType<typeof runScheduledMaintenance>>;
+  let dispatch: Awaited<ReturnType<typeof dispatchPendingJobs>>;
+  try {
+    maintenance = await runScheduledMaintenance();
+    dispatch = await dispatchPendingJobs();
+  } catch (error) {
+    // Lembrete que não sai é paciente que falta: alguém precisa saber.
+    logger.error("jobs.dispatch_crashed", {}, { report: false });
+    await reportError("jobs.dispatch_crashed", {}, error);
+    return NextResponse.json({ error: "dispatch failed" }, { status: 500 });
+  }
+
+  if (dispatch.failed > 0 || dispatch.errors.length > 0) {
+    const details = {
+      failed: dispatch.failed,
+      sent: dispatch.sent,
+      skipped: dispatch.skipped,
+      errors: dispatch.errors.slice(0, 3).join(" | "),
+    };
+    logger.error("jobs.dispatch_failures", details, { report: false });
+    await reportError("jobs.dispatch_failures", details);
+  }
 
   return NextResponse.json({
     maintenance,

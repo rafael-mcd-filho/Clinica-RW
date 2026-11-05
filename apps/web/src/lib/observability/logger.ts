@@ -31,7 +31,20 @@ export const logger = {
   warn(event: string, context?: LogContext) {
     writeLog("warn", event, context);
   },
-  error(event: string, context?: LogContext) {
+  /**
+   * Erro também avisa o monitoramento (Raio-X EN5), sem dado pessoal. Quem
+   * precisa garantir o envio antes de responder usa `report: false` aqui e
+   * chama `await reportError(...)` (src/lib/observability/alerts.ts).
+   */
+  error(
+    event: string,
+    context?: LogContext,
+    options: { report?: boolean } = {},
+  ) {
     writeLog("error", event, context);
+    if (options.report === false || typeof window !== "undefined") return;
+    void import("./alerts")
+      .then(({ reportError }) => reportError(event, context))
+      .catch(() => undefined);
   },
 };

@@ -13,6 +13,8 @@ import { getEvolutionConfigByInstance } from "@/lib/whatsapp/credentials";
 import { getMediaMessageBase64 } from "@/lib/whatsapp/evolution-client";
 import { parseEvolutionUpsertMessage } from "@/lib/whatsapp/webhook-message";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { reportError } from "@/lib/observability/alerts";
+import { logger } from "@/lib/observability/logger";
 
 /**
  * Webhook da Evolution API. Recebe eventos de mensagem/conexão da instância e
@@ -36,9 +38,15 @@ export async function POST(request: NextRequest) {
     ? ((await getInstanceWebhookSecret(payload.instance)) ?? getWebhookSecret())
     : getWebhookSecret();
   if (!secret) {
-    console.error(
-      "[whatsapp webhook] recusado: nenhum segredo configurado para a instância nem WHATSAPP_WEBHOOK_SECRET.",
+    // Mensagem de paciente sendo recusada: aviso para configurar o segredo.
+    logger.error(
+      "whatsapp.webhook_secret_missing",
+      { instance: payload.instance ?? null },
+      { report: false },
     );
+    await reportError("whatsapp.webhook_secret_missing", {
+      instance: payload.instance ?? null,
+    });
     return NextResponse.json(
       { error: "webhook secret not configured" },
       { status: 503 },
@@ -56,7 +64,12 @@ export async function POST(request: NextRequest) {
     await handleEvent(payload);
   } catch (error) {
     // Loga mas responde 200 para não entrar em loop de reentrega em erro nosso.
-    console.error("[whatsapp webhook]", error);
+    const details = {
+      instance: payload.instance ?? null,
+      event: payload.event ?? null,
+    };
+    logger.error("whatsapp.webhook_failed", details, { report: false });
+    await reportError("whatsapp.webhook_failed", details, error);
   }
 
   return NextResponse.json({ received: true });
@@ -146,7 +159,9 @@ async function persistInboundMedia(
       });
     return error ? null : path;
   } catch (error) {
-    console.error("[whatsapp media]", error);
+    logger.error("whatsapp.media_failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
