@@ -176,7 +176,6 @@ export default async function EncounterPage({
     diagnosesResult,
     addendaResult,
     documentTemplatesResult,
-    documentTemplateVersionsResult,
     documentsResult,
     clinicResult,
     organizationSettingsResult,
@@ -234,22 +233,29 @@ export default async function EncounterPage({
           author_user_id: string;
         }>
       >(),
+    // Só a última versão de cada modelo (Raio-X E12): antes vinham todas as
+    // versões de todos os modelos, com o texto inteiro, a cada abertura.
     supabase
       .from("clinical_document_templates")
-      .select("id, document_type, name")
+      .select(
+        "id, document_type, name, versions:clinical_document_template_versions(id, template_id, version_number, title_template, body_template, layout_schema)",
+      )
       .eq("organization_id", encounter.organization_id)
       .eq("active", true)
       .order("document_type")
       .order("name")
-      .returns<DocumentTemplateRow[]>(),
-    supabase
-      .from("clinical_document_template_versions")
-      .select(
-        "id, template_id, version_number, title_template, body_template, layout_schema",
-      )
-      .eq("organization_id", encounter.organization_id)
-      .order("version_number", { ascending: false })
-      .returns<DocumentTemplateVersionRow[]>(),
+      .order("version_number", {
+        referencedTable: "versions",
+        ascending: false,
+      })
+      .limit(1, { referencedTable: "versions" })
+      .returns<
+        Array<
+          DocumentTemplateRow & {
+            versions: DocumentTemplateVersionRow[] | null;
+          }
+        >
+      >(),
     supabase
       .from("clinical_documents")
       .select(
@@ -391,16 +397,16 @@ export default async function EncounterPage({
         }),
   ]);
 
-  const latestDocumentVersion = new Map<string, DocumentTemplateVersionRow>();
-  for (const version of documentTemplateVersionsResult.data ?? []) {
-    if (!latestDocumentVersion.has(version.template_id)) {
-      latestDocumentVersion.set(version.template_id, version);
-    }
-  }
   const documentTemplates: ClinicalDocumentTemplate[] = (
     documentTemplatesResult.data ?? []
-  ).flatMap((template) => {
-    const version = latestDocumentVersion.get(template.id);
+  ).flatMap(({ versions, ...template }) => {
+    // O banco já devolve a mais recente primeiro; o reduce garante a ordem
+    // mesmo se a ordenação aninhada não vier.
+    const version = (versions ?? []).reduce<DocumentTemplateVersionRow | null>(
+      (latest, item) =>
+        !latest || item.version_number > latest.version_number ? item : latest,
+      null,
+    );
     return version
       ? [
           {

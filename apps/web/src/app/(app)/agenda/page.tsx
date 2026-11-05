@@ -122,6 +122,7 @@ export default async function AgendaPage({
             referencedTable: "clinical_template_versions",
             ascending: false,
           })
+          .limit(1, { referencedTable: "clinical_template_versions" })
       : Promise.resolve({ data: [] }),
   ]);
 

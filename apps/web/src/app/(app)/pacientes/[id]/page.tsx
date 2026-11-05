@@ -614,6 +614,7 @@ export default async function PatientDetailsPage({
             referencedTable: "clinical_template_versions",
             ascending: false,
           })
+          .limit(1, { referencedTable: "clinical_template_versions" })
           .returns<ClinicalTemplateRow[]>()
       : Promise.resolve({ data: [] as ClinicalTemplateRow[] }),
     insuranceId

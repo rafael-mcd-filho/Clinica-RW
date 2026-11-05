@@ -26,7 +26,6 @@ import {
 import {
   CompanyDashboardCharts,
   type CompanyDashboardChartsData,
-  type DashboardSlice,
 } from "./company-dashboard-charts";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -45,9 +44,6 @@ import {
 } from "@/lib/dashboard/aggregates";
 import {
   dashboardComparisonLabel,
-  buildDashboardPeriodPoints,
-  containsInstant,
-  dashboardDateField,
   defaultDashboardTimeZone,
   formatDashboardRange,
   isValidTimeZone,
@@ -89,35 +85,8 @@ type DashboardPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type PatientMetric = {
-  id: string;
-  full_name: string;
-  social_name: string | null;
-  birth_date: string | null;
-  sex_at_birth: string | null;
-  status: string;
-  deleted_at: string | null;
-  created_at: string;
-};
-
-type AppointmentMetric = {
-  id: string;
-  patient_id: string;
-  procedure_id: string;
-  health_insurance_id: string | null;
-  status: string;
-  start_at: string;
-  end_at: string;
-  created_at: string;
-};
-
 type OrganizationSettingsMetric = {
   timezone: string;
-};
-
-type NamedMetric = {
-  id: string;
-  name: string;
 };
 
 type SupabaseServerClient = Awaited<
@@ -130,13 +99,10 @@ type DashboardRowsResult<T> = {
   count?: number | null;
 };
 
-const dashboardQueryPageSize = 500;
 // Fila de espera e solicitações online chegam recortadas: o painel mostra as
 // primeiras e o total vem por `count`, para não montar a página inteira em
 // cima de uma lista que pode ter centenas de linhas.
 const operationsListLimit = 50;
-const dashboardAppointmentColumns =
-  "id, patient_id, procedure_id, health_insurance_id, status, start_at, end_at, created_at";
 // Agendamento sem convênio não se chama "Particular" no painel: clínicas
 // cadastram um convênio com esse nome, e as duas linhas saíam iguais.
 const noInsuranceLabel = "Sem convênio";
@@ -451,237 +417,9 @@ export default async function DashboardPage({
   );
 }
 
-function buildCompanyDashboardCharts({
-  view,
-  patientDataAvailable,
-  patients,
-  appointments,
-  procedures,
-  insurances,
-  period,
-  timeZone,
-  now,
-}: {
-  view: DashboardView;
-  patientDataAvailable: boolean;
-  patients: PatientMetric[];
-  appointments: AppointmentMetric[];
-  procedures: Map<string, string>;
-  insurances: Map<string, string>;
-  period: DashboardRange;
-  timeZone: string;
-  now: Date;
-}): CompanyDashboardChartsData {
-  const nonCancelledAppointments = appointments.filter(
-    (appointment) => appointment.status !== "cancelled",
-  );
-  const mixAppointments =
-    view === "commercial" ? appointments : nonCancelledAppointments;
-  const patientById = new Map(patients.map((patient) => [patient.id, patient]));
-  const newAppointmentCount = mixAppointments.filter((appointment) => {
-    const patient = patientById.get(appointment.patient_id);
-    return patient ? containsInstant(period, patient.created_at) : false;
-  }).length;
-  const recurringAppointmentCount = mixAppointments.filter((appointment) => {
-    const patient = patientById.get(appointment.patient_id);
-    return patient ? !containsInstant(period, patient.created_at) : false;
-  }).length;
-  const cohortPatientIds = new Set(
-    mixAppointments.map((appointment) => appointment.patient_id),
-  );
-  const cohortPatients = patients.filter((patient) =>
-    cohortPatientIds.has(patient.id),
-  );
-  const procedureCounts = countBy(
-    mixAppointments,
-    (appointment) =>
-      procedures.get(appointment.procedure_id) ?? "Sem procedimento",
-  );
-  const insuranceAppointments = mixAppointments.filter(
-    (appointment) => appointment.health_insurance_id,
-  );
-  const insuranceNameCounts = countBy(
-    insuranceAppointments,
-    (appointment) =>
-      insurances.get(appointment.health_insurance_id ?? "") ?? "Convenio",
-  );
-  const noShows = appointments.filter(
-    (appointment) => appointment.status === "no_show",
-  ).length;
-  const cancelledAppointments = appointments.filter(
-    (appointment) => appointment.status === "cancelled",
-  );
-  const completedForAttendanceRate = appointments.filter((appointment) =>
-    ["attended", "no_show"].includes(appointment.status),
-  ).length;
-
-  const timingAppointments =
-    view === "commercial" ? appointments : nonCancelledAppointments;
-  const timingValues = timingAppointments
-    .map((appointment) => appointmentTimingValue(appointment, view))
-    .filter((value): value is number => value != null && value >= 0);
-  const particularTiming = timingAppointments
-    .filter((appointment) => !appointment.health_insurance_id)
-    .map((appointment) => appointmentTimingValue(appointment, view))
-    .filter((value): value is number => value != null && value >= 0);
-  const insuranceTiming = timingAppointments
-    .filter((appointment) => appointment.health_insurance_id)
-    .map((appointment) => appointmentTimingValue(appointment, view))
-    .filter((value): value is number => value != null && value >= 0);
-  const referenceDateKey = formatInTimeZone(now, timeZone, "yyyy-MM-dd");
-  const dateField = dashboardDateField(view);
-
-  return {
-    view,
-    patientDataAvailable,
-    patients: {
-      newCount: newAppointmentCount,
-      recurringCount: recurringAppointmentCount,
-      maleCount: cohortPatients.filter(
-        (patient) => patient.sex_at_birth === "male",
-      ).length,
-      femaleCount: cohortPatients.filter(
-        (patient) => patient.sex_at_birth === "female",
-      ).length,
-    },
-    procedures: {
-      total: mixAppointments.length,
-      slices: toSlices(procedureCounts, chartSeries),
-    },
-    insurances: {
-      total: mixAppointments.length,
-      breakdown: [
-        {
-          label: noInsuranceLabel,
-          value: percent(
-            mixAppointments.length - insuranceAppointments.length,
-            Math.max(1, mixAppointments.length),
-          ),
-          color: noInsuranceColor,
-        },
-        ...toPercentageSlices(
-          insuranceNameCounts,
-          Math.max(1, mixAppointments.length),
-          insuranceSeries,
-        ),
-      ],
-    },
-    timing: {
-      averageValue: average(timingValues),
-      byType: [
-        {
-          label: noInsuranceLabel,
-          value: roundOrNull(average(particularTiming)),
-        },
-        {
-          label: "Convênio",
-          value: roundOrNull(average(insuranceTiming)),
-        },
-      ],
-    },
-    cancellations: {
-      noShows,
-      cancellations: cancelledAppointments.length,
-      noShowRate: completedForAttendanceRate
-        ? percent(noShows, completedForAttendanceRate)
-        : null,
-      cancellationRate: appointments.length
-        ? percent(cancelledAppointments.length, appointments.length)
-        : null,
-    },
-    periodAttendances: buildDashboardPeriodPoints(
-      period,
-      appointments.map((appointment) => appointment[dateField]),
-      timeZone,
-    ),
-    ageDistribution: buildAgeDistribution(cohortPatients, referenceDateKey),
-    birthdays: buildBirthdays(patients, referenceDateKey),
-    commercialSummary: {
-      future: appointments.filter(
-        (appointment) =>
-          !["attended", "cancelled", "no_show"].includes(appointment.status) &&
-          new Date(appointment.start_at) > now,
-      ).length,
-      attended: appointments.filter(
-        (appointment) => appointment.status === "attended",
-      ).length,
-      open: appointments.filter(
-        (appointment) =>
-          !["attended", "cancelled", "no_show"].includes(appointment.status) &&
-          new Date(appointment.start_at) <= now,
-      ).length,
-      losses: noShows + cancelledAppointments.length,
-    },
-  };
-}
-
-function countBy<T>(items: T[], resolveLabel: (item: T) => string) {
-  const counts = new Map<string, number>();
-
-  for (const item of items) {
-    const label = resolveLabel(item);
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-
-  return counts;
-}
-
-function toSlices(
-  counts: Map<string, number>,
-  colors: string[],
-): DashboardSlice[] {
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([label, value], index) => ({
-      label,
-      value,
-      color: colors[index % colors.length] ?? categoricalColors.blue,
-    }));
-}
-
-function toPercentageSlices(
-  counts: Map<string, number>,
-  total: number,
-  colors: string[],
-): DashboardSlice[] {
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([label, value], index) => ({
-      label,
-      value: percent(value, total),
-      color: colors[index % colors.length] ?? categoricalColors.blue,
-    }));
-}
-
 function percent(value: number, total: number) {
   if (!total) return 0;
   return Math.round((value / total) * 100);
-}
-
-function appointmentTimingValue(
-  appointment: AppointmentMetric,
-  view: DashboardView,
-) {
-  const start = new Date(appointment.start_at).getTime();
-  const reference = new Date(
-    view === "commercial" ? appointment.created_at : appointment.end_at,
-  ).getTime();
-
-  if (!Number.isFinite(start) || !Number.isFinite(reference)) {
-    return null;
-  }
-
-  const difference =
-    view === "commercial" ? start - reference : reference - start;
-  if (difference < 0) return null;
-  return difference / (view === "commercial" ? 86_400_000 : 60_000);
-}
-
-function average(values: number[]) {
-  if (!values.length) return null;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 // Sem amostra, o tipo fica sem valor em vez de virar zero: "0 dias" de
@@ -694,54 +432,6 @@ function formatAverageDays(value: number | null) {
   if (value == null || !Number.isFinite(value)) return "—";
   const rounded = Math.round(value);
   return `${rounded} ${rounded === 1 ? "dia" : "dias"}`;
-}
-
-function buildAgeDistribution(patients: PatientMetric[], todayKey: string) {
-  const counts = new Map<string, number>();
-
-  for (const patient of patients) {
-    const age = calculateAge(patient.birth_date, todayKey);
-    if (age == null) continue;
-    counts.set(String(age), (counts.get(String(age)) ?? 0) + 1);
-  }
-
-  return [...counts.entries()]
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([label, value]) => ({ label, value }));
-}
-
-function buildBirthdays(patients: PatientMetric[], todayKey: string) {
-  const [, month, day] = todayKey.split("-").map(Number);
-
-  return patients
-    .filter((patient) => {
-      if (patient.deleted_at || patient.status !== "active") return false;
-      if (!patient.birth_date) return false;
-      const [, birthMonth, birthDay] = patient.birth_date
-        .split("-")
-        .map(Number);
-      return birthMonth === month && birthDay === day;
-    })
-    .map((patient) => ({
-      id: patient.id,
-      name: patient.social_name || patient.full_name,
-      age: calculateAge(patient.birth_date, todayKey),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-}
-
-function calculateAge(birthDate: string | null, todayKey: string) {
-  if (!birthDate) return null;
-  const [year, month, day] = birthDate.split("-").map(Number);
-  const [todayYear, todayMonth, todayDay] = todayKey.split("-").map(Number);
-  if (!year || !month || !day) return null;
-
-  let age = todayYear - year;
-  const hadBirthday =
-    todayMonth > month || (todayMonth === month && todayDay >= day);
-  if (!hadBirthday) age -= 1;
-
-  return age;
 }
 
 async function fetchDashboardAggregates(
@@ -865,61 +555,6 @@ function formatAggregateDate(value: string) {
   return `${day}/${month}`;
 }
 
-async function fetchAllDashboardPatients(
-  supabase: SupabaseServerClient,
-  organizationId: string,
-): Promise<DashboardRowsResult<PatientMetric>> {
-  const data: PatientMetric[] = [];
-
-  for (let offset = 0; ; offset += dashboardQueryPageSize) {
-    const result = await supabase
-      .from("patients")
-      .select(
-        "id, full_name, social_name, birth_date, sex_at_birth, status, deleted_at, created_at",
-      )
-      .eq("organization_id", organizationId)
-      .order("id")
-      .range(offset, offset + dashboardQueryPageSize - 1)
-      .returns<PatientMetric[]>();
-
-    if (result.error) return { data, error: result.error };
-    const page = result.data ?? [];
-    data.push(...page);
-    if (page.length < dashboardQueryPageSize) break;
-  }
-
-  return { data, error: null };
-}
-
-async function fetchAllDashboardAppointments(
-  supabase: SupabaseServerClient,
-  organizationId: string,
-  dateField: "start_at" | "created_at",
-  range: DashboardRange,
-): Promise<DashboardRowsResult<AppointmentMetric>> {
-  const data: AppointmentMetric[] = [];
-
-  for (let offset = 0; ; offset += dashboardQueryPageSize) {
-    const result = await supabase
-      .from("appointments")
-      .select(dashboardAppointmentColumns)
-      .eq("organization_id", organizationId)
-      .gte(dateField, range.startInclusive.toISOString())
-      .lt(dateField, range.endExclusive.toISOString())
-      .order(dateField)
-      .order("id")
-      .range(offset, offset + dashboardQueryPageSize - 1)
-      .returns<AppointmentMetric[]>();
-
-    if (result.error) return { data, error: result.error };
-    const page = result.data ?? [];
-    data.push(...page);
-    if (page.length < dashboardQueryPageSize) break;
-  }
-
-  return { data, error: null };
-}
-
 function emptyDashboardRows<T>(): DashboardRowsResult<T> {
   return { data: [], error: null, count: 0 };
 }
@@ -973,7 +608,6 @@ async function CompanyDashboard({
     now,
     timeZone,
   });
-  const dateField = dashboardDateField(selection.view);
   const [dashboardAggregate, onlineRequestsResult, waitlistResult] =
     organization
       ? await Promise.all([
@@ -1022,122 +656,41 @@ async function CompanyDashboard({
           emptyDashboardRows<DashboardWaitlistEntry>(),
         ];
 
-  let patientsResult: DashboardRowsResult<PatientMetric> = emptyDashboardRows();
-  let currentAppointmentsResult: DashboardRowsResult<AppointmentMetric> =
-    emptyDashboardRows();
-  let comparisonAppointmentsResult: DashboardRowsResult<AppointmentMetric> =
-    emptyDashboardRows();
-  let proceduresResult: DashboardRowsResult<NamedMetric> = emptyDashboardRows();
-  let insurancesResult: DashboardRowsResult<NamedMetric> = emptyDashboardRows();
-
-  if (organization && canViewAgenda && !dashboardAggregate) {
-    [
-      patientsResult,
-      currentAppointmentsResult,
-      comparisonAppointmentsResult,
-      proceduresResult,
-      insurancesResult,
-    ] = await Promise.all([
-      canViewPatients
-        ? fetchAllDashboardPatients(supabase, organization.id)
-        : Promise.resolve(emptyDashboardRows<PatientMetric>()),
-      fetchAllDashboardAppointments(
-        supabase,
-        organization.id,
-        dateField,
-        dashboardPeriod.current,
-      ),
-      fetchAllDashboardAppointments(
-        supabase,
-        organization.id,
-        dateField,
-        dashboardPeriod.comparison,
-      ),
-      supabase
-        .from("procedures")
-        .select("id, name")
-        .eq("organization_id", organization.id)
-        .returns<NamedMetric[]>(),
-      supabase
-        .from("health_insurances")
-        .select("id, name")
-        .eq("organization_id", organization.id)
-        .returns<NamedMetric[]>(),
-    ]);
-  }
-
+  // Raio-X D4: sem o agregado do banco o painel mostra o aviso de erro, em
+  // vez de baixar a base inteira de pacientes e agendamentos para somar aqui.
   const dashboardDataError = Boolean(
-    settingsResult.error ||
-    (!dashboardAggregate &&
-      (currentAppointmentsResult.error ||
-        comparisonAppointmentsResult.error ||
-        proceduresResult.error ||
-        insurancesResult.error)),
+    settingsResult.error || (canViewAgenda && !dashboardAggregate),
   );
-  const patientDataAvailable = dashboardAggregate
-    ? dashboardAggregate.patient_data_available
-    : canViewPatients && !Boolean(patientsResult.error);
+  const patientDataAvailable =
+    dashboardAggregate?.patient_data_available ?? false;
   const operationsDataError = Boolean(
     onlineRequestsResult.error || waitlistResult.error,
-  );
-  const patients = patientsResult.data ?? [];
-  const currentAppointments = currentAppointmentsResult.data ?? [];
-  const comparisonAppointments = comparisonAppointmentsResult.data ?? [];
-  const procedures = new Map(
-    (proceduresResult.data ?? []).map((item) => [item.id, item.name]),
-  );
-  const insurances = new Map(
-    (insurancesResult.data ?? []).map((item) => [item.id, item.name]),
   );
   const dashboardCharts = dashboardAggregate
     ? buildCompanyDashboardChartsFromAggregate(
         dashboardAggregate,
         selection.view,
       )
-    : buildCompanyDashboardCharts({
-        view: selection.view,
-        patientDataAvailable,
-        patients,
-        appointments: currentAppointments,
-        procedures,
-        insurances,
-        period: dashboardPeriod.current,
-        timeZone,
-        now,
-      });
+    : null;
   // O último dia do período, quando é hoje, ainda está em andamento.
   const todayLabel = formatInTimeZone(now, timeZone, "dd/MM");
   if (
+    dashboardCharts &&
     dashboardPeriod.current.localTo ===
-    formatInTimeZone(now, timeZone, "yyyy-MM-dd")
+      formatInTimeZone(now, timeZone, "yyyy-MM-dd")
   ) {
     dashboardCharts.partialLabel = todayLabel;
   }
   const currentStats = dashboardAggregate
     ? appointmentStatsFromAggregate(dashboardAggregate.current_stats)
-    : buildAppointmentStats(currentAppointments);
+    : buildAppointmentStats([]);
   const comparisonStats = dashboardAggregate
     ? appointmentStatsFromAggregate(dashboardAggregate.comparison_stats)
-    : buildAppointmentStats(comparisonAppointments);
-  const currentNewPatients = dashboardAggregate
-    ? dashboardAggregate.current_new_patients
-    : patients.filter((patient) =>
-        containsInstant(dashboardPeriod.current, patient.created_at),
-      ).length;
-  const comparisonNewPatients = dashboardAggregate
-    ? dashboardAggregate.comparison_new_patients
-    : patients.filter((patient) =>
-        containsInstant(dashboardPeriod.comparison, patient.created_at),
-      ).length;
-  const currentAverageLeadDays = dashboardAggregate
-    ? dashboardAggregate.average_lead_days
-    : average(
-        currentAppointments
-          .map((appointment) =>
-            appointmentTimingValue(appointment, "commercial"),
-          )
-          .filter((value): value is number => value != null && value >= 0),
-      );
+    : buildAppointmentStats([]);
+  const currentNewPatients = dashboardAggregate?.current_new_patients ?? 0;
+  const comparisonNewPatients =
+    dashboardAggregate?.comparison_new_patients ?? 0;
+  const currentAverageLeadDays = dashboardAggregate?.average_lead_days ?? null;
 
   const cards: Array<{
     label: string;
@@ -1331,7 +884,9 @@ async function CompanyDashboard({
               ))}
             </section>
 
-            <CompanyDashboardCharts data={dashboardCharts} />
+            {dashboardCharts ? (
+              <CompanyDashboardCharts data={dashboardCharts} />
+            ) : null}
 
             {selection.view === "operational" ? (
               operationsDataError ? (

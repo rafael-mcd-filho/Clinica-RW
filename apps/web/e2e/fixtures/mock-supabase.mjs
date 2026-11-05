@@ -2190,8 +2190,137 @@ function monthKey(d) {
 const RPC = {
   current_user_permission_codes: () => PERMS,
   user_permission_codes: () => PERMS,
-  dashboard_company_aggregates: () => {
-    throw new Error("mock: usar fallback");
+  // Mesmo formato do RPC real (src/lib/dashboard/aggregates.ts), calculado
+  // sobre os dados fictícios.
+  dashboard_company_aggregates: (p) => {
+    const inRange = (iso, start, end) => iso >= start && iso < end;
+    const field = p.p_view === "commercial" ? "created_at" : "start_at";
+    const current = db.appointments.filter((a) =>
+      inRange(a[field], p.p_current_start, p.p_current_end),
+    );
+    const comparison = db.appointments.filter((a) =>
+      inRange(a[field], p.p_comparison_start, p.p_comparison_end),
+    );
+    const rate = (part, total) =>
+      total ? Math.round((part * 100) / total) : null;
+    const stats = (list) => {
+      const past = list.filter(
+        (a) => a.start_at < p.p_now && a.status !== "cancelled",
+      ).length;
+      return {
+        total: list.length,
+        valid: list.filter((a) => a.status !== "cancelled").length,
+        attended: list.filter((a) => a.status === "attended").length,
+        unique_patients: new Set(list.map((a) => a.patient_id)).size,
+        no_show_rate: rate(
+          list.filter((a) => a.status === "no_show").length,
+          past,
+        ),
+        cancellation_rate: rate(
+          list.filter((a) => a.status === "cancelled").length,
+          list.length,
+        ),
+      };
+    };
+    const newPatients = (start, end) =>
+      db.patients.filter((pt) => inRange(pt.created_at, start, end)).length;
+    const countSlices = (list, label) => {
+      const counts = {};
+      for (const item of list) {
+        const key = label(item);
+        counts[key] = (counts[key] || 0) + 1;
+      }
+      return Object.entries(counts)
+        .map(([name, value]) => ({ label: name, value }))
+        .sort((a, b) => b.value - a.value);
+    };
+    const todayKey = localDateKey(p.p_now);
+    const ageOf = (birth) => {
+      if (!birth) return null;
+      const [y, m, d] = birth.split("-").map(Number);
+      const [ty, tm, td] = todayKey.split("-").map(Number);
+      return ty - y - (tm < m || (tm === m && td < d) ? 1 : 0);
+    };
+    const patientIds = new Set(current.map((a) => a.patient_id));
+    const periodPatients = db.patients.filter((pt) => patientIds.has(pt.id));
+    const ages = countSlices(
+      periodPatients.filter((pt) => pt.birth_date),
+      (pt) => String(ageOf(pt.birth_date)),
+    ).map((item) => ({ age: Number(item.label), value: item.value }));
+    const withInsurance = current.filter((a) => a.health_insurance_id);
+    const currentStats = stats(current);
+    const noShows = current.filter((a) => a.status === "no_show").length;
+    const cancellations = current.filter(
+      (a) => a.status === "cancelled",
+    ).length;
+    return {
+      patient_data_available: Boolean(p.p_include_patient_data),
+      current_stats: currentStats,
+      comparison_stats: stats(comparison),
+      current_new_patients: newPatients(p.p_current_start, p.p_current_end),
+      comparison_new_patients: newPatients(
+        p.p_comparison_start,
+        p.p_comparison_end,
+      ),
+      average_lead_days: 4.2,
+      charts: {
+        patients: {
+          new_count: newPatients(p.p_current_start, p.p_current_end),
+          recurring_count: periodPatients.length,
+          male_count: periodPatients.filter((pt) => pt.sex_at_birth === "male")
+            .length,
+          female_count: periodPatients.filter(
+            (pt) => pt.sex_at_birth === "female",
+          ).length,
+        },
+        procedures: countSlices(
+          current,
+          (a) =>
+            db.procedures.find((x) => x.id === a.procedure_id)?.name ?? "Outro",
+        ),
+        insurance_status: {
+          with_insurance: withInsurance.length,
+          without_insurance: current.length - withInsurance.length,
+        },
+        insurance_breakdown: countSlices(
+          withInsurance,
+          (a) =>
+            db.health_insurances.find((x) => x.id === a.health_insurance_id)
+              ?.name ?? "Convênio",
+        ),
+        timing: {
+          average_value: 4.2,
+          particular_value: 3.1,
+          insurance_value: 5.6,
+        },
+        cancellations: {
+          no_shows: noShows,
+          cancellations,
+          no_show_rate: currentStats.no_show_rate,
+          cancellation_rate: currentStats.cancellation_rate,
+        },
+        period_points: countSlices(current, (a) => localDateKey(a.start_at))
+          .map((item) => ({ date: item.label, value: item.value }))
+          .sort((a, b) => a.date.localeCompare(b.date)),
+        age_distribution: ages.sort((a, b) => a.age - b.age),
+        birthdays: db.patients
+          .filter((pt) => pt.birth_date?.slice(5) === todayKey.slice(5))
+          .slice(0, 10)
+          .map((pt) => ({
+            id: pt.id,
+            name: pt.social_name || pt.full_name,
+            age: ageOf(pt.birth_date),
+          })),
+        commercial_summary: {
+          future: current.filter((a) => a.start_at >= p.p_now).length,
+          attended: current.filter((a) => a.status === "attended").length,
+          open: current.filter((a) =>
+            ["scheduled", "confirmed"].includes(a.status),
+          ).length,
+          losses: noShows + cancellations,
+        },
+      },
+    };
   },
   send_appointment_reminders_for_day: (p) => {
     let count = 0;
