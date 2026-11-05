@@ -25,9 +25,14 @@ import {
   Stethoscope,
   TrendUp as TrendingUp,
   UsersThree as UsersRound,
+  WhatsappLogo,
   type Icon as LucideIcon,
 } from "@phosphor-icons/react";
+import { useTransition } from "react";
+import { toast } from "sonner";
+import { birthdayMessageLink } from "./birthday-actions";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { categoricalColors } from "@/lib/colors";
@@ -756,7 +761,7 @@ function BirthdaysCard({ birthdays }: { birthdays: BirthdayPatient[] }) {
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning-muted text-warning-foreground">
                   <CakeSlice className="size-4" aria-hidden="true" />
                 </span>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">
                     {patient.name}
                   </p>
@@ -766,6 +771,10 @@ function BirthdaysCard({ birthdays }: { birthdays: BirthdayPatient[] }) {
                       : "Idade não informada"}
                   </p>
                 </div>
+                <BirthdayMessageButton
+                  patientId={patient.id}
+                  patientName={patient.name}
+                />
               </div>
             ))}
             {birthdays.length > birthdaysShown ? (
@@ -781,6 +790,45 @@ function BirthdaysCard({ birthdays }: { birthdays: BirthdayPatient[] }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Raio-X D3: parabéns pelo WhatsApp, com a mensagem pronta. */
+function BirthdayMessageButton({
+  patientId,
+  patientName,
+}: {
+  patientId: string;
+  patientName: string;
+}) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      className="shrink-0"
+      disabled={pending}
+      aria-label={`Enviar parabéns para ${patientName} pelo WhatsApp`}
+      onClick={() => {
+        // A aba abre no clique (o navegador bloqueia pop-up aberto depois de
+        // uma espera) e recebe o endereço quando a mensagem fica pronta.
+        const tab = window.open("about:blank", "_blank");
+        startTransition(async () => {
+          const result = await birthdayMessageLink(patientId);
+          if (result.url) {
+            if (tab) tab.location.href = result.url;
+            else window.open(result.url, "_blank", "noopener");
+          } else {
+            tab?.close();
+            toast.error(result.error);
+          }
+        });
+      }}
+    >
+      <WhatsappLogo className="size-4" aria-hidden="true" />
+      Parabéns
+    </Button>
   );
 }
 
