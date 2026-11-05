@@ -14,11 +14,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import type { QuickPatientActionState } from "@/lib/patients/quick-create";
+import { stripAccents } from "@/lib/search/accent-pattern";
+import { formatPhoneBR } from "@/lib/validation/br";
 
 export type PatientSearchOption = {
   id: string;
   full_name: string;
   social_name: string | null;
+  birth_date?: string | null;
   cpf?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -109,15 +112,14 @@ export function PatientSearchField({
 
     return patients
       .filter((patient) => {
-        const textMatch = [
-          patient.full_name,
-          patient.social_name ?? "",
-          patient.email ?? "",
-          patient.id,
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery);
+        const textMatch = stripAccents(
+          [
+            patient.full_name,
+            patient.social_name ?? "",
+            patient.email ?? "",
+            patient.id,
+          ].join(" "),
+        ).includes(stripAccents(normalizedQuery));
         const digitMatch = queryDigits
           ? [
               patient.cpf ?? "",
@@ -269,9 +271,15 @@ export function PatientSearchField({
                 onClick={() => selectPatient(patient)}
               >
                 <span className="font-medium">{name}</span>
+                {/* Nascimento antes do contato: é o que separa homônimos. */}
                 <span className="truncate text-xs text-muted-foreground">
-                  {[patient.phone, patient.email].filter(Boolean).join(" · ") ||
-                    patient.id}
+                  {[
+                    formatBirth(patient.birth_date),
+                    patient.phone ? formatPhoneBR(patient.phone) : null,
+                    patient.email,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Sem contato cadastrado"}
                 </span>
               </button>
             );
@@ -396,4 +404,18 @@ function QuickPatientCreateModal({
       </form>
     </Modal>
   );
+}
+
+function formatBirth(value?: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  if (
+    today.getMonth() + 1 < month ||
+    (today.getMonth() + 1 === month && today.getDate() < day)
+  ) {
+    age -= 1;
+  }
+  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year} (${age} ${age === 1 ? "ano" : "anos"})`;
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRequestContext, hasAnyPermission } from "@/lib/auth/context";
+import { accentInsensitiveNameFilters } from "@/lib/search/accent-pattern";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -36,8 +37,8 @@ export async function GET(request: Request) {
   );
   const digits = query.replace(/\D/g, "");
   const filters = [
-    `full_name.ilike.%${query}%`,
-    `social_name.ilike.%${query}%`,
+    // Nome sem depender de acento ("Joao" acha "João").
+    ...accentInsensitiveNameFilters(query),
     `email.ilike.%${query}%`,
   ];
   // Telefone e CPF são gravados só com dígitos, então uma busca digitada com
@@ -55,9 +56,10 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from("patients")
     .select(
+      // Nascimento distingue homônimos na lista de resultados.
       canSeeSensitive
-        ? "id, full_name, social_name, cpf, email, phone, whatsapp"
-        : "id, full_name, social_name, email, phone, whatsapp",
+        ? "id, full_name, social_name, birth_date, cpf, email, phone, whatsapp"
+        : "id, full_name, social_name, birth_date, email, phone, whatsapp",
     )
     .eq("organization_id", context.organization.id)
     .is("deleted_at", null)

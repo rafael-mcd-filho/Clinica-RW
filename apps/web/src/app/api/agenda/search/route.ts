@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRequestContext } from "@/lib/auth/context";
+import { accentInsensitiveNameFilters } from "@/lib/search/accent-pattern";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type AgendaSearchResult = {
@@ -49,10 +50,7 @@ export async function GET(request: Request) {
     "paciente.ver_dados_sensiveis",
   );
   const digits = query.replace(/\D/g, "");
-  const filters = [
-    `full_name.ilike.%${query}%`,
-    `social_name.ilike.%${query}%`,
-  ];
+  const filters = [...accentInsensitiveNameFilters(query)];
   if (digits.length >= 3) {
     filters.push(`phone.ilike.%${digits}%`, `whatsapp.ilike.%${digits}%`);
     if (canSeeSensitive) filters.push(`cpf.ilike.%${digits}%`);

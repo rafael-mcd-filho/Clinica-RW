@@ -13,6 +13,7 @@ import {
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatPhoneBR } from "@/lib/validation/br";
 
 export type GlobalSearchPage = {
   href: string;
@@ -24,6 +25,7 @@ type PatientSearchResult = {
   id: string;
   full_name: string;
   social_name: string | null;
+  birth_date?: string | null;
   email?: string | null;
   phone?: string | null;
   whatsapp?: string | null;
@@ -228,7 +230,7 @@ function GlobalSearch({
               event.currentTarget.blur();
             }
           }}
-          placeholder="Pesquisar pacientes, atendimentos ou páginas…"
+          placeholder="Pesquisar pacientes ou páginas…"
           aria-label="Pesquisa global"
           aria-expanded={showResults}
           aria-controls={showResults ? resultsId : undefined}
@@ -285,10 +287,17 @@ function GlobalSearch({
                     icon={<User className="size-4" aria-hidden="true" />}
                     title={patient.social_name || patient.full_name}
                     description={
-                      patient.whatsapp ||
-                      patient.phone ||
-                      patient.email ||
-                      "Cadastro de paciente"
+                      // Nascimento primeiro: separa homônimos na busca.
+                      [
+                        formatBirthDate(patient.birth_date),
+                        patient.whatsapp || patient.phone
+                          ? formatPhoneBR(
+                              (patient.whatsapp || patient.phone) as string,
+                            )
+                          : patient.email,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "Cadastro de paciente"
                     }
                   />
                 ))
@@ -371,4 +380,10 @@ function normalizeSearchText(value: string): string {
     .toLocaleLowerCase("pt-BR")
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
+}
+
+function formatBirthDate(value?: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-");
+  return `Nasc. ${day}/${month}/${year}`;
 }
