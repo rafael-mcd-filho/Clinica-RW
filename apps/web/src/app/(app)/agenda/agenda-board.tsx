@@ -504,6 +504,9 @@ function AgendaCalendarView({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [showCancelled, setShowCancelled] = useState(false);
+  const [dayGroupBy, setDayGroupBy] = useState<"professional" | "room">(
+    "professional",
+  );
   // "auto": com mais de duas agendas a semana abre num profissional só (a
   // grade de todos juntos vira faixas ilegíveis); com uma ou duas, todos.
   const [weekScheduleId, setWeekScheduleId] = useState("auto");
@@ -1050,8 +1053,39 @@ function AgendaCalendarView({
         </div>
       </div>
 
+      {view === "day" && data.rooms.length ? (
+        <div
+          role="radiogroup"
+          aria-label="Organizar o dia por"
+          className="flex items-center gap-2 border-b border-border px-3 py-2"
+        >
+          <span className="text-caption text-muted-foreground">
+            Colunas por
+          </span>
+          {(
+            [
+              ["professional", "Profissional"],
+              ["room", "Sala"],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={dayGroupBy === value}
+              size="sm"
+              variant={dayGroupBy === value ? "primary" : "secondary"}
+              onClick={() => setDayGroupBy(value)}
+              className="rounded-full"
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       {view === "day" ? (
         <DayByProfessional
+          groupBy={dayGroupBy}
           data={data}
           date={date}
           today={today}

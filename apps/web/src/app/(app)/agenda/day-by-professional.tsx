@@ -184,7 +184,10 @@ export function DayByProfessional({
   hasFilters,
   onSelectSlot,
   onSelectAppointment,
+  groupBy = "professional",
 }: {
+  /** Colunas por profissional (padrão) ou por sala (Raio-X A2). */
+  groupBy?: "professional" | "room";
   data: AgendaData;
   date: string;
   today: string;
@@ -341,8 +344,51 @@ export function DayByProfessional({
       step: stepMinutes,
     });
 
+    if (groupBy === "room") {
+      // Por sala: quem ocupa cada consultório no dia. Sala não tem expediente
+      // próprio, então não há horário livre aqui — a marcação continua na
+      // visão por profissional.
+      const unitIds = new Set(schedules.map((item) => item.unit_id));
+      const rooms = data.rooms
+        .filter((room) => !unitIds.size || unitIds.has(room.unit_id))
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+      const roomColumns: ScheduleColumn[] = rooms.map((room) => ({
+        id: room.id,
+        professionalId: "",
+        professionalName: room.name,
+        subtitle: showUnit ? (unitById.get(room.unit_id) ?? "") : "",
+        freeform: true,
+        windows: [],
+        freeSlots: [],
+        appointments: visibleAppointments.filter(
+          (item) => item.room_id === room.id,
+        ),
+        blocks: [],
+      }));
+      const withoutRoom = visibleAppointments.filter(
+        (item) =>
+          !item.room_id || !rooms.some((room) => room.id === item.room_id),
+      );
+      if (withoutRoom.length) {
+        roomColumns.push({
+          id: "sem-sala",
+          professionalId: "",
+          professionalName: "Sem sala definida",
+          subtitle: "",
+          freeform: true,
+          windows: [],
+          freeSlots: [],
+          appointments: withoutRoom,
+          blocks: [],
+        });
+      }
+      return { columns: roomColumns, range };
+    }
+
     return { columns, range };
   }, [
+    groupBy,
+    data.rooms,
     appointments,
     data.appointments,
     data.availability,
@@ -388,7 +434,7 @@ export function DayByProfessional({
     patient,
     procedure,
     insurance,
-    onSelectSlot,
+    onSelectSlot: groupBy === "room" ? undefined : onSelectSlot,
     onSelectAppointment,
   };
 
