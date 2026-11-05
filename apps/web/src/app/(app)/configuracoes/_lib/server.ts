@@ -88,6 +88,7 @@ export type CompanyConfigurationRoute =
   | "agendamento-online"
   | "whatsapp"
   | "tags-automacoes"
+  | "mensagens"
   | "modelos-clinicos";
 
 export const companyConfigurationPaths: Record<
@@ -100,6 +101,7 @@ export const companyConfigurationPaths: Record<
   "agendamento-online": "/configuracoes/agendamento-online",
   whatsapp: "/configuracoes/whatsapp",
   "tags-automacoes": "/configuracoes/tags-automacoes",
+  mensagens: "/configuracoes/mensagens",
   "modelos-clinicos": "/configuracoes/modelos-clinicos",
 };
 
@@ -134,7 +136,8 @@ type PlatformConfigurationAccess = {
 };
 
 export type ConfigurationAccess =
-  CompanyConfigurationAccess | PlatformConfigurationAccess;
+  | CompanyConfigurationAccess
+  | PlatformConfigurationAccess;
 
 export async function getConfigurationAccess(): Promise<ConfigurationAccess> {
   const context = await getRequestContext();
@@ -199,6 +202,7 @@ export function canAccessCompanyConfigurationRoute(
   switch (route) {
     case "cadastros":
     case "tags-automacoes":
+    case "mensagens":
       return access.canManageCompany;
     case "usuarios-acessos":
       return access.canManageUsers;
@@ -568,4 +572,53 @@ function nullableNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+export type MessageAutomationRule = {
+  id: string;
+  rule_key: string;
+  name: string;
+  event_type: string;
+  active: boolean;
+  action_config: Record<string, unknown>;
+  schedule_delay_minutes: number;
+  send_window_start: string | null;
+  send_window_end: string | null;
+};
+
+export type MessageTemplateRow = {
+  id: string;
+  template_key: string;
+  channel: string;
+  name: string;
+  body_template: string;
+  variable_keys: string[];
+};
+
+/** Regras de envio de mensagem (WhatsApp) e os modelos que elas usam. */
+export async function getMessageAutomationData(organizationId: string) {
+  const supabase = await createSupabaseServerClient();
+  const [rules, templates] = await Promise.all([
+    supabase
+      .from("automation_rules")
+      .select(
+        "id, rule_key, name, event_type, active, action_config, schedule_delay_minutes, send_window_start, send_window_end",
+      )
+      .eq("organization_id", organizationId)
+      .eq("action_type", "send_notification")
+      .order("name")
+      .returns<MessageAutomationRule[]>(),
+    supabase
+      .from("message_templates")
+      .select("id, template_key, channel, name, body_template, variable_keys")
+      .eq("organization_id", organizationId)
+      .returns<MessageTemplateRow[]>(),
+  ]);
+  return {
+    rules: (rules.data ?? []).filter(
+      (rule) => rule.action_config?.channel === "whatsapp",
+    ),
+    templates: templates.data ?? [],
+    available: !rules.error && !templates.error,
+  };
 }

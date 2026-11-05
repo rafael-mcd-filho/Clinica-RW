@@ -336,6 +336,11 @@ function getCompanyNavItems(permissionCodes: Set<string>): AppShellNavItem[] {
       label: "Automações",
       icon: "tags",
     });
+    configurationChildren.push({
+      href: "/configuracoes/mensagens",
+      label: "Mensagens automáticas",
+      icon: "atendimento",
+    });
   }
 
   if (canCreateClinicalTemplate) {

@@ -76,7 +76,13 @@ type FieldDefinition = {
   name: string;
   label: string;
   type?:
-    "text" | "email" | "number" | "textarea" | "select" | "currency" | "phone";
+    | "text"
+    | "email"
+    | "number"
+    | "textarea"
+    | "select"
+    | "currency"
+    | "phone";
   required?: boolean;
   placeholder?: string;
   options?: Option[];

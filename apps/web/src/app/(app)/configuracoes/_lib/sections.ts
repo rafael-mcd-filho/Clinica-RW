@@ -1,6 +1,7 @@
 import {
   Buildings,
   CalendarDots,
+  ChatCircleText,
   ChatsCircle,
   FileText,
   Globe,
@@ -66,6 +67,14 @@ export const configurationSections: Record<
     pageDescription: (name) =>
       `Regras que põem e tiram tags dos pacientes de ${name} a partir de eventos da clínica.`,
     cardDescription: "Regras que põem e tiram tags a partir de eventos.",
+  },
+  mensagens: {
+    title: "Mensagens automáticas",
+    icon: ChatCircleText,
+    pageDescription: (name) =>
+      `Lembretes de consulta e avisos que ${name} envia pelo WhatsApp.`,
+    cardDescription:
+      "Lembrete de consulta, avisos do agendamento online e NPS.",
   },
   "modelos-clinicos": {
     title: "Modelos clínicos",
